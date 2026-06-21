@@ -1,0 +1,245 @@
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { ReactElement, useMemo, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+
+import { Button } from "../components/Button";
+import { Screen, Section } from "../components/Screen";
+import { StatusPill } from "../components/StatusPill";
+import {
+  createExportTargetPlan,
+  exportTargetPlanJson
+} from "../core/exportTargets";
+import { validateProjectForReconstruction } from "../core/frameValidation";
+import { exportProjectManifestJson } from "../core/projectPackage";
+import { RootStackParamList } from "../navigation/types";
+import { useProjects } from "../state/ProjectContext";
+import { colors, spacing } from "../ui/theme";
+
+type Props = NativeStackScreenProps<RootStackParamList, "ProjectReview">;
+
+export function ProjectReviewScreen({
+  navigation,
+  route
+}: Props): ReactElement {
+  const { getProject } = useProjects();
+  const [manifestJson, setManifestJson] = useState<string | null>(null);
+  const [exportPlanJson, setExportPlanJson] = useState<string | null>(null);
+  const project = getProject(route.params.projectId);
+
+  const validation = useMemo(
+    () => (project ? validateProjectForReconstruction(project) : undefined),
+    [project]
+  );
+  const exportTargetPlan = useMemo(
+    () => (project ? createExportTargetPlan(project) : undefined),
+    [project]
+  );
+
+  if (!project || !validation || !exportTargetPlan) {
+    return (
+      <Screen>
+        <Text style={styles.title}>Project not found</Text>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <Section>
+        <Text style={styles.title}>{project.project.title}</Text>
+        <Text style={styles.meta}>
+          {project.capture.mode} / {project.capture.plan}
+        </Text>
+      </Section>
+
+      <View style={styles.summaryRow}>
+        <Text style={styles.summaryLabel}>Validation</Text>
+        <StatusPill
+          status={validation.validForReconstruction ? "ready" : "blocked"}
+        />
+      </View>
+
+      <Section>
+        <Text style={styles.sectionTitle}>Rotations</Text>
+        {project.capture.rotations.map((rotation) => (
+          <View key={rotation.id} style={styles.rotationSummary}>
+            <View style={styles.rotationText}>
+              <Text style={styles.rotationTitle}>{rotation.label}</Text>
+              <Text style={styles.rotationMeta}>
+                {rotation.frames.length}/{project.capture.targetFrameCount} frames
+              </Text>
+            </View>
+            <StatusPill status={rotation.status} />
+          </View>
+        ))}
+      </Section>
+
+      <Section>
+        <Text style={styles.sectionTitle}>Validation messages</Text>
+        {validation.errors.length === 0 && validation.warnings.length === 0 ? (
+          <Text style={styles.message}>No validation messages.</Text>
+        ) : null}
+        {validation.errors.map((error) => (
+          <Text key={error} style={[styles.message, styles.error]}>
+            {error}
+          </Text>
+        ))}
+        {validation.warnings.map((warning) => (
+          <Text key={warning} style={[styles.message, styles.warning]}>
+            {warning}
+          </Text>
+        ))}
+      </Section>
+
+      <Section>
+        <Text style={styles.sectionTitle}>3D export formats</Text>
+        <Text style={styles.message}>
+          Actual 3D files are produced after reconstruction processing.
+        </Text>
+        {exportTargetPlan.artifacts.map((artifact) => (
+          <View key={artifact.format} style={styles.exportRow}>
+            <View style={styles.rotationText}>
+              <Text style={styles.rotationTitle}>
+                {artifact.format.toUpperCase()} - {artifact.label}
+              </Text>
+              <Text style={styles.rotationMeta}>{artifact.path}</Text>
+            </View>
+            <StatusPill status="blocked" />
+          </View>
+        ))}
+      </Section>
+
+      <Section>
+        <Button
+          label="Prepare Reconstruction Plan"
+          onPress={() =>
+            navigation.navigate("ReconstructionPlan", {
+              projectId: project.project.id
+            })
+          }
+        />
+        <Button
+          label="Export Project Manifest"
+          variant="secondary"
+          onPress={() => setManifestJson(exportProjectManifestJson(project))}
+        />
+        <Button
+          label="Export 3D Format Plan"
+          variant="secondary"
+          onPress={() => setExportPlanJson(exportTargetPlanJson(project))}
+        />
+      </Section>
+
+      {manifestJson ? (
+        <Section>
+          <Text style={styles.sectionTitle}>Manifest JSON</Text>
+          <Text selectable style={styles.jsonBlock}>
+            {manifestJson}
+          </Text>
+        </Section>
+      ) : null}
+
+      {exportPlanJson ? (
+        <Section>
+          <Text style={styles.sectionTitle}>3D Format Plan JSON</Text>
+          <Text selectable style={styles.jsonBlock}>
+            {exportPlanJson}
+          </Text>
+        </Section>
+      ) : null}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  title: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "800"
+  },
+  meta: {
+    color: colors.mutedText,
+    fontSize: 14
+  },
+  summaryRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  summaryLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  rotationSummary: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  exportRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  rotationText: {
+    flex: 1,
+    gap: 2
+  },
+  rotationTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  rotationMeta: {
+    color: colors.mutedText,
+    fontSize: 13
+  },
+  message: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: spacing.md
+  },
+  error: {
+    borderColor: colors.danger,
+    color: colors.danger
+  },
+  warning: {
+    borderColor: colors.warning,
+    color: colors.warning
+  },
+  jsonBlock: {
+    backgroundColor: "#242925",
+    borderRadius: 8,
+    color: "#f7f7f4",
+    fontFamily: "Courier",
+    fontSize: 12,
+    lineHeight: 18,
+    padding: spacing.md
+  }
+});
