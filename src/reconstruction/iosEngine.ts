@@ -7,11 +7,11 @@ import {
 
 export const iosReconstructionEngine: PlatformReconstructionEngine = {
   platform: "ios",
-  displayName: "iOS local reconstruction",
-  nativeModuleName: "ForgeScanIOSReconstruction",
+  displayName: "iOS local splatting",
+  nativeModuleName: "ForgeScanIOSSplatting",
   implementationStatus: "native-track",
   summary:
-    "iOS will use the shared capture workflow, then add Swift, ARKit/RealityKit, Vision or Core ML, Metal acceleration, and USDZ-first export support.",
+    "iOS will use the shared capture workflow, then add Swift, ARKit/RealityKit, Vision or Core ML, Metal acceleration, and local .ksplat optimization.",
   capabilities: [
     {
       id: "capture",
@@ -29,31 +29,31 @@ export const iosReconstructionEngine: PlatformReconstructionEngine = {
     },
     {
       id: "segmentation",
-      label: "On-device segmentation",
+      label: "On-device object masks",
       status: "planned",
       detail:
-        "Vision or Core ML can generate masks before pose estimation and reconstruction."
+        "Vision or Core ML can generate object masks before pose and splat optimization."
     },
     {
-      id: "reconstruction",
-      label: "Native mesh or splat reconstruction",
+      id: "splatting",
+      label: "Native splat optimization",
       status: "requires-native-build",
       detail:
-        "Local reconstruction should run in Swift/C++ or Metal-backed native code."
+        "Local .ksplat optimization should run in Swift/C++ or Metal-backed native code."
     },
     {
       id: "object-capture",
-      label: "Apple reconstruction path",
+      label: "Apple capture support",
       status: "planned",
       detail:
-        "A native iOS track can evaluate RealityKit/Object Capture style workflows where device support allows it."
+        "A native iOS track can evaluate ARKit/RealityKit capture data where device support allows it."
     },
     {
       id: "exports",
-      label: "USDZ/GLB/OBJ/STL export",
+      label: ".ksplat export",
       status: "planned",
       detail:
-        "Export targets are defined now; binary model writers come after reconstruction output exists."
+        "The normal final output is ForgeScan_{projectName}.ksplat."
     }
   ],
   roadmap: [
@@ -73,13 +73,13 @@ export const iosReconstructionEngine: PlatformReconstructionEngine = {
       order: 3,
       title: "Build iOS native module",
       detail:
-        "Expose Swift calls for masks, poses, alignment, reconstruction, and model export."
+        "Expose Swift calls for masks, poses, alignment, splat optimization, and .ksplat export."
     },
     {
       order: 4,
-      title: "Ship iOS local export",
+      title: "Ship iOS local splatting",
       detail:
-        "Prioritize USDZ and GLB once native reconstruction produces textured geometry."
+        "Generate .ksplat locally on supported devices and optimizer-ready inputs elsewhere."
     }
   ],
   createJobPlan: createIOSJobPlan
@@ -95,7 +95,7 @@ function createIOSJobPlan(
     projectId: manifest.project.id,
     projectTitle: manifest.project.title,
     status: "plan-only",
-    nativeModuleName: "ForgeScanIOSReconstruction",
+    nativeModuleName: "ForgeScanIOSSplatting",
     aiModel: {
       id: model.id,
       label: model.label,
@@ -117,9 +117,9 @@ function createIOSJobPlan(
       "Vision or Core ML segmentation",
       "Camera pose estimation",
       "Multi-rotation alignment",
-      "Swift/C++ or Metal reconstruction",
-      "USDZ/GLB/OBJ/STL export",
-      "HTML/MP4/GIF preview export"
+      "Swift/C++ or Metal splat optimization",
+      ".ksplat export",
+      "MP4/GIF preview export"
     ]
   };
 }

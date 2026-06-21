@@ -63,7 +63,7 @@ export function FullReconstructionRunScreen({
       setRunError(
         error instanceof Error
           ? error.message
-          : "Unable to complete the reconstruction test."
+          : "Unable to complete the internal splat test."
       );
     } finally {
       setIsRunning(false);
@@ -77,7 +77,7 @@ export function FullReconstructionRunScreen({
   return (
     <Screen>
       <Section>
-        <Text style={styles.title}>Full reconstruction test</Text>
+        <Text style={styles.title}>Internal splat test</Text>
         <Text style={styles.meta}>{project.project.title}</Text>
       </Section>
 
@@ -97,7 +97,7 @@ export function FullReconstructionRunScreen({
 
       <Section>
         <Button
-          label={isRunning ? "Running Full Test" : "Run Full Reconstruction Test"}
+          label={isRunning ? "Running Full Test" : "Run Internal Splat Test"}
           disabled={isRunning}
           onPress={() => {
             void handleRun();

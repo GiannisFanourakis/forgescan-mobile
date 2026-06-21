@@ -34,8 +34,8 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             : "This preview runtime uses shared capture only."}
         </Text>
         <Text style={styles.summaryMeta}>
-          Reconstruction will use native modules when the app moves beyond Expo
-          Go.
+          Splat optimization will use native modules when the app moves beyond
+          Expo Go.
         </Text>
       </View>
 

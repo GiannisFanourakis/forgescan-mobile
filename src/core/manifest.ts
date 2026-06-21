@@ -31,6 +31,7 @@ export type ReconstructionStatus =
   | "complete"
   | "failed";
 export type ExportFormat =
+  | "ksplat"
   | "glb"
   | "usdz"
   | "obj"
@@ -222,11 +223,7 @@ const rotationTemplates: Record<
 };
 
 const defaultExportFormats: ExportFormat[] = [
-  "glb",
-  "usdz",
-  "obj",
-  "stl",
-  "html",
+  "ksplat",
   "mp4",
   "gif"
 ];

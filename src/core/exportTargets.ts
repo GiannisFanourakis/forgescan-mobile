@@ -1,6 +1,11 @@
 import { ExportFormat, ForgeScanProjectManifest } from "./manifest";
+import { getExpectedKsplatPath } from "../reconstruction/splatting/photorealAsset";
 
-export type ExportArtifactKind = "model" | "viewer" | "preview";
+export type ExportArtifactKind =
+  | "photoreal-scan"
+  | "model"
+  | "viewer"
+  | "preview";
 export type ExportArtifactStatus = "pending-reconstruction" | "ready" | "exported";
 
 export interface ExportArtifactTarget {
@@ -23,56 +28,56 @@ export interface ExportTargetPlan {
 }
 
 const artifactTemplates: Record<
-  ExportFormat,
+  Exclude<ExportFormat, "ksplat">,
   Omit<ExportArtifactTarget, "status" | "requiresReconstruction">
 > = {
   glb: {
     format: "glb",
-    label: "GLB binary 3D model",
+    label: "Internal fallback GLB",
     kind: "model",
-    path: "exports/model.glb",
+    path: "fallback/model.glb",
     mimeType: "model/gltf-binary"
   },
   usdz: {
     format: "usdz",
-    label: "USDZ iOS AR model",
+    label: "Internal fallback USDZ",
     kind: "model",
-    path: "exports/model.usdz",
+    path: "fallback/model.usdz",
     mimeType: "model/vnd.usdz+zip"
   },
   obj: {
     format: "obj",
-    label: "OBJ 3D model",
+    label: "Internal fallback OBJ",
     kind: "model",
-    path: "exports/model.obj",
+    path: "fallback/model.obj",
     mimeType: "model/obj"
   },
   stl: {
     format: "stl",
-    label: "STL printable mesh",
+    label: "Internal fallback STL",
     kind: "model",
-    path: "exports/model.stl",
+    path: "fallback/model.stl",
     mimeType: "model/stl"
   },
   html: {
     format: "html",
-    label: "HTML/WebGL viewer",
+    label: "Internal preview fallback",
     kind: "viewer",
-    path: "exports/viewer.html",
+    path: "open_viewer.html",
     mimeType: "text/html"
   },
   mp4: {
     format: "mp4",
-    label: "MP4 preview render",
+    label: "Preview Video",
     kind: "preview",
-    path: "exports/preview.mp4",
+    path: "preview/preview.mp4",
     mimeType: "video/mp4"
   },
   gif: {
     format: "gif",
-    label: "GIF preview render",
+    label: "Preview GIF",
     kind: "preview",
-    path: "exports/preview.gif",
+    path: "preview/preview.gif",
     mimeType: "image/gif"
   }
 };
@@ -86,9 +91,9 @@ export function createExportTargetPlan(
     createdAt: new Date().toISOString(),
     status: "targets-only",
     note:
-      "These are the intended 3D and preview export artifacts. Actual files are produced after reconstruction processing.",
+      "These are the intended .ksplat and preview export artifacts. Actual files are produced after splatting processing.",
     artifacts: manifest.exports.formats.map((format) => ({
-      ...artifactTemplates[format],
+      ...createArtifactTarget(format, manifest),
       status: "pending-reconstruction",
       requiresReconstruction: true
     }))
@@ -99,4 +104,21 @@ export function exportTargetPlanJson(
   manifest: ForgeScanProjectManifest
 ): string {
   return JSON.stringify(createExportTargetPlan(manifest), null, 2);
+}
+
+function createArtifactTarget(
+  format: ExportFormat,
+  manifest: ForgeScanProjectManifest
+): Omit<ExportArtifactTarget, "status" | "requiresReconstruction"> {
+  if (format === "ksplat") {
+    return {
+      format,
+      label: "Photoreal 3D Scan",
+      kind: "photoreal-scan",
+      path: getExpectedKsplatPath(manifest),
+      mimeType: "model/vnd.ksplat"
+    };
+  }
+
+  return artifactTemplates[format];
 }

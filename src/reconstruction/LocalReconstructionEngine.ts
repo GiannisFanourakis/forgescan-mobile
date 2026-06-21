@@ -73,7 +73,7 @@ export class LocalReconstructionEngine implements ReconstructionEngine {
       ),
       writeTextArtifact(
         manifest,
-        "exports/model.obj",
+        "fallback/model.obj",
         createRoughObj(),
         "obj",
         "model"

@@ -30,38 +30,38 @@ export async function exportResults(
   const groupedOutputs: ExportGroupedOutputs = {
     interactiveViewer: [
       {
-        label: "Interactive Viewer",
-        path: "exports/viewer.html",
+        label: "Preview Fallback",
+        path: "open_viewer.html",
         group: "interactiveViewer"
       }
     ],
     threeDFiles: [
       {
-        label: "Rough 3D Preview",
-        path: "exports/model.obj",
+        label: "Internal Fallback Model",
+        path: "fallback/model.obj",
         group: "threeDFiles"
       },
       {
-        label: "Rough Mesh",
+        label: "Internal Fallback Model",
         path: "reconstruction/rough-model.obj",
         group: "threeDFiles"
       },
       {
-        label: "Point Cloud",
+        label: "Internal Point Cloud",
         path: "reconstruction/point-cloud.ply",
         group: "threeDFiles"
       }
     ],
     photorealPackage: [
       {
-        label: "Photoreal Package",
+        label: "Internal Splat Inputs",
         path: "exports/splatting-job.json",
         group: "photorealPackage"
       }
     ],
     projectFiles: [
       {
-        label: "Project Files",
+        label: "Internal Source Data",
         path: packageResult.projectRootUri,
         uri: packageResult.projectRootUri,
         group: "projectFiles"

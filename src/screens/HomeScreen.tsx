@@ -31,7 +31,7 @@ export function HomeScreen({ navigation }: Props): ReactElement {
             <ForgeScanLogo size={72} />
             <View style={styles.previewText}>
               <Text style={styles.title}>ForgeScan</Text>
-              <Text style={styles.subtitle}>3D capture studio</Text>
+              <Text style={styles.subtitle}>Controlled Object Splatting</Text>
             </View>
           </View>
         </View>
@@ -52,7 +52,7 @@ export function HomeScreen({ navigation }: Props): ReactElement {
         </View>
 
         <View style={styles.statusGrid}>
-          <Metric label="Formats" value="GLB STL OBJ" />
+          <Metric label="Format" value=".ksplat" />
           <Metric label="Device" value="Android iOS" />
         </View>
 

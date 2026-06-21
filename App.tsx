@@ -70,12 +70,12 @@ export default function App(): ReactElement {
           <Stack.Screen
             name="ReconstructionPlan"
             component={ReconstructionPlanScreen}
-            options={{ title: "Reconstruction Plan" }}
+            options={{ title: "Internal Splat Plan" }}
           />
           <Stack.Screen
             name="FullReconstructionRun"
             component={FullReconstructionRunScreen}
-            options={{ title: "Full Reconstruction Test" }}
+            options={{ title: "Internal Splat Test" }}
           />
         </Stack.Navigator>
       </NavigationContainer>

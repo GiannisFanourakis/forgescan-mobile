@@ -137,8 +137,8 @@ export const fullRunStageDefinitions: FullRunStageDefinition[] = [
   },
   {
     id: "model-export",
-    label: "Export GLB / USDZ / OBJ / STL",
-    description: "Write model artifacts into the local export folder."
+    label: "Write internal fallback artifacts",
+    description: "Write debug-only fallback artifacts into the local export folder."
   },
   {
     id: "preview-export",
@@ -625,7 +625,7 @@ function runPreviewExportStage(
   return completeStage(stage, {
     status: "complete",
     detail:
-      "Exported preview viewer files. The MP4 validates file generation; native rendering will replace it with a real turntable render.",
+      "Exported preview files. The MP4 validates file generation; native rendering will replace it with a real turntable render.",
     inputs: ["model.glb", "model.obj"],
     outputs: artifacts.map((artifact) => artifact.filename),
     artifacts,

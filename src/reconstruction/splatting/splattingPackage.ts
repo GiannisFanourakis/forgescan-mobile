@@ -1,6 +1,11 @@
 import { ForgeScanProjectManifest } from "../../core/manifest";
 import { createExpectedMaskArtifacts } from "../../core/segmentationPlan";
 import { writeProjectFile } from "../../storage/projectStorage";
+import {
+  PhotorealAsset,
+  createPhotorealAsset,
+  getExpectedKsplatPath
+} from "./photorealAsset";
 
 export interface SplattingFrameEntry {
   rotationId: string;
@@ -10,15 +15,45 @@ export interface SplattingFrameEntry {
   order: number;
 }
 
+export interface SplattingCameraFrame {
+  rotationId: string;
+  frameIndex: number;
+  frameUri: string;
+  assumedPose: {
+    yawDegrees: number;
+    tiltDegrees: number;
+  };
+}
+
+export interface SplattingCameraData {
+  cameraModel: "unknown-mobile-camera";
+  poseSource: "ordered-turntable-fallback";
+  motion: "controlled-object-turntable";
+  frames: SplattingCameraFrame[];
+}
+
 export interface SplattingInputPackage {
   projectId: string;
   projectTitle: string;
   createdAt: string;
   status: "package-ready";
   note: string;
+  primaryOutput: string;
+  optionalIntermediate: string;
+  viewerTarget: string;
+  photorealAsset: PhotorealAsset;
   frames: SplattingFrameEntry[];
+  masks: string[];
+  rotationMetadata: Array<{
+    rotationId: string;
+    label: string;
+    required: boolean;
+    frameCount: number;
+    status: string;
+  }>;
+  cameraDataPath: string;
   cameraAssumptions: {
-    motion: "turntable-orbit";
+    motion: "controlled-object-turntable";
     intrinsics: "unknown-mobile-camera";
     poseSource: "ordered-frame-fallback";
   };
@@ -35,21 +70,24 @@ export function createSplattingInputPackage(
   manifest: ForgeScanProjectManifest
 ): SplattingInputPackage {
   const maskArtifacts = createExpectedMaskArtifacts(manifest);
+  let order = 0;
   const frames = manifest.capture.rotations.flatMap((rotation) =>
-    rotation.frames.map((frame, index) => {
+    rotation.frames.map((frame) => {
       const mask = maskArtifacts.find(
         (artifact) =>
           artifact.rotationId === rotation.id && artifact.frameIndex === frame.index
       );
+      order += 1;
       return {
         rotationId: rotation.id,
         frameIndex: frame.index,
         frameUri: frame.uri,
         maskPath: mask?.refinedMaskPath ?? "",
-        order: index + 1
+        order
       };
     })
   );
+  const primaryOutput = getExpectedKsplatPath(manifest);
 
   return {
     projectId: manifest.project.id,
@@ -57,10 +95,26 @@ export function createSplattingInputPackage(
     createdAt: new Date().toISOString(),
     status: "package-ready",
     note:
-      "Gaussian Splatting is packaged for an external/native optimizer; optimization is not run inside Expo Go.",
+      "Controlled object splatting is packaged for a native/external optimizer; .ksplat optimization is not run inside Expo Go.",
+    primaryOutput,
+    optionalIntermediate: "photoreal/splat.ply",
+    viewerTarget: "open_viewer.html",
+    photorealAsset: createPhotorealAsset(
+      manifest,
+      "requires-external-optimizer"
+    ),
     frames,
+    masks: maskArtifacts.map((artifact) => artifact.refinedMaskPath),
+    rotationMetadata: manifest.capture.rotations.map((rotation) => ({
+      rotationId: rotation.id,
+      label: rotation.label,
+      required: rotation.required,
+      frameCount: rotation.frames.length,
+      status: rotation.status
+    })),
+    cameraDataPath: "photoreal/cameras.json",
     cameraAssumptions: {
-      motion: "turntable-orbit",
+      motion: "controlled-object-turntable",
       intrinsics: "unknown-mobile-camera",
       poseSource: "ordered-frame-fallback"
     },
@@ -71,10 +125,40 @@ export function createSplattingInputPackage(
       useMasks: true
     },
     expectedOutputFiles: [
-      "reconstruction/splats/point_cloud.ply",
-      "reconstruction/splats/model.ksplat",
-      "exports/viewer.html"
+      primaryOutput,
+      "photoreal/splat.ply",
+      "preview/preview.mp4",
+      "preview/preview.gif"
     ]
+  };
+}
+
+export function createSplattingCameraData(
+  manifest: ForgeScanProjectManifest
+): SplattingCameraData {
+  return {
+    cameraModel: "unknown-mobile-camera",
+    poseSource: "ordered-turntable-fallback",
+    motion: "controlled-object-turntable",
+    frames: manifest.capture.rotations.flatMap((rotation) =>
+      rotation.frames.map((frame, index) => ({
+        rotationId: rotation.id,
+        frameIndex: frame.index,
+        frameUri: frame.uri,
+        assumedPose: {
+          yawDegrees:
+            rotation.frames.length > 0
+              ? Math.round((index / rotation.frames.length) * 360)
+              : 0,
+          tiltDegrees:
+            rotation.id === "upright"
+              ? 0
+              : rotation.id === "tilted"
+                ? 45
+                : 160
+        }
+      }))
+    )
   };
 }
 
@@ -94,6 +178,12 @@ export function exportSplattingJob(
 ): SplattingInputPackage {
   const splattingPackage = createSplattingInputPackage(manifest);
   const json = JSON.stringify(splattingPackage, null, 2);
+  writeProjectFile(
+    manifest,
+    "photoreal/cameras.json",
+    JSON.stringify(createSplattingCameraData(manifest), null, 2)
+  );
+  writeProjectFile(manifest, "photoreal/splatting-job.json", json);
   writeProjectFile(manifest, "reconstruction/splatting-job.json", json);
   writeProjectFile(manifest, "exports/splatting-job.json", json);
   saveSplattingFramesManifest(manifest);

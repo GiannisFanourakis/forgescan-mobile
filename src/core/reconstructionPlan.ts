@@ -9,6 +9,7 @@ import {
   ReconstructionModelInputType,
   getSelectedReconstructionModel
 } from "../reconstruction/modelRegistry";
+import { getExpectedKsplatPath } from "../reconstruction/splatting/photorealAsset";
 
 export type ReconstructionStageStatus = "planned" | "blocked" | "complete";
 
@@ -116,12 +117,12 @@ function createPlanStages(
     {
       sequence: 1,
       id: "background-removal",
-      label: "Background removal",
+      label: "Object mask preparation",
       status: "planned",
       inputs: rotationFolders,
       outputs: ["masks/raw/"],
       notes:
-        "Use the selected AI model to segment the object from ordered source frames before pose solving."
+        "Use the selected AI model path to separate the object from ordered source frames before pose solving."
     },
     {
       sequence: 2,
@@ -156,48 +157,48 @@ function createPlanStages(
     {
       sequence: 5,
       id: "reconstruction",
-      label: "Mesh or splat reconstruction",
+      label: "Splat data preparation",
       status: "planned",
       inputs: ["alignment/rotation_alignment.json", "masks/refined/"],
-      outputs: ["reconstruction/raw_model"],
-      notes: `${aiModelLabel} generates raw geometry or splat data from aligned frame sets.`
+      outputs: ["photoreal/splatting-job.json", "photoreal/cameras.json"],
+      notes: `${aiModelLabel} prepares optimizer-ready splat data from aligned frame sets.`
     },
     {
       sequence: 6,
       id: "texture-projection",
-      label: "Texture projection",
+      label: "Source detail preparation",
       status: "planned",
-      inputs: ["reconstruction/raw_model", ...rotationFolders],
-      outputs: ["reconstruction/textured_model"],
-      notes: "Bake texture detail from captured frames."
+      inputs: ["photoreal/splatting-job.json", ...rotationFolders],
+      outputs: ["photoreal/source-detail.json"],
+      notes: "Preserve captured image detail for the splat optimizer."
     },
     {
       sequence: 7,
       id: "cleanup",
-      label: "Cleanup",
+      label: "Splat input cleanup",
       status: "planned",
-      inputs: ["reconstruction/textured_model"],
-      outputs: ["reconstruction/final_model"],
+      inputs: ["photoreal/source-detail.json"],
+      outputs: ["photoreal/optimizer-input.json"],
       notes:
-        "Apply hole filling, texture repair, and scale normalization."
+        "Normalize source data before native or external .ksplat optimization."
     },
     {
       sequence: 8,
       id: "model-export",
-      label: "Export GLB/USDZ/OBJ/STL",
+      label: "Export .ksplat target",
       status: "planned",
-      inputs: ["reconstruction/final_model"],
-      outputs: ["exports/model.glb", "exports/model.usdz", "exports/model.obj", "exports/model.stl"],
-      notes: "Model export targets for web, AR, 3D software, and printing."
+      inputs: ["photoreal/optimizer-input.json"],
+      outputs: [getExpectedKsplatPath(manifest)],
+      notes: "ForgeScan's normal final 3D export is the .ksplat photoreal scan."
     },
     {
       sequence: 9,
       id: "preview-export",
-      label: "Export HTML/MP4/GIF preview",
+      label: "Export preview media",
       status: "planned",
-      inputs: ["reconstruction/final_model"],
-      outputs: ["exports/viewer.html", "exports/preview.mp4", "exports/preview.gif"],
-      notes: "Presentation exports for interactive and animated previews."
+      inputs: [getExpectedKsplatPath(manifest)],
+      outputs: ["preview/preview.mp4", "preview/preview.gif"],
+      notes: "Preview video and GIF are preview-only exports."
     }
   ];
 }

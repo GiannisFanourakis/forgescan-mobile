@@ -25,15 +25,16 @@ import {
 import { writeViewerHtml } from "../storage/projectPackageWriter";
 import { colors, spacing } from "../ui/theme";
 import {
-  Create3DResultPipelineResult,
+  CreatePhotorealScanPipelineResult,
+  PreviewStatusItem,
   WorkflowAdvancedDetail,
-  WorkflowGeneratedOutput,
-  create3DResult
-} from "../workflow/create3DResultPipeline";
+  createPhotorealScan
+} from "../workflow/createPhotorealScanPipeline";
 import {
-  ExportResultsPipelineResult,
-  exportResults
-} from "../workflow/exportResultsPipeline";
+  ExportPhotorealScanResult,
+  exportPhotorealScan
+} from "../workflow/exportKsplatsPipeline";
+import { NormalExportItem } from "../workflow/exportArtifacts";
 import {
   WorkflowStage,
   canRunPrimaryAction,
@@ -62,10 +63,10 @@ export function ProjectReviewScreen({
   const [isRunning, setIsRunning] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [progressSteps, setProgressSteps] = useState<string[]>([]);
-  const [createResult, setCreateResult] =
-    useState<Create3DResultPipelineResult | null>(null);
+  const [scanResult, setScanResult] =
+    useState<CreatePhotorealScanPipelineResult | null>(null);
   const [exportResult, setExportResult] =
-    useState<ExportResultsPipelineResult | null>(null);
+    useState<ExportPhotorealScanResult | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedDetails, setAdvancedDetails] = useState<WorkflowAdvancedDetail[]>([]);
 
@@ -89,22 +90,22 @@ export function ProjectReviewScreen({
   const activeProject = project;
   const workflowStage = exportResult
     ? "export"
-    : createResult
+    : scanResult
       ? "preview"
       : getWorkflowStage(activeProject);
-  const workflowProgress = createResult ? 0.75 : getWorkflowProgress(activeProject);
-  const primaryActionLabel = createResult
+  const workflowProgress = scanResult ? 0.75 : getWorkflowProgress(activeProject);
+  const primaryActionLabel = scanResult
     ? exportResult
-      ? "Export Results"
-      : "Export Results"
+      ? "Export .ksplat"
+      : "Export .ksplat"
     : getPrimaryActionLabel(activeProject);
-  const primaryActionDescription = createResult
-    ? "Inspect the preview outputs, then export grouped results."
+  const primaryActionDescription = scanResult
+    ? "Preview the photoreal scan status, then export the .ksplat target and preview media."
     : getPrimaryActionDescription(activeProject);
   const primaryEnabled =
-    !isRunning && (createResult ? true : canRunPrimaryAction(activeProject));
-  const generatedOutputs = createResult?.generatedOutputs ?? [];
-  const groupedExportOutputs = exportResult?.groupedOutputs;
+    !isRunning && (scanResult ? true : canRunPrimaryAction(activeProject));
+  const normalExports = exportResult?.normalExports ?? scanResult?.normalExports ?? [];
+  const previewStatus = scanResult?.previewStatus ?? [];
 
   async function handlePrimaryAction(): Promise<void> {
     if (workflowStage === "capture") {
@@ -119,53 +120,53 @@ export function ProjectReviewScreen({
     }
 
     if (workflowStage === "processing") {
-      await runCreate3DResult();
+      await runCreatePhotorealScan();
       return;
     }
 
     if (workflowStage === "preview" || workflowStage === "export") {
-      await runExportResults();
+      await runExportPhotorealScan();
     }
   }
 
-  async function runCreate3DResult(): Promise<void> {
+  async function runCreatePhotorealScan(): Promise<void> {
     setIsRunning(true);
     setStatusMessage("Checking capture");
     setProgressSteps([
       "Checking capture",
       "Preparing object",
-      "Creating 3D preview",
-      "Preparing photoreal package",
-      "Creating viewer"
+      "Preparing alignment",
+      "Creating splat data",
+      "Preparing preview fallback"
     ]);
 
     try {
-      const result = await create3DResult(activeProject);
-      setCreateResult(result);
+      const result = await createPhotorealScan(activeProject);
+      setScanResult(result);
       setAdvancedDetails(result.advancedDetails);
       setStatusMessage(result.userMessage);
       setProgressSteps(result.progressSteps);
     } catch (error: unknown) {
       setStatusMessage(
-        error instanceof Error ? error.message : "Unable to create 3D result."
+        error instanceof Error ? error.message : "Unable to create photoreal scan."
       );
     } finally {
       setIsRunning(false);
     }
   }
 
-  async function runExportResults(): Promise<void> {
+  async function runExportPhotorealScan(): Promise<void> {
     setIsRunning(true);
-    setStatusMessage("Exporting results");
+    setStatusMessage("Exporting .ksplat");
 
     try {
-      const result = await exportResults(activeProject);
+      const result = await exportPhotorealScan(activeProject);
       setExportResult(result);
       setAdvancedDetails((details) => [...details, ...result.advancedDetails]);
       setStatusMessage(result.userMessage);
     } catch (error: unknown) {
       setStatusMessage(
-        error instanceof Error ? error.message : "Unable to export results."
+        error instanceof Error ? error.message : "Unable to export .ksplat."
       );
     } finally {
       setIsRunning(false);
@@ -257,14 +258,14 @@ export function ProjectReviewScreen({
 
       {progressSteps.length > 0 ? (
         <Section>
-          <Text style={styles.sectionTitle}>Photogrammetry / Splatting</Text>
+          <Text style={styles.sectionTitle}>Splatting</Text>
           {progressSteps.map((step) => (
             <View key={step} style={styles.simpleRow}>
               <Text style={styles.simpleRowTitle}>{step}</Text>
               <StatusPill status="ready" />
             </View>
           ))}
-          {createResult?.warnings.map((warning) => (
+          {scanResult?.warnings.map((warning) => (
             <Text key={warning} style={[styles.message, styles.warning]}>
               {warning}
             </Text>
@@ -289,34 +290,22 @@ export function ProjectReviewScreen({
 
       <Section>
         <Text style={styles.sectionTitle}>Preview</Text>
-        <OutputCard
-          title="Interactive Preview"
-          body={findOutputPath(generatedOutputs, "interactiveViewer") ?? "Create the 3D result to generate the viewer."}
-        />
-        <OutputCard
-          title="Rough 3D Preview"
-          body={findThreeDOutput(generatedOutputs) ?? "Create the 3D result to generate rough model files."}
-        />
-        <OutputCard
-          title="Photoreal Package"
-          body={findOutputPath(generatedOutputs, "photorealPackage") ?? "Photoreal package will be prepared during 3D creation."}
-        />
-        <OutputCard
-          title="Captured Frames"
-          body={`${activeProject.capture.rotations.reduce(
-            (sum, rotation) => sum + rotation.frames.length,
-            0
-          )} captured frames`}
-        />
+        {previewStatus.length > 0 ? (
+          previewStatus.map((item) => (
+            <PreviewStatusCard key={item.label} item={item} />
+          ))
+        ) : (
+          <OutputCard
+            title="Photoreal Scan"
+            body="Create the photoreal scan to prepare a .ksplat target and preview fallback."
+          />
+        )}
       </Section>
 
-      {groupedExportOutputs ? (
+      {exportResult ? (
         <Section>
-          <Text style={styles.sectionTitle}>Export Complete</Text>
-          <OutputGroup title="Interactive Viewer" outputs={groupedExportOutputs.interactiveViewer} />
-          <OutputGroup title="3D Files" outputs={groupedExportOutputs.threeDFiles} />
-          <OutputGroup title="Photoreal Processing Package" outputs={groupedExportOutputs.photorealPackage} />
-          <OutputGroup title="Project Files" outputs={groupedExportOutputs.projectFiles} />
+          <Text style={styles.sectionTitle}>Export .ksplat</Text>
+          <NormalExports outputs={normalExports} />
         </Section>
       ) : null}
 
@@ -335,7 +324,7 @@ export function ProjectReviewScreen({
             <Text style={styles.sectionTitle}>Advanced Details</Text>
             <Text style={styles.messageText}>Project: {storagePaths.projectUri}</Text>
             <Text style={styles.messageText}>Masks: {storagePaths.masksUri}</Text>
-            <Text style={styles.messageText}>Reconstruction: {storagePaths.reconstructionUri}</Text>
+            <Text style={styles.messageText}>Internal alignment: {storagePaths.reconstructionUri}</Text>
             <Text style={styles.messageText}>Exports: {storagePaths.exportsUri}</Text>
             {advancedDetails.map((detail, index) => (
               <Text key={`${detail.label}-${index}`} style={styles.advancedDetail}>
@@ -344,10 +333,10 @@ export function ProjectReviewScreen({
             ))}
             <Button
               disabled={isRunning}
-              label="Run Background Removal"
+              label="Prepare Object Masks"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Run Background Removal", async () => {
+                void runAdvancedAction("Prepare Object Masks", async () => {
                   const result = await runSegmentationForProject(activeProject);
                   return `${result.successfulFrames}/${result.totalFrames} object-separation masks written.`;
                 });
@@ -371,10 +360,10 @@ export function ProjectReviewScreen({
             />
             <Button
               disabled={isRunning}
-              label="Run Reconstruction"
+              label="Run Internal Alignment"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Run Reconstruction", async () => {
+                void runAdvancedAction("Run Internal Alignment", async () => {
                   const result = await runReconstructionJob(activeProject);
                   return result.artifacts.map((artifact) => artifact.path).join(", ");
                 });
@@ -382,10 +371,10 @@ export function ProjectReviewScreen({
             />
             <Button
               disabled={isRunning}
-              label="Prepare Gaussian Splatting Job"
+              label="Prepare Internal Splatting Job"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Prepare Gaussian Splatting Job", () => {
+                void runAdvancedAction("Prepare Internal Splatting Job", () => {
                   const result = exportSplattingJob(activeProject);
                   return `${result.frames.length} frames packaged.`;
                 });
@@ -393,22 +382,22 @@ export function ProjectReviewScreen({
             />
             <Button
               disabled={isRunning}
-              label="Export Viewer HTML"
+              label="Write Preview Fallback HTML"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Export Viewer HTML", () =>
+                void runAdvancedAction("Write Preview Fallback HTML", () =>
                   writeViewerHtml(activeProject.project.id, activeProject)
                 );
               }}
             />
             <Button
               disabled={isRunning}
-              label="Export Project Package"
+              label="Write Internal Source Data"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Export Project Package", async () => {
-                  const result = await exportResults(activeProject);
-                  return result.groupedOutputs.projectFiles[0]?.uri ?? "Project files written.";
+                void runAdvancedAction("Write Internal Source Data", async () => {
+                  const result = await exportPhotorealScan(activeProject);
+                  return result.advancedDetails[0]?.value ?? "Internal files written.";
                 });
               }}
             />
@@ -421,7 +410,7 @@ export function ProjectReviewScreen({
                   [
                     `Project: ${storagePaths.projectUri}`,
                     `Masks: ${storagePaths.masksUri}`,
-                    `Reconstruction: ${storagePaths.reconstructionUri}`,
+                    `Internal alignment: ${storagePaths.reconstructionUri}`,
                     `Exports: ${storagePaths.exportsUri}`
                   ].join("\n")
                 )
@@ -443,10 +432,10 @@ export function ProjectReviewScreen({
             />
             <Button
               disabled={isRunning}
-              label="Save Reconstruction Plan"
+              label="Save Internal Alignment Plan"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Save Reconstruction Plan", () =>
+                void runAdvancedAction("Save Internal Alignment Plan", () =>
                   writeProjectExportJson(
                     activeProject,
                     "reconstruction-plan.json",
@@ -496,35 +485,36 @@ function OutputCard({ title, body }: OutputCardProps): ReactElement {
   );
 }
 
-interface OutputGroupProps {
-  title: string;
-  outputs: WorkflowGeneratedOutput[];
+interface PreviewStatusCardProps {
+  item: PreviewStatusItem;
 }
 
-function OutputGroup({ title, outputs }: OutputGroupProps): ReactElement {
+function PreviewStatusCard({ item }: PreviewStatusCardProps): ReactElement {
   return (
     <View style={styles.outputCard}>
-      <Text style={styles.simpleRowTitle}>{title}</Text>
-      {outputs.map((output) => (
-        <Text key={`${output.label}-${output.path}`} style={styles.simpleRowMeta}>
-          {output.label}: {output.uri ?? output.path}
-        </Text>
-      ))}
+      <Text style={styles.simpleRowTitle}>{item.label}</Text>
+      <Text style={styles.simpleRowMeta}>{item.status}</Text>
+      <Text style={styles.simpleRowMeta}>{item.detail}</Text>
     </View>
   );
 }
 
-function findOutputPath(
-  outputs: WorkflowGeneratedOutput[],
-  group: WorkflowGeneratedOutput["group"]
-): string | undefined {
-  const output = outputs.find((candidate) => candidate.group === group);
-  return output?.uri ?? output?.path;
+interface NormalExportsProps {
+  outputs: NormalExportItem[];
 }
 
-function findThreeDOutput(outputs: WorkflowGeneratedOutput[]): string | undefined {
-  const output = outputs.find((candidate) => candidate.group === "threeDFiles");
-  return output?.uri ?? output?.path;
+function NormalExports({ outputs }: NormalExportsProps): ReactElement {
+  return (
+    <>
+      {outputs.map((output) => (
+        <View key={output.type} style={styles.outputCard}>
+          <Text style={styles.simpleRowTitle}>{output.label}</Text>
+          <Text style={styles.simpleRowMeta}>{output.filename}</Text>
+          <Text style={styles.simpleRowMeta}>Status: {output.status}</Text>
+        </View>
+      ))}
+    </>
+  );
 }
 
 const styles = StyleSheet.create({

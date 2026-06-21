@@ -4,49 +4,52 @@ import { ForgeScanProjectManifest } from "../core/manifest";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
 import { createSegmentationPlan } from "../core/segmentationPlan";
 import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
+import { createPhotorealAsset } from "../reconstruction/splatting/photorealAsset";
 import { exportSplattingJob } from "../reconstruction/splatting/splattingPackage";
 import { runSegmentationForProject } from "../segmentation/LocalSegmentationEngine";
-import { writeProjectFile } from "../storage/projectStorage";
 import { writeViewerHtml } from "../storage/projectPackageWriter";
-
-export interface WorkflowGeneratedOutput {
-  label: string;
-  path: string;
-  uri?: string;
-  group:
-    | "interactiveViewer"
-    | "threeDFiles"
-    | "photorealPackage"
-    | "projectFiles";
-}
+import { writeProjectFile } from "../storage/projectStorage";
+import { NormalExportItem, createNormalExportItems } from "./exportArtifacts";
 
 export interface WorkflowAdvancedDetail {
   label: string;
   value: string;
 }
 
-export interface Create3DResultPipelineResult {
+export interface PreviewStatusItem {
+  label: string;
+  status: "Ready" | "Fallback" | "Unavailable";
+  detail: string;
+}
+
+export interface CreatePhotorealScanPipelineResult {
   success: boolean;
   userMessage: string;
   progressSteps: string[];
-  generatedOutputs: WorkflowGeneratedOutput[];
+  normalExports: NormalExportItem[];
+  previewStatus: PreviewStatusItem[];
   warnings: string[];
   advancedDetails: WorkflowAdvancedDetail[];
 }
 
-export async function create3DResult(
+export async function createPhotorealScan(
   manifest: ForgeScanProjectManifest
-): Promise<Create3DResultPipelineResult> {
+): Promise<CreatePhotorealScanPipelineResult> {
   const progressSteps = [
     "Checking capture",
     "Preparing object",
-    "Creating 3D preview",
-    "Preparing photoreal package",
-    "Creating viewer",
+    "Preparing alignment",
+    "Creating splat data",
+    "Preparing preview fallback",
     "Finished"
   ];
   const validation = validateProjectForReconstruction(manifest);
-  const generatedOutputs: WorkflowGeneratedOutput[] = [];
+  const photorealAsset = createPhotorealAsset(
+    manifest,
+    "requires-external-optimizer"
+  );
+  const normalExports = createNormalExportItems(manifest, photorealAsset);
+  const previewStatus = createPreviewStatus();
   const warnings: string[] = [];
   const advancedDetails: WorkflowAdvancedDetail[] = [];
 
@@ -55,7 +58,8 @@ export async function create3DResult(
       success: false,
       userMessage: validation.errors.join(" "),
       progressSteps: progressSteps.slice(0, 1),
-      generatedOutputs,
+      normalExports,
+      previewStatus,
       warnings: validation.warnings,
       advancedDetails: validation.errors.map((error) => ({
         label: "Capture issue",
@@ -84,50 +88,25 @@ export async function create3DResult(
   const splattingPackage = exportSplattingJob(manifest);
   const viewerUri = writeViewerHtml(manifest.project.id, manifest);
 
-  generatedOutputs.push(
-    {
-      label: "Preview Fallback",
-      path: "open_viewer.html",
-      uri: viewerUri,
-      group: "interactiveViewer"
-    },
-    ...reconstruction.artifacts
-      .filter((artifact) => artifact.role === "model" || artifact.role === "point-cloud")
-      .map((artifact) => ({
-        label:
-          artifact.format === "ply" ? "Internal Point Cloud" : "Internal Fallback Model",
-        path: artifact.path,
-        uri: artifact.uri,
-        group: "threeDFiles" as const
-      })),
-    {
-      label: "Internal Splat Inputs",
-      path: "exports/splatting-job.json",
-      group: "photorealPackage"
-    },
-    {
-      label: "Internal Source Data",
-      path: "exports/reconstruction-job.json",
-      group: "projectFiles"
-    }
-  );
-
   warnings.push(
     ...validation.warnings,
     ...segmentation.notes,
     ...reconstruction.warnings,
-    "Basic processing used. Higher-quality AI/photogrammetry can replace this later."
+    "Requires native/external splat optimizer",
+    "Preview fallback is available; no fake .ksplat was created."
   );
 
   advancedDetails.push(
-    { label: "Object separation engine", value: segmentation.engine },
-    { label: "Object separation result", value: `${segmentation.successfulFrames}/${segmentation.totalFrames} frames` },
-    { label: "Rough 3D engine", value: reconstruction.job.implementation },
-    { label: "Photoreal package frames", value: String(splattingPackage.frames.length) },
+    { label: "Primary .ksplat target", value: splattingPackage.primaryOutput },
+    { label: "Splatting package", value: "photoreal/splatting-job.json" },
+    { label: "Camera data", value: splattingPackage.cameraDataPath },
+    { label: "Preview fallback viewer", value: viewerUri },
+    { label: "Object preparation engine", value: segmentation.engine },
+    { label: "Object preparation result", value: `${segmentation.successfulFrames}/${segmentation.totalFrames} frames` },
+    { label: "Alignment/reconstruction engine", value: reconstruction.job.implementation },
     { label: "Segmentation plan", value: segmentationPlanUri },
     { label: "Reconstruction plan", value: reconstructionPlanUri },
     { label: "Export target plan", value: exportTargetsUri },
-    { label: "Internal splat inputs", value: "exports/splatting-job.json" },
     ...segmentation.artifacts.flatMap((artifact) => [
       { label: "Raw mask", value: artifact.rawMaskUri ?? artifact.rawMaskPath },
       {
@@ -143,10 +122,33 @@ export async function create3DResult(
 
   return {
     success: true,
-    userMessage: "3D result created. Preview is ready.",
+    userMessage:
+      "Photoreal scan inputs are ready. .ksplat requires native/external splat optimization.",
     progressSteps,
-    generatedOutputs,
+    normalExports,
+    previewStatus,
     warnings: [...new Set(warnings)],
     advancedDetails
   };
+}
+
+function createPreviewStatus(): PreviewStatusItem[] {
+  return [
+    {
+      label: "Photoreal Scan",
+      status: "Fallback",
+      detail:
+        ".ksplat preview requires native/external splat optimization. Showing capture preview fallback."
+    },
+    {
+      label: "Preview Video",
+      status: "Unavailable",
+      detail: "preview.mp4 is not generated in this Expo build."
+    },
+    {
+      label: "Preview GIF",
+      status: "Unavailable",
+      detail: "preview.gif is not generated in this Expo build."
+    }
+  ];
 }

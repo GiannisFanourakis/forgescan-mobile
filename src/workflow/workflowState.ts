@@ -5,7 +5,7 @@ export type WorkflowStage = "capture" | "processing" | "preview" | "export";
 
 export const workflowStageLabels: Record<WorkflowStage, string> = {
   capture: "Capture",
-  processing: "Photogrammetry / Splatting",
+  processing: "Splatting",
   preview: "Preview",
   export: "Export"
 };
@@ -60,11 +60,11 @@ export function getPrimaryActionLabel(
     case "capture":
       return isCaptureReady(manifest) ? "Review Capture" : "Continue Capture";
     case "processing":
-      return "Create 3D Result";
+      return "Create Photoreal Scan";
     case "preview":
       return "Open Preview";
     case "export":
-      return "Export Results";
+      return "Export .ksplat";
   }
 }
 
@@ -76,14 +76,14 @@ export function getPrimaryActionDescription(
   switch (stage) {
     case "capture":
       return isCaptureReady(manifest)
-        ? "Required rotations are complete. Review the capture before creating the 3D result."
+        ? "Required rotations are complete. Review the capture before creating the photoreal scan."
         : "Capture upright and tilted rotations. Add underside if you want more coverage.";
     case "processing":
-      return "Prepare object separation, rough 3D preview, photogrammetry package, photoreal package, and viewer files.";
+      return "Prepare object data, alignment, splat inputs, and the .ksplat export target.";
     case "preview":
-      return "Inspect the interactive viewer, rough 3D preview, captured frames, and photoreal package status.";
+      return "Inspect the best available photoreal scan preview and preview media status.";
     case "export":
-      return "Write grouped viewer, 3D files, photoreal package, and project files.";
+      return "Export the .ksplat target and preview media status.";
   }
 }
 

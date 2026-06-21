@@ -7,11 +7,11 @@ import {
 
 export const androidReconstructionEngine: PlatformReconstructionEngine = {
   platform: "android",
-  displayName: "Android local reconstruction",
-  nativeModuleName: "ForgeScanAndroidReconstruction",
+  displayName: "Android local splatting",
+  nativeModuleName: "ForgeScanAndroidSplatting",
   implementationStatus: "native-track",
   summary:
-    "Android will use the shared capture workflow, then add ARCore, Kotlin/C++ NDK, OpenCV, MediaPipe or LiteRT, and GPU acceleration for local reconstruction.",
+    "Android will use the shared capture workflow, then add ARCore, Kotlin/C++ NDK, OpenCV, MediaPipe or LiteRT, and GPU acceleration for local .ksplat optimization.",
   capabilities: [
     {
       id: "capture",
@@ -36,24 +36,24 @@ export const androidReconstructionEngine: PlatformReconstructionEngine = {
     },
     {
       id: "segmentation",
-      label: "On-device segmentation",
+      label: "On-device object masks",
       status: "planned",
       detail:
-        "MediaPipe or LiteRT can provide local masks before pose estimation and reconstruction."
+        "MediaPipe or LiteRT can provide local object masks before pose and splat optimization."
     },
     {
-      id: "reconstruction",
-      label: "Native mesh or splat reconstruction",
+      id: "splatting",
+      label: "Native splat optimization",
       status: "requires-native-build",
       detail:
-        "Heavy reconstruction should live in Kotlin/C++ with NDK and GPU acceleration."
+        "Heavy .ksplat optimization should live in Kotlin/C++ with NDK and GPU acceleration."
     },
     {
       id: "exports",
-      label: "GLB/USDZ/OBJ/STL export",
+      label: ".ksplat export",
       status: "planned",
       detail:
-        "Export targets are defined now; binary model writers come after reconstruction output exists."
+        "The normal final output is ForgeScan_{projectName}.ksplat."
     }
   ],
   roadmap: [
@@ -73,13 +73,13 @@ export const androidReconstructionEngine: PlatformReconstructionEngine = {
       order: 3,
       title: "Build Android native module",
       detail:
-        "Expose Kotlin/C++ calls for masks, poses, alignment, reconstruction, and model export."
+        "Expose Kotlin/C++ calls for masks, poses, alignment, splat optimization, and .ksplat export."
     },
     {
       order: 4,
-      title: "Ship device-tiered reconstruction",
+      title: "Ship device-tiered splatting",
       detail:
-        "Run full local reconstruction on high-end devices and capture-only export elsewhere."
+        "Run local .ksplat optimization on high-end devices and optimizer-ready export elsewhere."
     }
   ],
   createJobPlan: createAndroidJobPlan
@@ -95,7 +95,7 @@ function createAndroidJobPlan(
     projectId: manifest.project.id,
     projectTitle: manifest.project.title,
     status: "plan-only",
-    nativeModuleName: "ForgeScanAndroidReconstruction",
+    nativeModuleName: "ForgeScanAndroidSplatting",
     aiModel: {
       id: model.id,
       label: model.label,
@@ -117,9 +117,9 @@ function createAndroidJobPlan(
       "MediaPipe or LiteRT segmentation",
       "OpenCV feature matching",
       "ARCore pose and optional depth fusion",
-      "Kotlin/C++ reconstruction",
-      "GLB/USDZ/OBJ/STL export",
-      "HTML/MP4/GIF preview export"
+      "Kotlin/C++ splat optimization",
+      ".ksplat export",
+      "MP4/GIF preview export"
     ]
   };
 }

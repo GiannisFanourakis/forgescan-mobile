@@ -70,7 +70,7 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
         2
       )
     );
-    setSaveMessage(`Reconstruction plan saved: ${uri}`);
+    setSaveMessage(`Internal splat plan saved: ${uri}`);
   }
 
   return (
@@ -78,7 +78,7 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
       <Section>
         <Text style={styles.title}>{plan.projectTitle}</Text>
         <Text style={styles.meta}>
-          Capture package staged for reconstruction processing.
+          Capture package staged for internal splat preparation.
         </Text>
       </Section>
 
@@ -89,14 +89,14 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
         </Text>
         <Text style={styles.summaryMeta}>
           {plan.captureSummary.totalVideos} videos /{" "}
-          Target exports: {plan.targetFormats.join(", ")}
+          Splat targets: {plan.targetFormats.join(", ")}
         </Text>
       </View>
 
       <Section>
-        <Text style={styles.sectionTitle}>AI reconstruction model</Text>
+        <Text style={styles.sectionTitle}>AI splat model</Text>
         <Text style={styles.meta}>
-          Choose the model path before exporting the reconstruction plan.
+          Choose the internal model path before saving the splat plan.
         </Text>
         {reconstructionModels.map((model) => (
           <ModelCard
@@ -127,7 +127,7 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
 
       <Section>
         <Button
-          label="Save Reconstruction Plan"
+          label="Save Internal Splat Plan"
           variant="secondary"
           onPress={handleSavePlan}
         />
