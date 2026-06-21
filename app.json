@@ -29,6 +29,14 @@
         {
           "cameraPermission": "ForgeScan uses the camera to capture ordered object frames for local 3D reconstruction projects."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "ForgeScan can open your system camera app to capture high-quality object frames.",
+          "microphonePermission": false,
+          "photosPermission": false
+        }
       ]
     ]
   }

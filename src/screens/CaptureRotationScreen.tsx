@@ -1,8 +1,18 @@
+import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { CameraCapturedPicture, CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import type { ReactElement } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
@@ -42,6 +52,7 @@ export function CaptureRotationScreen({
     getProject,
     retakeLastFrame
   } = useProjects();
+  const isFocused = useIsFocused();
   const cameraRef = useRef<CameraView>(null);
   const captureInFlightRef = useRef(false);
   const burstStopRequestedRef = useRef(false);
@@ -49,6 +60,7 @@ export function CaptureRotationScreen({
   const burstDelayResolveRef = useRef<(() => void) | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isLaunchingSystemCamera, setIsLaunchingSystemCamera] = useState(false);
   const [isBurstRunning, setIsBurstRunning] = useState(false);
   const [captureMode, setCaptureMode] =
     useState<CaptureTimingMode>("single");
@@ -58,11 +70,19 @@ export function CaptureRotationScreen({
   const [zoomLevel, setZoomLevel] = useState(0);
   const [focusMode, setFocusMode] = useState<FocusMode>("off");
   const [burstStatus, setBurstStatus] = useState<string | null>(null);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [cameraMountError, setCameraMountError] = useState<string | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const project = getProject(route.params.projectId);
   const rotation = project?.capture.rotations.find(
     (candidate) => candidate.id === route.params.rotationId
   );
+
+  useEffect(() => {
+    if (!isFocused) {
+      setIsCameraReady(false);
+    }
+  }, [isFocused]);
 
   if (!project || !rotation) {
     return (
@@ -80,6 +100,8 @@ export function CaptureRotationScreen({
   const canCapture = remainingFrames > 0;
   const projectId = project.project.id;
   const rotationId = rotation.id;
+  const canUseCamera =
+    permission?.granted === true && isCameraReady && !cameraMountError;
 
   function handleCompleteRotation(): void {
     completeRotation(projectId, rotationId);
@@ -90,8 +112,63 @@ export function CaptureRotationScreen({
     await captureOneFrame();
   }
 
+  async function handleSystemCameraCapture(): Promise<void> {
+    if (!canCapture || isLaunchingSystemCamera || isBurstRunning) {
+      return;
+    }
+
+    setCaptureError(null);
+    setIsLaunchingSystemCamera(true);
+
+    try {
+      const systemPermission = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!systemPermission.granted) {
+        setCaptureError("System camera access was denied.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        cameraType: ImagePicker.CameraType.back,
+        exif: true,
+        mediaTypes: ["images"],
+        quality: 1
+      });
+
+      if (result.canceled || !result.assets[0]) {
+        return;
+      }
+
+      await saveImagePickerFrame(result.assets[0]);
+    } catch (error: unknown) {
+      setCaptureError(
+        error instanceof Error
+          ? error.message
+          : "System camera capture failed."
+      );
+    } finally {
+      setIsLaunchingSystemCamera(false);
+    }
+  }
+
+  async function saveImagePickerFrame(
+    asset: ImagePicker.ImagePickerAsset
+  ): Promise<void> {
+    await addCapturedFrame(projectId, rotationId, {
+      uri: asset.uri,
+      ...(asset.width > 0 ? { width: asset.width } : {}),
+      ...(asset.height > 0 ? { height: asset.height } : {})
+    });
+  }
+
   async function captureOneFrame(): Promise<boolean> {
-    if (!cameraRef.current || !canCapture || captureInFlightRef.current) {
+    if (
+      !cameraRef.current ||
+      !canCapture ||
+      !canUseCamera ||
+      captureInFlightRef.current
+    ) {
       return false;
     }
 
@@ -124,7 +201,7 @@ export function CaptureRotationScreen({
   }
 
   async function handleStartBurst(): Promise<void> {
-    if (!permission?.granted || !canCapture || isBurstRunning) {
+    if (!canUseCamera || !canCapture || isBurstRunning) {
       return;
     }
 
@@ -209,16 +286,29 @@ export function CaptureRotationScreen({
 
     return (
       <View style={styles.cameraShell}>
-        <CameraView
-          ref={cameraRef}
-          autofocus={focusMode}
-          enableTorch={torchEnabled}
-          facing="back"
-          responsiveOrientationWhenOrientationLocked
-          style={styles.cameraView}
-          zoom={zoomLevel}
-        />
+        {isFocused ? (
+          <CameraView
+            key={`${projectId}-${rotationId}`}
+            ref={cameraRef}
+            autofocus={focusMode}
+            enableTorch={torchEnabled}
+            facing="back"
+            onCameraReady={() => {
+              setIsCameraReady(true);
+              setCameraMountError(null);
+            }}
+            onMountError={(event) => {
+              setIsCameraReady(false);
+              setCameraMountError(event.message);
+            }}
+            style={styles.cameraView}
+            zoom={zoomLevel}
+          />
+        ) : null}
         <View pointerEvents="none" style={styles.cameraOverlay}>
+          {!isCameraReady && !cameraMountError ? (
+            <Text style={styles.previewStatus}>Starting camera</Text>
+          ) : null}
           <View style={styles.guideCircle} />
           <View style={styles.guideLineHorizontal} />
           <View style={styles.guideLineVertical} />
@@ -242,251 +332,304 @@ export function CaptureRotationScreen({
   }
 
   return (
-    <Screen>
-      <Section>
+    <SafeAreaView style={styles.screenRoot}>
+      <View style={styles.headerSection}>
         <Text style={styles.title}>{rotation.label}</Text>
         <Text style={styles.meta}>{rotation.angleHint}</Text>
-      </Section>
+      </View>
 
       {renderCamera()}
 
-      <Section>
-        <View style={styles.counterRow}>
-          <View>
-            <Text style={styles.counterLabel}>Frames</Text>
-            <Text style={styles.counterSubLabel}>
-              {remainingFrames} remaining
-            </Text>
-          </View>
-          <Text style={styles.counterValue}>
-            {frameCount}/{targetFrameCount}
-          </Text>
-        </View>
-        {lastFrame ? (
-          <View style={styles.lastFrameRow}>
-            <Image source={{ uri: lastFrame.uri }} style={styles.thumbnail} />
-            <View style={styles.lastFrameText}>
-              <Text style={styles.lastFrameTitle}>{lastFrame.filename}</Text>
-              <Text style={styles.lastFrameMeta}>
-                {lastFrame.width ?? "?"} x {lastFrame.height ?? "?"}
+      <ScrollView contentContainerStyle={styles.controlContent}>
+        <Section>
+          <View style={styles.counterRow}>
+            <View>
+              <Text style={styles.counterLabel}>Frames</Text>
+              <Text style={styles.counterSubLabel}>
+                {remainingFrames} remaining
               </Text>
             </View>
+            <Text style={styles.counterValue}>
+              {frameCount}/{targetFrameCount}
+            </Text>
           </View>
-        ) : null}
-        {captureError ? (
-          <Text style={styles.errorMessage}>{captureError}</Text>
-        ) : null}
-      </Section>
-
-      <Section>
-        <View style={styles.captureConsole}>
-          <View style={styles.consoleHeader}>
-            <Text style={styles.consoleTitle}>Capture</Text>
-            {isBurstRunning ? (
-              <Text style={styles.livePill}>Burst active</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.segmentedControl}>
-            {captureModeOptions.map((option) => {
-              const isActive = captureMode === option.value;
-
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={isBurstRunning}
-                  key={option.value}
-                  onPress={() => setCaptureMode(option.value)}
-                  style={({ pressed }) => [
-                    styles.segmentButton,
-                    isActive ? styles.segmentButtonActive : undefined,
-                    pressed && !isBurstRunning ? styles.pressed : undefined,
-                    isBurstRunning ? styles.segmentButtonDisabled : undefined
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.segmentLabel,
-                      isActive ? styles.segmentLabelActive : undefined
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {captureMode === "burst" ? (
-            <View style={styles.optionBlock}>
-              <Text style={styles.optionLabel}>Interval</Text>
-              <View style={styles.chipRow}>
-                {burstIntervalOptions.map((option) => {
-                  const isActive = burstIntervalMs === option.value;
-
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={isBurstRunning}
-                      key={option.value}
-                      onPress={() => setBurstIntervalMs(option.value)}
-                      style={({ pressed }) => [
-                        styles.chip,
-                        isActive ? styles.chipActive : undefined,
-                        pressed && !isBurstRunning ? styles.pressed : undefined,
-                        isBurstRunning ? styles.chipDisabled : undefined
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipLabel,
-                          isActive ? styles.chipLabelActive : undefined
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+          {lastFrame ? (
+            <View style={styles.lastFrameRow}>
+              <Image source={{ uri: lastFrame.uri }} style={styles.thumbnail} />
+              <View style={styles.lastFrameText}>
+                <Text style={styles.lastFrameTitle}>{lastFrame.filename}</Text>
+                <Text style={styles.lastFrameMeta}>
+                  {lastFrame.width ?? "?"} x {lastFrame.height ?? "?"}
+                </Text>
               </View>
             </View>
           ) : null}
+          {cameraMountError ? (
+            <Text style={styles.errorMessage}>
+              Camera preview error: {cameraMountError}
+            </Text>
+          ) : null}
+          {captureError ? (
+            <Text style={styles.errorMessage}>{captureError}</Text>
+          ) : null}
+        </Section>
 
-          <View style={styles.optionBlock}>
-            <Text style={styles.optionLabel}>Camera</Text>
-            <View style={styles.cameraControlGrid}>
-              <Pressable
-                accessibilityRole="button"
-                disabled={isBurstRunning}
-                onPress={() => setTorchEnabled((enabled) => !enabled)}
-                style={({ pressed }) => [
-                  styles.deviceButton,
-                  torchEnabled ? styles.deviceButtonActive : undefined,
-                  pressed && !isBurstRunning ? styles.pressed : undefined,
-                  isBurstRunning ? styles.chipDisabled : undefined
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.deviceButtonLabel,
-                    torchEnabled ? styles.deviceButtonLabelActive : undefined
-                  ]}
-                >
-                  {torchEnabled ? "Torch On" : "Torch Off"}
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                disabled={isBurstRunning}
-                onPress={() =>
-                  setFocusMode((mode) => (mode === "off" ? "on" : "off"))
-                }
-                style={({ pressed }) => [
-                  styles.deviceButton,
-                  focusMode === "on" ? styles.deviceButtonActive : undefined,
-                  pressed && !isBurstRunning ? styles.pressed : undefined,
-                  isBurstRunning ? styles.chipDisabled : undefined
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.deviceButtonLabel,
-                    focusMode === "on"
-                      ? styles.deviceButtonLabelActive
-                      : undefined
-                  ]}
-                >
-                  {focusMode === "on" ? "AF Lock" : "AF Auto"}
-                </Text>
-              </Pressable>
+        <Section>
+          <View style={styles.captureConsole}>
+            <View style={styles.consoleHeader}>
+              <Text style={styles.consoleTitle}>Capture</Text>
+              {isBurstRunning ? (
+                <Text style={styles.livePill}>Burst active</Text>
+              ) : null}
             </View>
-          </View>
 
-          <View style={styles.optionBlock}>
-            <Text style={styles.optionLabel}>Zoom</Text>
-            <View style={styles.chipRow}>
-              {zoomOptions.map((option) => {
-                const isActive = zoomLevel === option.value;
+            <View style={styles.segmentedControl}>
+              {captureModeOptions.map((option) => (
+                <ToggleOption
+                  disabled={isBurstRunning}
+                  key={option.value}
+                  label={option.label}
+                  selected={captureMode === option.value}
+                  onPress={() => setCaptureMode(option.value)}
+                />
+              ))}
+            </View>
 
-                return (
-                  <Pressable
-                    accessibilityRole="button"
+            {captureMode === "burst" ? (
+              <View style={styles.optionBlock}>
+                <Text style={styles.optionLabel}>Interval</Text>
+                <View style={styles.chipRow}>
+                  {burstIntervalOptions.map((option) => (
+                    <ChipOption
+                      disabled={isBurstRunning}
+                      key={option.value}
+                      label={option.label}
+                      selected={burstIntervalMs === option.value}
+                      onPress={() => setBurstIntervalMs(option.value)}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.optionBlock}>
+              <Text style={styles.optionLabel}>Camera</Text>
+              <View style={styles.cameraControlGrid}>
+                <DeviceOption
+                  disabled={isBurstRunning}
+                  label={torchEnabled ? "Torch On" : "Torch Off"}
+                  selected={torchEnabled}
+                  onPress={() => setTorchEnabled((enabled) => !enabled)}
+                />
+                <DeviceOption
+                  disabled={isBurstRunning}
+                  label={focusMode === "on" ? "AF Lock" : "AF Auto"}
+                  selected={focusMode === "on"}
+                  onPress={() =>
+                    setFocusMode((mode) => (mode === "off" ? "on" : "off"))
+                  }
+                />
+              </View>
+              <Button
+                disabled={!canCapture || isLaunchingSystemCamera || isBurstRunning}
+                label={
+                  isLaunchingSystemCamera
+                    ? "Opening System Camera"
+                    : "Use System Camera"
+                }
+                variant="secondary"
+                onPress={handleSystemCameraCapture}
+              />
+            </View>
+
+            <View style={styles.optionBlock}>
+              <Text style={styles.optionLabel}>Zoom</Text>
+              <View style={styles.chipRow}>
+                {zoomOptions.map((option) => (
+                  <ChipOption
                     disabled={isBurstRunning}
                     key={option.label}
+                    label={option.label}
+                    selected={zoomLevel === option.value}
                     onPress={() => setZoomLevel(option.value)}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      isActive ? styles.chipActive : undefined,
-                      pressed && !isBurstRunning ? styles.pressed : undefined,
-                      isBurstRunning ? styles.chipDisabled : undefined
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipLabel,
-                        isActive ? styles.chipLabelActive : undefined
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                  />
+                ))}
+              </View>
             </View>
           </View>
-        </View>
-      </Section>
+        </Section>
 
-      <Section>
-        {captureMode === "burst" ? (
-          <Button
-            disabled={
-              !isBurstRunning &&
-              (!canCapture || isCapturing || !permission?.granted)
-            }
-            label={
-              isBurstRunning
-                ? "Stop Burst"
-                : canCapture
-                  ? `Start Burst (${remainingFrames})`
+        <Section>
+          {captureMode === "burst" ? (
+            <Button
+              disabled={!isBurstRunning && (!canCapture || !canUseCamera)}
+              label={
+                isBurstRunning
+                  ? "Stop Burst"
+                  : canCapture
+                    ? `Start Burst (${remainingFrames})`
+                    : "Frame Target Reached"
+              }
+              variant={isBurstRunning ? "danger" : "primary"}
+              onPress={isBurstRunning ? handleStopBurst : handleStartBurst}
+            />
+          ) : (
+            <Button
+              disabled={
+                !canCapture ||
+                isCapturing ||
+                isLaunchingSystemCamera ||
+                isBurstRunning ||
+                !canUseCamera
+              }
+              label={
+                canCapture
+                  ? isCapturing
+                    ? "Capturing"
+                    : "Capture Frame"
                   : "Frame Target Reached"
-            }
-            variant={isBurstRunning ? "danger" : "primary"}
-            onPress={isBurstRunning ? handleStopBurst : handleStartBurst}
-          />
-        ) : (
+              }
+              onPress={handleCaptureFrame}
+            />
+          )}
           <Button
             disabled={
-              !canCapture || isCapturing || isBurstRunning || !permission?.granted
+              frameCount === 0 ||
+              isBurstRunning ||
+              isCapturing ||
+              isLaunchingSystemCamera
             }
-            label={
-              canCapture
-                ? isCapturing
-                  ? "Capturing"
-                  : "Capture Frame"
-                : "Frame Target Reached"
-            }
-            onPress={handleCaptureFrame}
+            label="Retake Last Frame"
+            variant="secondary"
+            onPress={() => retakeLastFrame(projectId, rotationId)}
           />
-        )}
-        <Button
-          disabled={frameCount === 0 || isBurstRunning || isCapturing}
-          label="Retake Last Frame"
-          variant="secondary"
-          onPress={() => retakeLastFrame(projectId, rotationId)}
-        />
-        <Button
-          disabled={frameCount === 0 || isBurstRunning || isCapturing}
-          label="Complete Rotation"
-          variant="secondary"
-          onPress={handleCompleteRotation}
-        />
-      </Section>
-    </Screen>
+          <Button
+            disabled={
+              frameCount === 0 ||
+              isBurstRunning ||
+              isCapturing ||
+              isLaunchingSystemCamera
+            }
+            label="Complete Rotation"
+            variant="secondary"
+            onPress={handleCompleteRotation}
+          />
+        </Section>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+interface OptionProps {
+  label: string;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+function ToggleOption({
+  label,
+  selected,
+  disabled,
+  onPress
+}: OptionProps): ReactElement {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.segmentButton,
+        selected ? styles.segmentButtonActive : undefined,
+        pressed && !disabled ? styles.pressed : undefined,
+        disabled ? styles.segmentButtonDisabled : undefined
+      ]}
+    >
+      <Text
+        style={[
+          styles.segmentLabel,
+          selected ? styles.segmentLabelActive : undefined
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ChipOption({
+  label,
+  selected,
+  disabled,
+  onPress
+}: OptionProps): ReactElement {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        selected ? styles.chipActive : undefined,
+        pressed && !disabled ? styles.pressed : undefined,
+        disabled ? styles.chipDisabled : undefined
+      ]}
+    >
+      <Text
+        style={[styles.chipLabel, selected ? styles.chipLabelActive : undefined]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function DeviceOption({
+  label,
+  selected,
+  disabled,
+  onPress
+}: OptionProps): ReactElement {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.deviceButton,
+        selected ? styles.deviceButtonActive : undefined,
+        pressed && !disabled ? styles.pressed : undefined,
+        disabled ? styles.chipDisabled : undefined
+      ]}
+    >
+      <Text
+        style={[
+          styles.deviceButtonLabel,
+          selected ? styles.deviceButtonLabelActive : undefined
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  screenRoot: {
+    backgroundColor: colors.background,
+    flex: 1
+  },
+  headerSection: {
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md
+  },
+  controlContent: {
+    gap: spacing.md,
+    padding: spacing.md,
+    paddingBottom: spacing.xl
+  },
   title: {
     color: colors.text,
     fontSize: 24,
@@ -501,6 +644,7 @@ const styles = StyleSheet.create({
     aspectRatio: 3 / 4,
     backgroundColor: colors.text,
     borderRadius: 8,
+    marginHorizontal: spacing.md,
     overflow: "hidden"
   },
   cameraView: {
@@ -510,6 +654,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center"
+  },
+  previewStatus: {
+    backgroundColor: "rgba(20, 27, 25, 0.72)",
+    borderRadius: 8,
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+    overflow: "hidden",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    position: "absolute",
+    zIndex: 2
   },
   overlayTop: {
     backgroundColor: "rgba(20, 27, 25, 0.72)",
@@ -585,6 +741,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     justifyContent: "center",
+    marginHorizontal: spacing.md,
     padding: spacing.md
   },
   cameraTitle: {
@@ -733,9 +890,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
+    justifyContent: "center",
     minHeight: 40,
     minWidth: 72,
-    justifyContent: "center",
     paddingHorizontal: spacing.md
   },
   chipActive: {
