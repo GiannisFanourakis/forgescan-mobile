@@ -14,13 +14,17 @@ import {
   ForgeScanProjectManifest,
   RotationId,
   addFrameToRotation,
+  addVideoToRotation,
   createNewProjectManifest,
   markRotationComplete,
   removeLastFrameFromRotation,
+  removeLastVideoFromRotation,
   setRotationStatus
 } from "../core/manifest";
 import {
   copyCapturedFrameToProject,
+  copyCapturedVideoToProject,
+  deleteProjectStorage,
   deleteStoredFile,
   ensureProjectStorage,
   loadStoredProjectManifests,
@@ -33,6 +37,11 @@ interface CapturedPhotoInput {
   height?: number;
 }
 
+interface CapturedVideoInput {
+  uri: string;
+  durationMs?: number;
+}
+
 interface ProjectContextValue {
   projects: ForgeScanProjectManifest[];
   isLoadingProjects: boolean;
@@ -42,6 +51,7 @@ interface ProjectContextValue {
     targetFrameCount: number,
     includeUnderside: boolean
   ) => ForgeScanProjectManifest;
+  deleteProject: (projectId: string) => void;
   getProject: (projectId: string) => ForgeScanProjectManifest | undefined;
   startRotation: (projectId: string, rotationId: RotationId) => void;
   addCapturedFrame: (
@@ -49,7 +59,13 @@ interface ProjectContextValue {
     rotationId: RotationId,
     photo: CapturedPhotoInput
   ) => Promise<void>;
+  addCapturedVideo: (
+    projectId: string,
+    rotationId: RotationId,
+    video: CapturedVideoInput
+  ) => Promise<void>;
   retakeLastFrame: (projectId: string, rotationId: RotationId) => void;
+  deleteLastVideo: (projectId: string, rotationId: RotationId) => void;
   completeRotation: (projectId: string, rotationId: RotationId) => void;
 }
 
@@ -143,6 +159,17 @@ export function ProjectProvider({
     []
   );
 
+  const deleteProject = useCallback((projectId: string) => {
+    deleteProjectStorage(projectId);
+    setProjects((currentProjects) => {
+      const updatedProjects = currentProjects.filter(
+        (project) => project.project.id !== projectId
+      );
+      projectsRef.current = updatedProjects;
+      return updatedProjects;
+    });
+  }, []);
+
   const getProject = useCallback(
     (projectId: string): ForgeScanProjectManifest | undefined =>
       projects.find((project) => project.project.id === projectId),
@@ -208,6 +235,52 @@ export function ProjectProvider({
     []
   );
 
+  const addCapturedVideo = useCallback(
+    async (
+      projectId: string,
+      rotationId: RotationId,
+      video: CapturedVideoInput
+    ) => {
+      const currentProject = projectsRef.current.find(
+        (project) => project.project.id === projectId
+      );
+      const rotation = currentProject?.capture.rotations.find(
+        (candidate) => candidate.id === rotationId
+      );
+
+      if (!currentProject || !rotation) {
+        return;
+      }
+
+      const videos = rotation.videos ?? [];
+      const nextVideoIndex =
+        videos.length > 0
+          ? Math.max(...videos.map((storedVideo) => storedVideo.index)) + 1
+          : 1;
+      const storedUri = await copyCapturedVideoToProject(
+        currentProject,
+        rotationId,
+        video.uri,
+        nextVideoIndex
+      );
+      const updatedProject = addVideoToRotation(currentProject, rotationId, {
+        uri: storedUri,
+        ...(video.durationMs !== undefined
+          ? { durationMs: video.durationMs }
+          : {})
+      });
+
+      persistProjectManifest(updatedProject);
+      const updatedProjects = projectsRef.current.map((project) =>
+        project.project.id === projectId ? updatedProject : project
+      );
+
+      projectsRef.current = updatedProjects;
+      setProjects(updatedProjects);
+    },
+    []
+  );
+
   const retakeLastFrame = useCallback(
     (projectId: string, rotationId: RotationId) => {
       updateProject(projectId, (project) =>
@@ -222,6 +295,27 @@ export function ProjectProvider({
           }
 
           return removeLastFrameFromRotation(project, rotationId);
+        }
+      );
+    },
+    [updateProject]
+  );
+
+  const deleteLastVideo = useCallback(
+    (projectId: string, rotationId: RotationId) => {
+      updateProject(projectId, (project) =>
+        {
+          const rotation = project.capture.rotations.find(
+            (candidate) => candidate.id === rotationId
+          );
+          const videos = rotation?.videos ?? [];
+          const lastVideo = videos[videos.length - 1];
+
+          if (lastVideo) {
+            deleteStoredFile(lastVideo.uri);
+          }
+
+          return removeLastVideoFromRotation(project, rotationId);
         }
       );
     },
@@ -243,10 +337,13 @@ export function ProjectProvider({
       isLoadingProjects,
       storageError,
       createProject,
+      deleteProject,
       getProject,
       startRotation,
       addCapturedFrame,
+      addCapturedVideo,
       retakeLastFrame,
+      deleteLastVideo,
       completeRotation
     }),
     [
@@ -254,10 +351,13 @@ export function ProjectProvider({
       isLoadingProjects,
       storageError,
       createProject,
+      deleteProject,
       getProject,
       startRotation,
       addCapturedFrame,
+      addCapturedVideo,
       retakeLastFrame,
+      deleteLastVideo,
       completeRotation
     ]
   );

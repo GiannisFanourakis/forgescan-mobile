@@ -21,12 +21,19 @@ export function HomeScreen({ navigation }: Props): ReactElement {
           <ForgeScanLogo showWordmark />
         </View>
 
-        <View style={styles.hero}>
-          <ForgeScanLogo size={112} />
-          <Text style={styles.title}>Capture. Reconstruct. Export.</Text>
-          <Text style={styles.subtitle}>
-            Phone-based object capture for clean 3D project packages.
-          </Text>
+        <View style={styles.previewPanel}>
+          <View style={styles.previewGrid}>
+            <View style={styles.previewRing} />
+            <View style={styles.previewLineHorizontal} />
+            <View style={styles.previewLineVertical} />
+          </View>
+          <View style={styles.previewBrand}>
+            <ForgeScanLogo size={72} />
+            <View style={styles.previewText}>
+              <Text style={styles.title}>ForgeScan</Text>
+              <Text style={styles.subtitle}>3D capture studio</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.actionGrid}>
@@ -162,34 +169,64 @@ const styles = StyleSheet.create({
   brandRow: {
     alignItems: "flex-start"
   },
-  hero: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+  previewPanel: {
+    backgroundColor: "#101817",
     borderRadius: 8,
-    borderWidth: 1,
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
+    minHeight: 248,
+    overflow: "hidden",
+    padding: spacing.lg,
+    position: "relative",
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.16,
     shadowRadius: 22,
     elevation: 3
   },
+  previewGrid: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  previewRing: {
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 999,
+    borderWidth: 2,
+    height: "54%",
+    width: "70%"
+  },
+  previewLineHorizontal: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    height: 1,
+    position: "absolute",
+    width: "76%"
+  },
+  previewLineVertical: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    height: "62%",
+    position: "absolute",
+    width: 1
+  },
+  previewBrand: {
+    alignItems: "flex-start",
+    flex: 1,
+    gap: spacing.md,
+    justifyContent: "flex-end"
+  },
+  previewText: {
+    gap: 4
+  },
   title: {
-    color: colors.text,
+    color: "#ffffff",
     fontSize: 32,
     fontWeight: "900",
-    lineHeight: 38,
-    textAlign: "center"
+    lineHeight: 38
   },
   subtitle: {
-    color: colors.mutedText,
+    color: "#dfece8",
     fontSize: 15,
+    fontWeight: "800",
     lineHeight: 22,
-    maxWidth: 290,
-    textAlign: "center"
+    textTransform: "uppercase"
   },
   actionGrid: {
     flexDirection: "row",

@@ -68,6 +68,14 @@ export interface CapturedFrame {
   qualityChecks: FrameQualityChecks;
 }
 
+export interface CapturedVideo {
+  index: number;
+  filename: string;
+  uri: string;
+  durationMs?: number;
+  capturedAt: string;
+}
+
 export interface CaptureRotation {
   id: RotationId;
   label: string;
@@ -75,6 +83,7 @@ export interface CaptureRotation {
   status: RotationStatus;
   angleHint: string;
   frames: CapturedFrame[];
+  videos?: CapturedVideo[];
 }
 
 export interface CaptureSettings {
@@ -151,6 +160,12 @@ export interface AddFrameInput {
   capturedAt?: string;
   camera?: CameraMetadata;
   qualityChecks?: Partial<FrameQualityChecks>;
+}
+
+export interface AddVideoInput {
+  uri: string;
+  durationMs?: number;
+  capturedAt?: string;
 }
 
 const rotationTemplates: Record<
@@ -329,6 +344,68 @@ export function removeLastFrameFromRotation(
   });
 }
 
+export function addVideoToRotation(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId,
+  videoInput: AddVideoInput
+): ForgeScanProjectManifest {
+  const updatedRotations: CaptureRotation[] = manifest.capture.rotations.map((rotation) => {
+    if (rotation.id !== rotationId) {
+      return rotation;
+    }
+
+    const existingVideos = rotation.videos ?? [];
+    const nextIndex = getNextVideoIndex(existingVideos);
+    const video: CapturedVideo = {
+      index: nextIndex,
+      filename: createVideoFilename(nextIndex),
+      uri: videoInput.uri,
+      capturedAt: videoInput.capturedAt ?? new Date().toISOString(),
+      ...(videoInput.durationMs !== undefined
+        ? { durationMs: videoInput.durationMs }
+        : {})
+    };
+
+    return {
+      ...rotation,
+      status: rotation.status === "complete" ? "complete" : "capturing",
+      videos: [...existingVideos, video]
+    };
+  });
+
+  return updateProjectTimestamp({
+    ...manifest,
+    capture: {
+      ...manifest.capture,
+      rotations: updatedRotations
+    }
+  });
+}
+
+export function removeLastVideoFromRotation(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId
+): ForgeScanProjectManifest {
+  const updatedRotations: CaptureRotation[] = manifest.capture.rotations.map((rotation) => {
+    if (rotation.id !== rotationId) {
+      return rotation;
+    }
+
+    return {
+      ...rotation,
+      videos: (rotation.videos ?? []).slice(0, -1)
+    };
+  });
+
+  return updateProjectTimestamp({
+    ...manifest,
+    capture: {
+      ...manifest.capture,
+      rotations: updatedRotations
+    }
+  });
+}
+
 export function markRotationComplete(
   manifest: ForgeScanProjectManifest,
   rotationId: RotationId
@@ -358,6 +435,10 @@ export function createFrameFilename(index: number): string {
   return `frame_${String(index).padStart(3, "0")}.jpg`;
 }
 
+export function createVideoFilename(index: number): string {
+  return `video_${String(index).padStart(3, "0")}.mp4`;
+}
+
 function createDefaultRotations(): CaptureRotation[] {
   return [
     createRotation("upright"),
@@ -370,7 +451,8 @@ function createRotation(id: RotationId): CaptureRotation {
   return {
     ...rotationTemplates[id],
     status: "pending",
-    frames: []
+    frames: [],
+    videos: []
   };
 }
 
@@ -380,6 +462,14 @@ function getNextFrameIndex(frames: CapturedFrame[]): number {
   }
 
   return Math.max(...frames.map((frame) => frame.index)) + 1;
+}
+
+function getNextVideoIndex(videos: CapturedVideo[]): number {
+  if (videos.length === 0) {
+    return 1;
+  }
+
+  return Math.max(...videos.map((video) => video.index)) + 1;
 }
 
 function createProjectId(timestamp: string): string {

@@ -25,11 +25,11 @@
     },
     "plugins": [
       [
-        "expo-image-picker",
+        "expo-camera",
         {
-          "cameraPermission": "ForgeScan opens your system camera app to capture high-quality object frames.",
+          "cameraPermission": "ForgeScan uses the camera for photo, timed burst, and muted video object capture.",
           "microphonePermission": false,
-          "photosPermission": false
+          "recordAudioAndroid": false
         }
       ]
     ]

@@ -3,7 +3,8 @@ import { Directory, File, Paths } from "expo-file-system";
 import {
   ForgeScanProjectManifest,
   RotationId,
-  createFrameFilename
+  createFrameFilename,
+  createVideoFilename
 } from "../core/manifest";
 
 export interface ProjectStoragePaths {
@@ -24,6 +25,14 @@ export function getProjectsRootDirectory(): Directory {
 
 export function getProjectDirectory(projectId: string): Directory {
   return new Directory(getProjectsRootDirectory(), projectId);
+}
+
+export function deleteProjectStorage(projectId: string): void {
+  const projectDirectory = getProjectDirectory(projectId);
+
+  if (projectDirectory.exists) {
+    projectDirectory.delete();
+  }
 }
 
 export function getProjectStoragePaths(
@@ -177,6 +186,19 @@ export function createStoredFrameUri(
   return new File(rotationDirectory, createFrameFilename(frameIndex)).uri;
 }
 
+export function createStoredVideoUri(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId,
+  videoIndex: number
+): string {
+  const rotationDirectory = new Directory(
+    getProjectDirectory(manifest.project.id),
+    "rotations",
+    rotationId
+  );
+  return new File(rotationDirectory, createVideoFilename(videoIndex)).uri;
+}
+
 export async function copyCapturedFrameToProject(
   manifest: ForgeScanProjectManifest,
   rotationId: RotationId,
@@ -195,6 +217,35 @@ export async function copyCapturedFrameToProject(
   const destinationFile = new File(
     rotationDirectory,
     createFrameFilename(frameIndex)
+  );
+  const sourceFile = new File(sourceUri);
+
+  if (destinationFile.exists) {
+    destinationFile.delete();
+  }
+
+  await sourceFile.copy(destinationFile);
+  return destinationFile.uri;
+}
+
+export async function copyCapturedVideoToProject(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId,
+  sourceUri: string,
+  videoIndex: number
+): Promise<string> {
+  ensureProjectStorage(manifest);
+
+  const rotationDirectory = new Directory(
+    getProjectDirectory(manifest.project.id),
+    "rotations",
+    rotationId
+  );
+  rotationDirectory.create({ intermediates: true, idempotent: true });
+
+  const destinationFile = new File(
+    rotationDirectory,
+    createVideoFilename(videoIndex)
   );
   const sourceFile = new File(sourceUri);
 

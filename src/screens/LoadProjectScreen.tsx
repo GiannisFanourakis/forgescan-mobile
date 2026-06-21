@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { ReactElement } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { ForgeScanLogo } from "../components/ForgeScanLogo";
@@ -12,7 +12,23 @@ import { colors, spacing } from "../ui/theme";
 type Props = NativeStackScreenProps<RootStackParamList, "LoadProject">;
 
 export function LoadProjectScreen({ navigation }: Props): ReactElement {
-  const { isLoadingProjects, projects, storageError } = useProjects();
+  const { deleteProject, isLoadingProjects, projects, storageError } =
+    useProjects();
+
+  function confirmDeleteProject(projectId: string, title: string): void {
+    Alert.alert(
+      "Delete scan",
+      `Delete "${title}" and its local files?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteProject(projectId)
+        }
+      ]
+    );
+  }
 
   return (
     <Screen>
@@ -52,31 +68,50 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
       ) : (
         <Section>
           {projects.map((project) => (
-            <Pressable
-              accessibilityRole="button"
+            <View
               key={project.project.id}
-              onPress={() =>
-                navigation.navigate("CapturePlan", {
-                  projectId: project.project.id
-                })
-              }
-              style={({ pressed }) => [
-                styles.projectRow,
-                pressed ? styles.pressed : undefined
-              ]}
+              style={styles.projectRow}
             >
-              <View style={styles.projectRowText}>
-                <Text style={styles.projectTitle}>{project.project.title}</Text>
-                <Text style={styles.projectMeta}>
-                  {project.capture.targetFrameCount} frames per rotation
-                </Text>
-              </View>
-              <View style={styles.planBadge}>
-                <Text style={styles.planBadgeText}>
-                  {project.capture.plan === "three-rotation" ? "3 rot" : "2 rot"}
-                </Text>
-              </View>
-            </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  navigation.navigate("CapturePlan", {
+                    projectId: project.project.id
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.projectOpenArea,
+                  pressed ? styles.pressed : undefined
+                ]}
+              >
+                <View style={styles.projectRowText}>
+                  <Text style={styles.projectTitle}>{project.project.title}</Text>
+                  <Text style={styles.projectMeta}>
+                    {project.capture.targetFrameCount} frames per rotation
+                  </Text>
+                </View>
+                <View style={styles.planBadge}>
+                  <Text style={styles.planBadgeText}>
+                    {project.capture.plan === "three-rotation" ? "3 rot" : "2 rot"}
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  confirmDeleteProject(
+                    project.project.id,
+                    project.project.title
+                  )
+                }
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  pressed ? styles.pressed : undefined
+                ]}
+              >
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </Pressable>
+            </View>
           ))}
         </Section>
       )}
@@ -143,6 +178,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 1
   },
+  projectOpenArea: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
   projectRowText: {
     flex: 1,
     gap: 2
@@ -164,6 +206,17 @@ const styles = StyleSheet.create({
   },
   planBadgeText: {
     color: colors.text,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  deleteButton: {
+    backgroundColor: "#f0d8d5",
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  deleteButtonText: {
+    color: colors.danger,
     fontSize: 12,
     fontWeight: "900"
   },
