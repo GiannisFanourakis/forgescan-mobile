@@ -6,7 +6,14 @@ import {
 } from "../core/manifest";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
 import { validateProjectForReconstruction } from "../core/frameValidation";
-import { writeProjectExportFile } from "../storage/projectStorage";
+import {
+  writeProjectExportFile,
+  writeProjectFile
+} from "../storage/projectStorage";
+import {
+  createRawMaskPath,
+  createRefinedMaskPath
+} from "../segmentation/maskPaths";
 import { getSelectedReconstructionModel } from "./modelRegistry";
 
 export type FullRunStageId =
@@ -35,7 +42,7 @@ export interface FullRunStageDefinition {
 export interface FullRunArtifact {
   filename: string;
   uri: string;
-  format: ExportFormat | "json" | "ply";
+  format: ExportFormat | "json" | "ply" | "png";
   kind: "stage-data" | "model" | "viewer" | "preview" | "report";
   bytes: number;
 }
@@ -87,6 +94,15 @@ interface StageContext {
   frames: FrameContext[];
   artifacts: FullRunArtifact[];
 }
+
+const fallbackMaskPng = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f,
+  0x00, 0x05, 0xfe, 0x02, 0xfe, 0xdc, 0xcc, 0x59, 0xe7, 0x00, 0x00, 0x00,
+  0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+]);
 
 export const fullRunStageDefinitions: FullRunStageDefinition[] = [
   {
@@ -253,6 +269,8 @@ function runSegmentationStage(
     rotationId,
     frameIndex: frame.index,
     sourceUri: frame.uri,
+    rawMaskPath: createRawMaskPath(rotationId, frame.index),
+    refinedMaskPath: createRefinedMaskPath(rotationId, frame.index),
     method: "test-oval-foreground-mask",
     confidence: estimateSegmentationConfidence(frame),
     normalizedBounds: {
@@ -262,6 +280,22 @@ function runSegmentationStage(
       height: 0.8
     }
   }));
+  const maskArtifacts = masks.flatMap((mask) => [
+    writeProjectArtifact(
+      context.manifest,
+      mask.rawMaskPath,
+      fallbackMaskPng,
+      "png",
+      "stage-data"
+    ),
+    writeProjectArtifact(
+      context.manifest,
+      mask.refinedMaskPath,
+      fallbackMaskPng,
+      "png",
+      "stage-data"
+    )
+  ]);
   const artifact = writeArtifact(
     context.manifest,
     "segmentation.json",
@@ -279,14 +313,14 @@ function runSegmentationStage(
     "stage-data"
   );
 
-  context.artifacts.push(artifact);
+  context.artifacts.push(...maskArtifacts, artifact);
   return completeStage(stage, {
     status: warnings.length > 0 ? "warning" : "complete",
     detail:
       "Generated test foreground masks for captured frames. Native segmentation will replace this with real per-pixel masks.",
     inputs: ["captured frame files"],
-    outputs: ["segmentation.json"],
-    artifacts: [artifact],
+    outputs: ["masks/raw/{rotation}/frame_001.png", "masks/refined/{rotation}/frame_001.png", "segmentation.json"],
+    artifacts: [...maskArtifacts, artifact],
     warnings,
     metrics: {
       framesSegmented: masks.length
@@ -660,6 +694,23 @@ function writeArtifact(
   const uri = writeProjectExportFile(manifest, filename, content);
   return {
     filename,
+    uri,
+    format,
+    kind,
+    bytes: typeof content === "string" ? content.length : content.byteLength
+  };
+}
+
+function writeProjectArtifact(
+  manifest: ForgeScanProjectManifest,
+  relativePath: string,
+  content: string | Uint8Array,
+  format: FullRunArtifact["format"],
+  kind: FullRunArtifact["kind"]
+): FullRunArtifact {
+  const uri = writeProjectFile(manifest, relativePath, content);
+  return {
+    filename: relativePath,
     uri,
     format,
     kind,

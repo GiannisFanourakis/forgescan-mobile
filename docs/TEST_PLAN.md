@@ -1,71 +1,109 @@
-# ForgeScan Test Phase Plan
+# ForgeScan Mobile Test Plan
 
-This plan covers the first phone-ready test phase. The app should be tested on Android and iOS with real camera capture.
+This plan verifies the current executable prototype in one session.
 
-## Entry Criteria
+## Preflight
 
-- App starts from a clean install.
-- Projects persist after app restart.
-- Camera capture writes stable image files and manifest metadata.
-- Project review shows validation results and local package paths.
-- Manifest, export target plan, and reconstruction plan can be saved locally.
-- Android and iOS support screen describes the native reconstruction paths.
-
-## Android Smoke Test
-
-1. Install and open the app on an Android device or emulator.
-2. Tap `Android and iOS Support`.
-3. Confirm Android local reconstruction is listed with ARCore, NDK, OpenCV, segmentation, reconstruction, and export stages.
-4. Return home and create a new scan.
-5. Choose `36` frames and `3 rotations`.
-6. Capture at least two frames for each rotation.
-7. Complete each rotation.
-8. Open Project Review.
-9. Confirm validation reports missing frame-count errors until the target frame count is met.
-10. Tap `Export Project Manifest`.
-11. Tap `Export 3D Format Plan`.
-12. Open `Prepare Reconstruction Plan`.
-13. Tap `Save Reconstruction Plan`.
-14. Close and reopen the app.
-15. Confirm the project still appears in Local projects.
-
-## iOS Smoke Test
-
-1. Install and open the app on an iPhone or simulator.
-2. Tap `Android and iOS Support`.
-3. Confirm iOS local reconstruction is listed with ARKit, Swift, Vision/Core ML, Metal, Object Capture path, and export stages.
-4. Return home and create a new scan.
-5. Choose `24` frames and `2 rotations`.
-6. Capture at least two frames for upright and tilted.
-7. Leave underside pending.
-8. Open Project Review.
-9. Confirm underside is optional and validation warnings/errors are understandable.
-10. Tap `Export Project Manifest`.
-11. Tap `Export 3D Format Plan`.
-12. Open `Prepare Reconstruction Plan`.
-13. Tap `Save Reconstruction Plan`.
-14. Close and reopen the app.
-15. Confirm the project still appears in Local projects.
-
-## Package Files To Inspect
-
-Each saved project should have:
-
-```text
-ForgeScan/projects/{projectId}/
-  manifest.json
-  rotations/
-    upright/
-    tilted/
-    underside/
-  thumbnails/
-  exports/
-    export-targets.json
-    reconstruction-plan.json
+```bash
+npm install
+npm run typecheck
+npm run start
 ```
 
-## Known Expected Failures
+There is no `npm test` script yet.
 
-- Background removal is not active in this build.
-- Native Android/iOS reconstruction engines are not active in this build.
-- GLB, USDZ, OBJ, STL, HTML, MP4, and GIF binaries are not generated yet.
+## Android Test
+
+1. Start Expo with `npm run start` or `npx expo start --lan --port 8082 -c`.
+2. Open the app in Expo Go or an Android emulator.
+3. Create a project.
+4. Choose a recommended preset or custom recommended frame count.
+5. Choose 2 or 3 rotations.
+6. Capture any number of frames per rotation.
+7. For quick testing, capture at least 3-5 frames per required rotation.
+8. For realistic quality testing, capture 72+ frames per rotation.
+9. Confirm the app never blocks capture because the preset count was reached.
+10. Confirm the frame count continues past the preset if you keep capturing.
+11. Complete rotations manually.
+12. Open Project Review.
+13. Confirm actual frame counts and coverage tiers are shown.
+14. Tap `Run Background Removal`.
+15. Confirm mask files or fallback mask artifacts are created.
+16. Tap `Preview Masks`.
+17. Tap `Run Reconstruction`.
+18. Confirm at least one reconstruction artifact is created.
+19. Tap `Prepare Gaussian Splatting Job`.
+20. Tap `Export Viewer HTML`.
+21. Tap `Export Project Package`.
+22. Tap `Show Output Paths`.
+23. Inspect saved paths in the app output message.
+
+## iOS Test
+
+1. Start Expo with `npm run start`.
+2. Open the app in Expo Go or an iOS simulator.
+3. Create a project with 2 rotations only.
+4. Leave underside unused.
+5. Capture any number of frames for upright and tilted.
+6. Confirm actual frame counts are shown.
+7. Confirm optional underside warning is understandable and not blocking.
+8. Confirm capture can continue beyond the recommended preset.
+9. Complete required rotations manually.
+10. Open Project Review.
+11. Run background removal.
+12. Preview masks.
+13. Run reconstruction.
+14. Prepare Gaussian Splatting job.
+15. Export viewer HTML.
+16. Export project package.
+17. Confirm warnings are based on coverage and missing optional underside, not hard limits.
+
+## Expected Files
+
+Required package files:
+
+```text
+ForgeScan/projects/{projectId}/manifest.json
+ForgeScan/projects/{projectId}/exports/export-targets.json
+ForgeScan/projects/{projectId}/exports/segmentation-plan.json
+ForgeScan/projects/{projectId}/exports/reconstruction-plan.json
+ForgeScan/projects/{projectId}/exports/reconstruction-job.json
+ForgeScan/projects/{projectId}/exports/splatting-job.json
+ForgeScan/projects/{projectId}/exports/viewer.html
+ForgeScan/projects/{projectId}/exports/README_EXPORTS.txt
+```
+
+At least one reconstruction artifact must exist:
+
+```text
+ForgeScan/projects/{projectId}/exports/model.obj
+ForgeScan/projects/{projectId}/reconstruction/rough-model.obj
+ForgeScan/projects/{projectId}/reconstruction/point-cloud.ply
+```
+
+Segmentation must generate fallback PNG mask artifacts:
+
+```text
+ForgeScan/projects/{projectId}/masks/raw/{rotation}/frame_001.png
+ForgeScan/projects/{projectId}/masks/refined/{rotation}/frame_001.png
+ForgeScan/projects/{projectId}/masks/segmentation-result.json
+```
+
+The full reconstruction test screen may also generate:
+
+```text
+ForgeScan/projects/{projectId}/exports/model.glb
+ForgeScan/projects/{projectId}/exports/model.usdz
+ForgeScan/projects/{projectId}/exports/model.stl
+ForgeScan/projects/{projectId}/exports/preview.mp4
+ForgeScan/projects/{projectId}/exports/preview.gif
+ForgeScan/projects/{projectId}/exports/full-run-report.json
+```
+
+## Expected Warnings
+
+- Fallback segmentation is expected until a native AI model is integrated.
+- Rough proxy reconstruction is expected until native photogrammetry or Gaussian optimization is integrated.
+- Optional underside missing is a warning only.
+- Fewer than 24 frames is a warning only.
+- More than the recommended frame count is allowed and must not block processing.

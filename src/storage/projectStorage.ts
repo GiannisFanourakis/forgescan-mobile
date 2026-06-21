@@ -12,6 +12,8 @@ export interface ProjectStoragePaths {
   projectUri: string;
   manifestUri: string;
   rotationsUri: string;
+  masksUri: string;
+  reconstructionUri: string;
   thumbnailsUri: string;
   exportsUri: string;
 }
@@ -41,6 +43,11 @@ export function getProjectStoragePaths(
   const rootDirectory = getProjectsRootDirectory();
   const projectDirectory = getProjectDirectory(manifest.project.id);
   const rotationsDirectory = new Directory(projectDirectory, "rotations");
+  const masksDirectory = new Directory(projectDirectory, "masks");
+  const reconstructionDirectory = new Directory(
+    projectDirectory,
+    "reconstruction"
+  );
   const thumbnailsDirectory = new Directory(projectDirectory, "thumbnails");
   const exportsDirectory = new Directory(projectDirectory, "exports");
   const manifestFile = new File(projectDirectory, "manifest.json");
@@ -50,6 +57,8 @@ export function getProjectStoragePaths(
     projectUri: projectDirectory.uri,
     manifestUri: manifestFile.uri,
     rotationsUri: rotationsDirectory.uri,
+    masksUri: masksDirectory.uri,
+    reconstructionUri: reconstructionDirectory.uri,
     thumbnailsUri: thumbnailsDirectory.uri,
     exportsUri: exportsDirectory.uri
   };
@@ -61,17 +70,37 @@ export function ensureProjectStorage(
   const rootDirectory = getProjectsRootDirectory();
   const projectDirectory = getProjectDirectory(manifest.project.id);
   const rotationsDirectory = new Directory(projectDirectory, "rotations");
+  const masksDirectory = new Directory(projectDirectory, "masks");
+  const reconstructionDirectory = new Directory(
+    projectDirectory,
+    "reconstruction"
+  );
   const thumbnailsDirectory = new Directory(projectDirectory, "thumbnails");
   const exportsDirectory = new Directory(projectDirectory, "exports");
 
   rootDirectory.create({ intermediates: true, idempotent: true });
   projectDirectory.create({ intermediates: true, idempotent: true });
   rotationsDirectory.create({ intermediates: true, idempotent: true });
+  masksDirectory.create({ intermediates: true, idempotent: true });
+  reconstructionDirectory.create({ intermediates: true, idempotent: true });
   thumbnailsDirectory.create({ intermediates: true, idempotent: true });
   exportsDirectory.create({ intermediates: true, idempotent: true });
 
+  const rawMasksDirectory = new Directory(masksDirectory, "raw");
+  const refinedMasksDirectory = new Directory(masksDirectory, "refined");
+  rawMasksDirectory.create({ intermediates: true, idempotent: true });
+  refinedMasksDirectory.create({ intermediates: true, idempotent: true });
+
   for (const rotation of manifest.capture.rotations) {
     new Directory(rotationsDirectory, rotation.id).create({
+      intermediates: true,
+      idempotent: true
+    });
+    new Directory(rawMasksDirectory, rotation.id).create({
+      intermediates: true,
+      idempotent: true
+    });
+    new Directory(refinedMasksDirectory, rotation.id).create({
       intermediates: true,
       idempotent: true
     });
@@ -142,6 +171,49 @@ export function writeProjectExportFile(
 
   exportFile.write(content);
   return exportFile.uri;
+}
+
+export function writeProjectFile(
+  manifest: ForgeScanProjectManifest,
+  relativePath: string,
+  content: string | Uint8Array
+): string {
+  ensureProjectStorage(manifest);
+  const pathParts = relativePath.split(/[\\/]/).filter(Boolean);
+  const filename = pathParts.pop();
+
+  if (!filename) {
+    throw new Error("Cannot write project file without a filename.");
+  }
+
+  const directory = ensureProjectRelativeDirectory(
+    manifest.project.id,
+    pathParts
+  );
+  const file = new File(directory, filename);
+
+  if (!file.exists) {
+    file.create({ intermediates: true, overwrite: true });
+  }
+
+  file.write(content);
+  return file.uri;
+}
+
+function ensureProjectRelativeDirectory(
+  projectId: string,
+  pathParts: string[]
+): Directory {
+  let directory = getProjectDirectory(projectId);
+
+  directory.create({ intermediates: true, idempotent: true });
+
+  for (const part of pathParts) {
+    directory = new Directory(directory, part);
+    directory.create({ intermediates: true, idempotent: true });
+  }
+
+  return directory;
 }
 
 export async function loadStoredProjectManifests(): Promise<

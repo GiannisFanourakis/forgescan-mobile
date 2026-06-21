@@ -10,16 +10,21 @@ import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "NewProject">;
 
-const frameCounts = [24, 36, 72, 120] as const;
+const frameCounts = [24, 72, 120, 180] as const;
 
 export function NewProjectScreen({ navigation }: Props): ReactElement {
   const { createProject } = useProjects();
   const [title, setTitle] = useState("Object scan");
-  const [targetFrameCount, setTargetFrameCount] = useState<number>(36);
+  const [targetFrameCount, setTargetFrameCount] = useState<number>(72);
+  const [customFrameCount, setCustomFrameCount] = useState("72");
   const [includeUnderside, setIncludeUnderside] = useState(false);
 
   function handleCreateProject(): void {
-    const project = createProject(title, targetFrameCount, includeUnderside);
+    const project = createProject(
+      title,
+      Math.max(1, targetFrameCount),
+      includeUnderside
+    );
     navigation.replace("CapturePlan", { projectId: project.project.id });
   }
 
@@ -35,17 +40,38 @@ export function NewProjectScreen({ navigation }: Props): ReactElement {
       </Section>
 
       <Section>
-        <Text style={styles.label}>Target frame count</Text>
+        <Text style={styles.label}>Recommended frame guidance</Text>
+        <Text style={styles.helperText}>
+          This is not a limit. You can keep capturing until you tap Complete
+          Rotation.
+        </Text>
         <View style={styles.optionGrid}>
           {frameCounts.map((count) => (
             <Choice
               key={count}
               label={`${count}`}
               selected={targetFrameCount === count}
-              onPress={() => setTargetFrameCount(count)}
+              onPress={() => {
+                setTargetFrameCount(count);
+                setCustomFrameCount(String(count));
+              }}
             />
           ))}
         </View>
+        <TextInput
+          keyboardType="number-pad"
+          onChangeText={(value) => {
+            setCustomFrameCount(value);
+            const parsedValue = Number.parseInt(value, 10);
+            if (Number.isFinite(parsedValue) && parsedValue > 0) {
+              setTargetFrameCount(parsedValue);
+            }
+          }}
+          placeholder="Custom recommended frames"
+          placeholderTextColor={colors.mutedText}
+          style={styles.input}
+          value={customFrameCount}
+        />
       </Section>
 
       <Section>
@@ -99,6 +125,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: "800"
+  },
+  helperText: {
+    color: colors.mutedText,
+    fontSize: 13,
+    lineHeight: 18
   },
   input: {
     backgroundColor: colors.surface,

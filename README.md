@@ -1,133 +1,178 @@
 # ForgeScan Mobile
 
-ForgeScan is a controlled object-capture app for photorealistic 3D reconstruction workflows. It uses structured 2-3 rotation capture rather than freeform scanning. The current version captures, stores, validates, and exports the data package used by reconstruction processing.
+ForgeScan Mobile is an Expo/React Native prototype for structured object capture and local reconstruction package generation. It captures an object through upright, tilted, and optional underside rotations, stores ordered frames locally, runs fallback segmentation, creates rough reconstruction artifacts, prepares a Gaussian Splatting job, and exports a local project package.
 
-## Current Prototype Scope
+This is an executable prototype, not production-quality photogrammetry. The app favors a rough working pipeline over perfect 3D quality.
 
-- Create local scan projects with a stable manifest schema.
-- Capture ordered camera frames for upright, tilted, and optional underside rotations.
-- Persist projects and manifests in local device storage.
-- Validate frame continuity, target frame counts, required rotation completion, and known image dimensions.
-- Export a project manifest as local JSON.
-- Export a 3D format target plan for GLB, USDZ, OBJ, STL, HTML, MP4, and GIF outputs as local JSON.
-- Generate a structured reconstruction processing plan.
-- Track Android and iOS native reconstruction paths behind one shared app interface.
+## What Works Now
 
-This prototype does not implement paid services, a backend, cloud upload, real photogrammetry, AI model inference, or background removal.
+- Create local scan projects.
+- Choose 2 rotations or 3 rotations.
+- Choose a recommended frame preset or custom recommended count.
+- Capture real camera photos, timed bursts, and muted video clips.
+- Capture unlimited frames per rotation.
+- Retake/delete the last photo or video.
+- Complete each rotation manually.
+- Persist ordered frames as `frame_001.jpg`, `frame_002.jpg`, and onward.
+- Run fallback background removal / segmentation.
+- Generate mask files under `masks/raw/` and `masks/refined/`.
+- Export segmentation, reconstruction, and splatting plans.
+- Run rough local reconstruction fallback.
+- Generate rough OBJ and PLY artifacts.
+- Prepare a Gaussian Splatting job package.
+- Export a local HTML frame viewer.
+- Export a full project package with paths shown in the app.
 
-## Project Format
-
-The app models each scan as:
-
-```text
-project/
-  manifest.json
-  rotations/
-    upright/
-      frame_001.jpg
-      frame_002.jpg
-    tilted/
-      frame_001.jpg
-      frame_002.jpg
-    underside/
-      frame_001.jpg
-      frame_002.jpg
-  thumbnails/
-  exports/
-```
-
-Frame names are deterministic:
-
-```text
-frame_001.jpg
-frame_002.jpg
-frame_003.jpg
-```
-
-The TypeScript schema lives in `src/core/manifest.ts`.
-
-## Future Pipeline
-
-```text
-Mobile capture
--> background removal / segmentation
--> frame quality scoring
--> pose estimation
--> multi-rotation alignment
--> photogrammetry or Gaussian Splatting reconstruction
--> AI cleanup / hole filling / texture repair
--> export GLB/USDZ/OBJ/STL
--> export HTML/MP4/GIF previews
-```
-
-## Android And iOS Versions
-
-ForgeScan is developed as one shared React Native app with platform-specific native reconstruction engines:
-
-```text
-shared app
-  -> capture workflow
-  -> manifest and validation
-  -> export contracts
-  -> reconstruction interface
-
-android native engine
-  -> ARCore
-  -> Kotlin/C++ NDK
-  -> OpenCV
-  -> MediaPipe or LiteRT
-  -> GPU acceleration
-
-ios native engine
-  -> ARKit/RealityKit
-  -> Swift native module
-  -> Vision or Core ML
-  -> Metal acceleration
-  -> USDZ-first export
-```
-
-The shared TypeScript contracts live in `src/reconstruction/`. Platform implementation notes live in `native/android-reconstruction/` and `native/ios-reconstruction/`.
-
-## Export Targets
-
-ForgeScan tracks these intended export artifacts:
-
-```text
-exports/model.glb
-exports/model.usdz
-exports/model.obj
-exports/model.stl
-exports/viewer.html
-exports/preview.mp4
-exports/preview.gif
-```
-
-The current prototype exports the target plan and manifest contract for these formats. It does not generate the actual 3D model or preview files until a reconstruction pipeline is added.
-
-## Run The App
-
-Install dependencies, then start Expo:
+## Run
 
 ```bash
 npm install
 npm run start
 ```
 
-Optional checks:
+Use Expo Go on Android or iOS, or an emulator. For LAN testing:
+
+```bash
+npx expo start --lan --port 8082 -c
+```
+
+Checks:
 
 ```bash
 npm run typecheck
 ```
 
-## Test Phase
+There is no `npm test` script in this prototype yet.
 
-The current app is ready for the first manual test phase with real camera capture. Use `docs/TEST_PLAN.md` for Android and iOS smoke tests.
+## Unlimited Capture
 
-## Current Limitations
+`targetFrameCount` still exists in the manifest for backward compatibility, but the UI treats it as `recommendedFrameCount`. It is not a hard limit.
 
-- Camera capture stores JPEG frames inside the local project package.
-- Manifest, 3D format plan, and reconstruction-plan exports write local JSON, not a ZIP/package yet.
-- Reconstruction-plan generation defines the processing contract.
-- Android and iOS native reconstruction modules are separate engine tracks.
-- GLB, USDZ, OBJ, STL, HTML, MP4, and GIF files are export targets for reconstructed assets.
-- Background removal and frame quality scoring are represented in the schema but are not executed.
+Coverage tiers:
+
+```text
+0 frames      empty
+1-23 frames   low coverage
+24-71 frames  basic coverage
+72-119 frames standard coverage
+120-179 frames high coverage
+180+ frames   very high coverage
+```
+
+Recommended presets:
+
+```text
+Quick test        24
+Standard          72
+High quality      120
+Very high quality 180+
+Maximum detail    keep capturing until manually complete
+```
+
+Validation only blocks reconstruction when required rotations are incomplete or complete with zero frames. Under 24 frames is a warning. Over-capture is allowed.
+
+## Generated Project Structure
+
+```text
+ForgeScan/projects/{projectId}/
+  manifest.json
+  rotations/
+    upright/frame_001.jpg
+    tilted/frame_001.jpg
+    underside/frame_001.jpg
+  masks/
+    raw/{rotation}/frame_001.png
+    refined/{rotation}/frame_001.png
+    segmentation-result.json
+  reconstruction/
+    reconstruction-input.json
+    camera-frames.json
+    masks.json
+    alignment-input.json
+    rough-model.obj
+    point-cloud.ply
+    splatting-job.json
+    splatting-frames.json
+  exports/
+    export-targets.json
+    segmentation-plan.json
+    reconstruction-plan.json
+    reconstruction-job.json
+    splatting-job.json
+    model.obj
+    viewer.html
+    README_EXPORTS.txt
+```
+
+The full reconstruction test screen can also generate additional test outputs:
+
+```text
+exports/model.glb
+exports/model.usdz
+exports/model.stl
+exports/preview.mp4
+exports/preview.gif
+exports/full-run-report.json
+```
+
+## Segmentation
+
+The current segmentation engine is `fallback-local`. It does not run a neural AI model in Expo Go. It writes deterministic PNG mask artifacts and JSON metadata for every captured frame so the app can test the pipeline end to end.
+
+The adapter lives in:
+
+```text
+src/segmentation/
+```
+
+A stronger native or on-device AI segmenter can replace `LocalSegmentationEngine` later.
+
+## Reconstruction
+
+The current reconstruction engine is `local-rough-proxy`. It creates:
+
+- `reconstruction/reconstruction-input.json`
+- `reconstruction/camera-frames.json`
+- `reconstruction/masks.json`
+- `reconstruction/alignment-input.json`
+- `reconstruction/rough-model.obj`
+- `reconstruction/point-cloud.ply`
+- `exports/reconstruction-job.json`
+- `exports/model.obj`
+
+This is not true photogrammetry. It is a rough proxy output that proves storage, inputs, UI flow, and export paths.
+
+## Gaussian Splatting
+
+On-device splat optimization is not implemented in Expo Go. The app creates a complete job package with frames, masks, frame order, camera assumptions, optimizer settings, and expected output paths:
+
+```text
+reconstruction/splatting-job.json
+exports/splatting-job.json
+```
+
+## Manual Test
+
+1. Open the app.
+2. Create a project.
+3. Pick a recommended frame preset or custom count.
+4. Pick 2 or 3 rotations.
+5. Capture real photos, timed burst photos, or video.
+6. Keep capturing past the preset if desired.
+7. Complete each required rotation manually.
+8. Open Project Review.
+9. Tap `Run Background Removal`.
+10. Tap `Preview Masks`.
+11. Tap `Run Reconstruction`.
+12. Tap `Prepare Gaussian Splatting Job`.
+13. Tap `Export Viewer HTML`.
+14. Tap `Export Project Package`.
+15. Tap `Show Output Paths`.
+
+## Known Limitations
+
+- Segmentation is a fallback mask generator, not production AI matting.
+- Reconstruction is a rough proxy, not production photogrammetry.
+- Gaussian Splatting creates a job package but does not optimize splats on-device.
+- GLB/USDZ/STL/MP4/GIF are generated by the full-run test as lightweight test artifacts.
+- Native Android/iOS engines are still future work for ARCore/ARKit, TFLite/LiteRT, OpenCV, GPU reconstruction, and real preview rendering.

@@ -65,6 +65,7 @@ interface ProjectContextValue {
     rotationId: RotationId,
     photo: CapturedPhotoInput
   ) => Promise<void>;
+  addSimulatedFrame: (projectId: string, rotationId: RotationId) => void;
   addCapturedVideo: (
     projectId: string,
     rotationId: RotationId,
@@ -291,6 +292,22 @@ export function ProjectProvider({
     []
   );
 
+  const addSimulatedFrame = useCallback(
+    (projectId: string, rotationId: RotationId) => {
+      updateProject(projectId, (project) =>
+        addFrameToRotation(project, rotationId, {
+          qualityChecks: {
+            blur: "not-run",
+            exposure: "not-run",
+            centered: "not-run",
+            notes: ["Simulated frame for fallback testing."]
+          }
+        })
+      );
+    },
+    [updateProject]
+  );
+
   const retakeLastFrame = useCallback(
     (projectId: string, rotationId: RotationId) => {
       updateProject(projectId, (project) =>
@@ -366,6 +383,7 @@ export function ProjectProvider({
       getProject,
       startRotation,
       addCapturedFrame,
+      addSimulatedFrame,
       addCapturedVideo,
       retakeLastFrame,
       deleteLastVideo,
@@ -381,6 +399,7 @@ export function ProjectProvider({
       getProject,
       startRotation,
       addCapturedFrame,
+      addSimulatedFrame,
       addCapturedVideo,
       retakeLastFrame,
       deleteLastVideo,

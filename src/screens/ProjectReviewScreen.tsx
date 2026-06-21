@@ -9,20 +9,29 @@ import {
   createExportTargetPlan,
   exportTargetPlanJson
 } from "../core/exportTargets";
+import { getCoverageLabel } from "../core/coverage";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { exportProjectManifestJson } from "../core/projectPackage";
 import { RootStackParamList } from "../navigation/types";
+import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
 import {
   formatModelRuntime,
   formatModelStatus,
   getSelectedReconstructionModel
 } from "../reconstruction/modelRegistry";
+import { exportSplattingJob } from "../reconstruction/splatting/splattingPackage";
+import { runSegmentationForProject } from "../segmentation/LocalSegmentationEngine";
 import { useProjects } from "../state/ProjectContext";
 import {
   getProjectStoragePaths,
+  writeProjectFile,
   writeProjectExportJson,
   writeProjectManifestJson
 } from "../storage/projectStorage";
+import {
+  writeFullProjectPackage,
+  writeViewerHtml
+} from "../storage/projectPackageWriter";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ProjectReview">;
@@ -35,6 +44,7 @@ export function ProjectReviewScreen({
   const [manifestJson, setManifestJson] = useState<string | null>(null);
   const [exportPlanJson, setExportPlanJson] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
   const project = getProject(route.params.projectId);
 
   const validation = useMemo(
@@ -69,12 +79,21 @@ export function ProjectReviewScreen({
   }
 
   const activeProject = project;
+  const activeStoragePaths = storagePaths;
 
   function handleExportManifest(): void {
     const json = exportProjectManifestJson(activeProject);
     const uri = writeProjectManifestJson(activeProject, json);
     setManifestJson(json);
     setExportMessage(`Manifest saved: ${uri}`);
+  }
+
+  function handleSaveProject(): void {
+    const uri = writeProjectManifestJson(
+      activeProject,
+      JSON.stringify(activeProject, null, 2)
+    );
+    setExportMessage(`Project saved: ${uri}`);
   }
 
   function handleExportTargetPlan(): void {
@@ -86,6 +105,89 @@ export function ProjectReviewScreen({
     );
     setExportPlanJson(json);
     setExportMessage(`3D format plan saved: ${uri}`);
+  }
+
+  async function runProjectAction(
+    label: string,
+    action: () => Promise<string> | string
+  ): Promise<void> {
+    setIsProcessingAction(true);
+    setExportMessage(`${label} running...`);
+
+    try {
+      const message = await action();
+      setExportMessage(message);
+    } catch (error: unknown) {
+      setExportMessage(
+        error instanceof Error ? error.message : `${label} failed.`
+      );
+    } finally {
+      setIsProcessingAction(false);
+    }
+  }
+
+  function handleRunBackgroundRemoval(): void {
+    void runProjectAction("Background removal", async () => {
+      const result = await runSegmentationForProject(activeProject);
+      return `Background removal complete: ${result.successfulFrames}/${result.totalFrames} masks written. Result: ${activeStoragePaths.projectUri}masks/segmentation-result.json`;
+    });
+  }
+
+  function handlePreviewMasks(): void {
+    void runProjectAction("Mask preview", async () => {
+      const result = await runSegmentationForProject(activeProject);
+      const uri = writeProjectFile(
+        activeProject,
+        "exports/mask-preview.json",
+        JSON.stringify(result.previews, null, 2)
+      );
+      return `Mask preview data saved: ${uri}`;
+    });
+  }
+
+  function handleRunReconstruction(): void {
+    void runProjectAction("Reconstruction", async () => {
+      const result = await runReconstructionJob(activeProject);
+      return `Reconstruction ${result.status}: ${result.artifacts
+        .map((artifact) => artifact.path)
+        .join(", ")}`;
+    });
+  }
+
+  function handlePrepareSplattingJob(): void {
+    void runProjectAction("Gaussian Splatting job", () => {
+      const result = exportSplattingJob(activeProject);
+      return `Gaussian Splatting job saved: reconstruction/splatting-job.json and exports/splatting-job.json (${result.frames.length} frames).`;
+    });
+  }
+
+  function handleExportViewerHtml(): void {
+    void runProjectAction("Viewer HTML export", () => {
+      const uri = writeViewerHtml(activeProject.project.id, activeProject);
+      return `Viewer HTML saved: ${uri}`;
+    });
+  }
+
+  function handleExportProjectPackage(): void {
+    void runProjectAction("Project package export", async () => {
+      const result = await writeFullProjectPackage(
+        activeProject.project.id,
+        activeProject
+      );
+      return `Project package written: ${result.projectRootUri}. Files: ${result.generatedFiles.length}. Warnings: ${
+        result.warnings.length > 0 ? result.warnings.join(" ") : "none"
+      }`;
+    });
+  }
+
+  function handleShowOutputPaths(): void {
+    const paths = [
+      `Project: ${activeStoragePaths.projectUri}`,
+      `Masks: ${activeStoragePaths.masksUri}`,
+      `Reconstruction: ${activeStoragePaths.reconstructionUri}`,
+      `Exports: ${activeStoragePaths.exportsUri}`
+    ];
+    setExportMessage(paths.join("\n"));
   }
 
   return (
@@ -111,7 +213,8 @@ export function ProjectReviewScreen({
             <View style={styles.rotationText}>
               <Text style={styles.rotationTitle}>{rotation.label}</Text>
               <Text style={styles.rotationMeta}>
-                {rotation.frames.length}/{activeProject.capture.targetFrameCount} frames
+                {rotation.frames.length} frames /{" "}
+                {getCoverageLabel(rotation.frames.length)}
               </Text>
             </View>
             <StatusPill status={rotation.status} />
@@ -139,13 +242,13 @@ export function ProjectReviewScreen({
       <Section>
         <Text style={styles.sectionTitle}>Local package</Text>
         <Text style={styles.message}>
-          Project folder: {storagePaths.projectUri}
+          Project folder: {activeStoragePaths.projectUri}
         </Text>
         <Text style={styles.message}>
-          Manifest file: {storagePaths.manifestUri}
+          Manifest file: {activeStoragePaths.manifestUri}
         </Text>
         <Text style={styles.message}>
-          Exports folder: {storagePaths.exportsUri}
+          Exports folder: {activeStoragePaths.exportsUri}
         </Text>
       </Section>
 
@@ -190,7 +293,13 @@ export function ProjectReviewScreen({
 
       <Section>
         <Button
+          label="Save Project"
+          disabled={isProcessingAction}
+          onPress={handleSaveProject}
+        />
+        <Button
           label="Run Full Reconstruction Test"
+          disabled={isProcessingAction}
           onPress={() =>
             navigation.navigate("FullReconstructionRun", {
               projectId: activeProject.project.id
@@ -198,8 +307,51 @@ export function ProjectReviewScreen({
           }
         />
         <Button
+          label="Run Background Removal"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handleRunBackgroundRemoval}
+        />
+        <Button
+          label="Preview Masks"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handlePreviewMasks}
+        />
+        <Button
+          label="Run Reconstruction"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handleRunReconstruction}
+        />
+        <Button
+          label="Prepare Gaussian Splatting Job"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handlePrepareSplattingJob}
+        />
+        <Button
+          label="Export Viewer HTML"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handleExportViewerHtml}
+        />
+        <Button
+          label="Export Project Package"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handleExportProjectPackage}
+        />
+        <Button
+          label="Show Output Paths"
+          disabled={isProcessingAction}
+          variant="secondary"
+          onPress={handleShowOutputPaths}
+        />
+        <Button
           label="Prepare Reconstruction Plan"
           variant="secondary"
+          disabled={isProcessingAction}
           onPress={() =>
             navigation.navigate("ReconstructionPlan", {
               projectId: activeProject.project.id
@@ -209,11 +361,13 @@ export function ProjectReviewScreen({
         <Button
           label="Export Project Manifest"
           variant="secondary"
+          disabled={isProcessingAction}
           onPress={handleExportManifest}
         />
         <Button
           label="Export 3D Format Plan"
           variant="secondary"
+          disabled={isProcessingAction}
           onPress={handleExportTargetPlan}
         />
       </Section>

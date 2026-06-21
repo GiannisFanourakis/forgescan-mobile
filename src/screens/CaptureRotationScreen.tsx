@@ -15,6 +15,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "../components/Button";
 import { Screen } from "../components/Screen";
+import {
+  RECOMMENDED_HIGH_QUALITY_FRAMES,
+  RECOMMENDED_MINIMUM_FRAMES,
+  getCoverageLabel,
+  getCoverageWarning
+} from "../core/coverage";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
@@ -49,6 +55,7 @@ export function CaptureRotationScreen({
   const {
     addCapturedFrame,
     addCapturedVideo,
+    addSimulatedFrame,
     completeRotation,
     deleteLastVideo,
     getProject,
@@ -87,16 +94,17 @@ export function CaptureRotationScreen({
 
   const frameCount = rotation.frames.length;
   const videoCount = rotation.videos?.length ?? 0;
-  const targetFrameCount = project.capture.targetFrameCount;
+  const recommendedFrameCount = project.capture.targetFrameCount;
   const lastFrame = rotation.frames[frameCount - 1];
   const lastVideo = rotation.videos?.[videoCount - 1];
-  const remainingFrames = Math.max(0, targetFrameCount - frameCount);
+  const coverageWarning = getCoverageWarning(frameCount);
   const progressPercent =
-    targetFrameCount > 0 ? Math.min(100, (frameCount / targetFrameCount) * 100) : 0;
-  const canCapture = remainingFrames > 0;
+    recommendedFrameCount > 0
+      ? Math.min(100, (frameCount / recommendedFrameCount) * 100)
+      : 0;
   const projectId = project.project.id;
   const rotationId = rotation.id;
-  const nextFrameNumber = Math.min(frameCount + 1, targetFrameCount);
+  const nextFrameNumber = frameCount + 1;
   const canUseCamera = permission?.granted === true && isCameraReady;
 
   async function handlePrimaryCapture(): Promise<void> {
@@ -122,7 +130,6 @@ export function CaptureRotationScreen({
     if (
       !cameraRef.current ||
       !canUseCamera ||
-      !canCapture ||
       isCapturing ||
       captureInFlightRef.current ||
       isRecording
@@ -159,31 +166,30 @@ export function CaptureRotationScreen({
   }
 
   async function startBurstCapture(): Promise<void> {
-    if (!canUseCamera || !canCapture || isBurstRunning || isRecording) {
+    if (!canUseCamera || isBurstRunning || isRecording) {
       return;
     }
 
-    const framesToCapture = remainingFrames;
     burstStopRequestedRef.current = false;
     setCaptureError(null);
     setIsBurstRunning(true);
 
     try {
-      for (let frameNumber = 1; frameNumber <= framesToCapture; frameNumber += 1) {
+      let burstFrameNumber = 1;
+      while (!burstStopRequestedRef.current) {
         if (burstStopRequestedRef.current) {
           break;
         }
 
-        setCaptureStatus(`Burst ${frameNumber}/${framesToCapture}`);
+        setCaptureStatus(`Burst frame ${burstFrameNumber}`);
         const didCapture = await captureSinglePhoto();
 
         if (!didCapture || burstStopRequestedRef.current) {
           break;
         }
 
-        if (frameNumber < framesToCapture) {
-          await waitForBurstInterval(burstIntervalMs);
-        }
+        burstFrameNumber += 1;
+        await waitForBurstInterval(burstIntervalMs);
       }
     } finally {
       clearBurstDelay();
@@ -260,16 +266,12 @@ export function CaptureRotationScreen({
   }
 
   function getPrimaryButtonLabel(): string {
-    if (!canCapture && cameraMode !== "video") {
-      return "Frame Target Reached";
-    }
-
     if (cameraMode === "photo") {
       return isCapturing ? "Capturing" : "Take Photo";
     }
 
     if (cameraMode === "burst") {
-      return isBurstRunning ? "Stop Burst" : `Start Burst (${remainingFrames})`;
+      return isBurstRunning ? "Stop Burst" : "Start Timed Burst";
     }
 
     return isRecording ? "Stop Recording" : "Record Video";
@@ -278,7 +280,6 @@ export function CaptureRotationScreen({
   const primaryActionDisabled =
     !canUseCamera ||
     (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
-    (cameraMode !== "video" && !canCapture) ||
     (cameraMode !== "burst" && isBurstRunning);
 
   return (
@@ -330,7 +331,7 @@ export function CaptureRotationScreen({
               {captureStatus ?? `Frame ${nextFrameNumber}`}
             </Text>
             <Text style={styles.previewStatusValue}>
-              {frameCount}/{targetFrameCount}
+              {frameCount} captured
             </Text>
           </View>
         </View>
@@ -389,11 +390,28 @@ export function CaptureRotationScreen({
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressTitle}>{rotation.angleHint}</Text>
-            <Text style={styles.progressMeta}>{remainingFrames} remaining</Text>
+            <Text style={styles.progressMeta}>
+              {getCoverageLabel(frameCount)}
+            </Text>
           </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
           </View>
+          <Text style={styles.guidanceText}>
+            {frameCount} frames captured. Recommended minimum{" "}
+            {RECOMMENDED_MINIMUM_FRAMES}; high quality{" "}
+            {RECOMMENDED_HIGH_QUALITY_FRAMES}+; preset guidance{" "}
+            {recommendedFrameCount}. You can keep capturing until you manually
+            complete the rotation.
+          </Text>
+          {frameCount >= 180 ? (
+            <Text style={styles.warningText}>
+              Large project warning: very high frame counts create larger local
+              files and slower exports.
+            </Text>
+          ) : coverageWarning ? (
+            <Text style={styles.warningText}>{coverageWarning}</Text>
+          ) : null}
         </View>
 
         {activeMenu === "camera" ? (
@@ -444,6 +462,12 @@ export function CaptureRotationScreen({
                 ))}
               </View>
             ) : null}
+            <Button
+              disabled={isRecording || isBurstRunning || isCapturing}
+              label="Simulate Frame"
+              variant="secondary"
+              onPress={() => addSimulatedFrame(projectId, rotationId)}
+            />
           </View>
         ) : null}
 
@@ -743,6 +767,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderRadius: 999,
     height: 8
+  },
+  guidanceText: {
+    color: colors.mutedText,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  warningText: {
+    color: colors.warning,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18
   },
   menuPanel: {
     backgroundColor: colors.surface,

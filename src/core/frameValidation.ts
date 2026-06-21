@@ -3,12 +3,19 @@ import {
   ForgeScanProjectManifest,
   QualityCheckState
 } from "./manifest";
+import {
+  CoverageTier,
+  RECOMMENDED_MINIMUM_FRAMES,
+  getCoverageTier,
+  getCoverageWarning
+} from "./coverage";
 
 export interface RotationFrameValidation {
   rotationId: CaptureRotation["id"];
   label: string;
   frameCount: number;
   expectedFrameCount: number;
+  coverageTier: CoverageTier;
   valid: boolean;
   errors: string[];
   warnings: string[];
@@ -54,13 +61,15 @@ export function validateRotationFrames(
     );
   }
 
-  if (rotation.frames.length !== expectedFrameCount) {
-    const message = `${rotation.label} has ${rotation.frames.length} of ${expectedFrameCount} expected frames.`;
-    if (rotation.frames.length < expectedFrameCount) {
-      errors.push(message);
-    } else {
-      warnings.push(message);
-    }
+  const coverageWarning = getCoverageWarning(rotation.frames.length);
+  if (
+    rotation.frames.length > 0 &&
+    rotation.frames.length < RECOMMENDED_MINIMUM_FRAMES
+  ) {
+    warnings.push(
+      coverageWarning ??
+        `${rotation.label} has low coverage with ${rotation.frames.length} frames.`
+    );
   }
 
   if (!hasConsistentKnownDimensions(rotation)) {
@@ -72,6 +81,7 @@ export function validateRotationFrames(
     label: rotation.label,
     frameCount: rotation.frames.length,
     expectedFrameCount,
+    coverageTier: getCoverageTier(rotation.frames.length),
     valid: errors.length === 0,
     errors,
     warnings

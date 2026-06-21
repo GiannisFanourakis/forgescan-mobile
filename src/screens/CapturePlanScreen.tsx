@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { StatusPill } from "../components/StatusPill";
+import { getCoverageLabel, getCoverageWarning } from "../core/coverage";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
@@ -28,7 +29,8 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       <Section>
         <Text style={styles.title}>{project.project.title}</Text>
         <Text style={styles.meta}>
-          {project.capture.targetFrameCount} frames per rotation
+          Recommended guide: {project.capture.targetFrameCount} frames per
+          rotation. Capture is unlimited.
         </Text>
       </Section>
 
@@ -65,8 +67,14 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
                 />
               </View>
               <Text style={styles.frameCount}>
-                {rotation.frames.length}/{project.capture.targetFrameCount} frames
+                {rotation.frames.length} frames /{" "}
+                {getCoverageLabel(rotation.frames.length)}
               </Text>
+              {getCoverageWarning(rotation.frames.length) ? (
+                <Text style={styles.coverageWarning}>
+                  {getCoverageWarning(rotation.frames.length)}
+                </Text>
+              ) : null}
             </View>
             <View style={styles.statusColumn}>
               <StatusPill status={rotation.status} />
@@ -133,6 +141,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: "700"
+  },
+  coverageWarning: {
+    color: colors.warning,
+    fontSize: 12,
+    lineHeight: 17
   },
   progressTrack: {
     backgroundColor: colors.surfaceMuted,
