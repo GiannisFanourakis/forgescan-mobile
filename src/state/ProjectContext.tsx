@@ -2,6 +2,7 @@ import {
   PropsWithChildren,
   ReactElement,
   createContext,
+  useEffect,
   useCallback,
   useContext,
   useMemo,
@@ -17,9 +18,17 @@ import {
   removeLastFrameFromRotation,
   setRotationStatus
 } from "../core/manifest";
+import {
+  createStoredFrameUri,
+  ensureProjectStorage,
+  loadStoredProjectManifests,
+  persistProjectManifest
+} from "../storage/projectStorage";
 
 interface ProjectContextValue {
   projects: ForgeScanProjectManifest[];
+  isLoadingProjects: boolean;
+  storageError: string | null;
   createProject: (
     title: string,
     targetFrameCount: number,
@@ -40,6 +49,34 @@ export function ProjectProvider({
   children
 }: PropsWithChildren): ReactElement {
   const [projects, setProjects] = useState<ForgeScanProjectManifest[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadStoredProjectManifests()
+      .then((storedProjects) => {
+        if (isMounted) {
+          setProjects(storedProjects);
+          setStorageError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setStorageError(createErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingProjects(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const updateProject = useCallback(
     (
@@ -47,9 +84,15 @@ export function ProjectProvider({
       updater: (project: ForgeScanProjectManifest) => ForgeScanProjectManifest
     ) => {
       setProjects((currentProjects) =>
-        currentProjects.map((project) =>
-          project.project.id === projectId ? updater(project) : project
-        )
+        currentProjects.map((project) => {
+          if (project.project.id !== projectId) {
+            return project;
+          }
+
+          const updatedProject = updater(project);
+          persistProjectManifest(updatedProject);
+          return updatedProject;
+        })
       );
     },
     []
@@ -67,6 +110,8 @@ export function ProjectProvider({
         includeUnderside
       });
 
+      ensureProjectStorage(manifest);
+      persistProjectManifest(manifest);
       setProjects((currentProjects) => [manifest, ...currentProjects]);
       return manifest;
     },
@@ -90,8 +135,17 @@ export function ProjectProvider({
 
   const addSimulatedFrame = useCallback(
     (projectId: string, rotationId: RotationId) => {
-      updateProject(projectId, (project) =>
-        addFrameToRotation(project, rotationId, {
+      updateProject(projectId, (project) => {
+        const rotation = project.capture.rotations.find(
+          (candidate) => candidate.id === rotationId
+        );
+        const nextFrameIndex =
+          rotation && rotation.frames.length > 0
+            ? Math.max(...rotation.frames.map((frame) => frame.index)) + 1
+            : 1;
+
+        return addFrameToRotation(project, rotationId, {
+          uri: createStoredFrameUri(project, rotationId, nextFrameIndex),
           width: 1600,
           height: 1600,
           qualityChecks: {
@@ -100,8 +154,8 @@ export function ProjectProvider({
             centered: "not-run",
             notes: ["Simulated capture frame."]
           }
-        })
-      );
+        });
+      });
     },
     [updateProject]
   );
@@ -127,6 +181,8 @@ export function ProjectProvider({
   const value = useMemo(
     () => ({
       projects,
+      isLoadingProjects,
+      storageError,
       createProject,
       getProject,
       startRotation,
@@ -136,6 +192,8 @@ export function ProjectProvider({
     }),
     [
       projects,
+      isLoadingProjects,
+      storageError,
       createProject,
       getProject,
       startRotation,
@@ -158,4 +216,12 @@ export function useProjects(): ProjectContextValue {
   }
 
   return value;
+}
+
+function createErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unable to read local projects.";
 }

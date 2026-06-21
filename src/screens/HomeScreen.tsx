@@ -11,7 +11,7 @@ import { colors, spacing } from "../ui/theme";
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export function HomeScreen({ navigation }: Props): ReactElement {
-  const { projects } = useProjects();
+  const { isLoadingProjects, projects, storageError } = useProjects();
 
   return (
     <Screen>
@@ -34,11 +34,24 @@ export function HomeScreen({ navigation }: Props): ReactElement {
 
       <Section>
         <Text style={styles.sectionTitle}>Local projects</Text>
-        {projects.length === 0 ? (
+        {storageError ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Storage unavailable</Text>
+            <Text style={styles.emptyText}>{storageError}</Text>
+          </View>
+        ) : null}
+        {isLoadingProjects ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Loading projects</Text>
+            <Text style={styles.emptyText}>
+              Reading saved manifests from local device storage.
+            </Text>
+          </View>
+        ) : projects.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No projects yet</Text>
             <Text style={styles.emptyText}>
-              Project persistence is a future storage step.
+              New scans are saved to local device storage.
             </Text>
           </View>
         ) : (

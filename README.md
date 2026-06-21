@@ -6,9 +6,10 @@ ForgeScan is a controlled object-capture prototype for future photorealistic 3D 
 
 - Create local scan projects with a stable manifest schema.
 - Capture simulated ordered frame metadata for upright, tilted, and optional underside rotations.
+- Persist projects and manifests in local device storage.
 - Validate frame continuity, target frame counts, required rotation completion, and known image dimensions.
-- Export a project manifest as JSON.
-- Export a 3D format target plan for GLB, USDZ, OBJ, STL, HTML, MP4, and GIF outputs.
+- Export a project manifest as local JSON.
+- Export a 3D format target plan for GLB, USDZ, OBJ, STL, HTML, MP4, and GIF outputs as local JSON.
 - Generate a structured reconstruction-plan placeholder.
 - Track Android and iOS native reconstruction paths behind one shared app interface.
 
@@ -118,11 +119,15 @@ Optional checks:
 npm run typecheck
 ```
 
+## Test Phase
+
+The current app is ready for the first manual test phase with simulated capture. Use `docs/TEST_PLAN.md` for Android and iOS smoke tests.
+
 ## Current Limitations
 
 - Camera capture is represented by a placeholder screen and simulated frame metadata.
-- Local project persistence is not implemented; projects live in memory for the running session.
-- Manifest and 3D format plan exports currently display JSON in-app instead of writing a ZIP/package.
+- Simulated capture writes frame metadata but does not create real image files yet.
+- Manifest, 3D format plan, and reconstruction-plan exports write local JSON, not a ZIP/package yet.
 - Reconstruction-plan generation is a contract for future processing only.
 - Android and iOS native reconstruction modules are planned, not implemented yet.
 - GLB, USDZ, OBJ, STL, HTML, MP4, and GIF files are planned outputs, not generated binaries yet.

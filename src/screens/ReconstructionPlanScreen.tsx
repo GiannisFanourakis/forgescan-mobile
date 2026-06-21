@@ -1,18 +1,21 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ReactElement, useMemo } from "react";
+import { ReactElement, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
 import { RootStackParamList } from "../navigation/types";
 import { getCurrentPlatformEngine } from "../reconstruction/engineRegistry";
 import { useProjects } from "../state/ProjectContext";
+import { writeProjectExportJson } from "../storage/projectStorage";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ReconstructionPlan">;
 
 export function ReconstructionPlanScreen({ route }: Props): ReactElement {
   const { getProject } = useProjects();
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const project = getProject(route.params.projectId);
   const plan = useMemo(
     () => (project ? createReconstructionPlan(project) : undefined),
@@ -29,6 +32,24 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
         <Text style={styles.title}>Project not found</Text>
       </Screen>
     );
+  }
+
+  const activeProject = project;
+
+  function handleSavePlan(): void {
+    const uri = writeProjectExportJson(
+      activeProject,
+      "reconstruction-plan.json",
+      JSON.stringify(
+        {
+          reconstructionPlan: plan,
+          platformJobPlan
+        },
+        null,
+        2
+      )
+    );
+    setSaveMessage(`Reconstruction plan saved: ${uri}`);
   }
 
   return (
@@ -64,6 +85,17 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
           </Text>
         </View>
       ) : null}
+
+      <Section>
+        <Button
+          label="Save Reconstruction Plan"
+          variant="secondary"
+          onPress={handleSavePlan}
+        />
+        {saveMessage ? (
+          <Text style={styles.savedMessage}>{saveMessage}</Text>
+        ) : null}
+      </Section>
 
       <Section>
         {plan.stages.map((stage) => (
@@ -155,5 +187,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     lineHeight: 18
+  },
+  savedMessage: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: spacing.md
   }
 });

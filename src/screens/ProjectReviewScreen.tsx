@@ -13,6 +13,11 @@ import { validateProjectForReconstruction } from "../core/frameValidation";
 import { exportProjectManifestJson } from "../core/projectPackage";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
+import {
+  getProjectStoragePaths,
+  writeProjectExportJson,
+  writeProjectManifestJson
+} from "../storage/projectStorage";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ProjectReview">;
@@ -24,6 +29,7 @@ export function ProjectReviewScreen({
   const { getProject } = useProjects();
   const [manifestJson, setManifestJson] = useState<string | null>(null);
   const [exportPlanJson, setExportPlanJson] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const project = getProject(route.params.projectId);
 
   const validation = useMemo(
@@ -34,8 +40,12 @@ export function ProjectReviewScreen({
     () => (project ? createExportTargetPlan(project) : undefined),
     [project]
   );
+  const storagePaths = useMemo(
+    () => (project ? getProjectStoragePaths(project) : undefined),
+    [project]
+  );
 
-  if (!project || !validation || !exportTargetPlan) {
+  if (!project || !validation || !exportTargetPlan || !storagePaths) {
     return (
       <Screen>
         <Text style={styles.title}>Project not found</Text>
@@ -43,12 +53,32 @@ export function ProjectReviewScreen({
     );
   }
 
+  const activeProject = project;
+
+  function handleExportManifest(): void {
+    const json = exportProjectManifestJson(activeProject);
+    const uri = writeProjectManifestJson(activeProject, json);
+    setManifestJson(json);
+    setExportMessage(`Manifest saved: ${uri}`);
+  }
+
+  function handleExportTargetPlan(): void {
+    const json = exportTargetPlanJson(activeProject);
+    const uri = writeProjectExportJson(
+      activeProject,
+      "export-targets.json",
+      json
+    );
+    setExportPlanJson(json);
+    setExportMessage(`3D format plan saved: ${uri}`);
+  }
+
   return (
     <Screen>
       <Section>
-        <Text style={styles.title}>{project.project.title}</Text>
+        <Text style={styles.title}>{activeProject.project.title}</Text>
         <Text style={styles.meta}>
-          {project.capture.mode} / {project.capture.plan}
+          {activeProject.capture.mode} / {activeProject.capture.plan}
         </Text>
       </Section>
 
@@ -61,12 +91,12 @@ export function ProjectReviewScreen({
 
       <Section>
         <Text style={styles.sectionTitle}>Rotations</Text>
-        {project.capture.rotations.map((rotation) => (
+        {activeProject.capture.rotations.map((rotation) => (
           <View key={rotation.id} style={styles.rotationSummary}>
             <View style={styles.rotationText}>
               <Text style={styles.rotationTitle}>{rotation.label}</Text>
               <Text style={styles.rotationMeta}>
-                {rotation.frames.length}/{project.capture.targetFrameCount} frames
+                {rotation.frames.length}/{activeProject.capture.targetFrameCount} frames
               </Text>
             </View>
             <StatusPill status={rotation.status} />
@@ -92,6 +122,19 @@ export function ProjectReviewScreen({
       </Section>
 
       <Section>
+        <Text style={styles.sectionTitle}>Local package</Text>
+        <Text style={styles.message}>
+          Project folder: {storagePaths.projectUri}
+        </Text>
+        <Text style={styles.message}>
+          Manifest file: {storagePaths.manifestUri}
+        </Text>
+        <Text style={styles.message}>
+          Exports folder: {storagePaths.exportsUri}
+        </Text>
+      </Section>
+
+      <Section>
         <Text style={styles.sectionTitle}>3D export formats</Text>
         <Text style={styles.message}>
           Actual 3D files are produced after reconstruction processing.
@@ -114,21 +157,25 @@ export function ProjectReviewScreen({
           label="Prepare Reconstruction Plan"
           onPress={() =>
             navigation.navigate("ReconstructionPlan", {
-              projectId: project.project.id
+              projectId: activeProject.project.id
             })
           }
         />
         <Button
           label="Export Project Manifest"
           variant="secondary"
-          onPress={() => setManifestJson(exportProjectManifestJson(project))}
+          onPress={handleExportManifest}
         />
         <Button
           label="Export 3D Format Plan"
           variant="secondary"
-          onPress={() => setExportPlanJson(exportTargetPlanJson(project))}
+          onPress={handleExportTargetPlan}
         />
       </Section>
+
+      {exportMessage ? (
+        <Text style={styles.message}>{exportMessage}</Text>
+      ) : null}
 
       {manifestJson ? (
         <Section>
