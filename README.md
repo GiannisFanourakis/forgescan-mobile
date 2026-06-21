@@ -1,6 +1,12 @@
 # ForgeScan Mobile
 
-ForgeScan Mobile is an Expo/React Native prototype for structured object capture and local reconstruction package generation. It captures an object through upright, tilted, and optional underside rotations, stores ordered frames locally, runs fallback segmentation, creates rough reconstruction artifacts, prepares a Gaussian Splatting job, and exports a local project package.
+ForgeScan Mobile is an Expo/React Native prototype for structured object capture and local reconstruction package generation. The user-facing flow is:
+
+```text
+Capture -> Photogrammetry / Splatting -> Preview -> Export
+```
+
+It captures an object through upright, tilted, and optional underside rotations, stores ordered frames locally, creates a rough 3D result, prepares a photoreal package for future Gaussian Splatting optimization, previews results, and exports grouped project files.
 
 This is an executable prototype, not production-quality photogrammetry. The app favors a rough working pipeline over perfect 3D quality.
 
@@ -14,14 +20,35 @@ This is an executable prototype, not production-quality photogrammetry. The app 
 - Retake/delete the last photo or video.
 - Complete each rotation manually.
 - Persist ordered frames as `frame_001.jpg`, `frame_002.jpg`, and onward.
-- Run fallback background removal / segmentation.
+- Create a 3D result with one user-facing action.
+- Run fallback object preparation / object separation internally.
 - Generate mask files under `masks/raw/` and `masks/refined/`.
-- Export segmentation, reconstruction, and splatting plans.
 - Run rough local reconstruction fallback.
 - Generate rough OBJ and PLY artifacts.
-- Prepare a Gaussian Splatting job package.
+- Prepare a photoreal package for future Gaussian Splatting optimization.
 - Export a local HTML frame viewer.
-- Export a full project package with paths shown in the app.
+- Export grouped project files with paths shown in the app.
+- Keep technical actions behind collapsed Advanced Details.
+
+## Product Flow
+
+### Capture
+
+Create a project, choose 2 or 3 rotations, and capture unlimited images. More frames improve coverage, but presets are guidance only. The app shows actual frame counts and coverage tiers.
+
+### Photogrammetry / Splatting
+
+Tap `Create 3D Result`. The app internally prepares object separation, rough 3D preview files, a photogrammetry/reconstruction package, a photoreal package, and viewer files. Current builds may use fallback/basic processing.
+
+### Preview
+
+The Preview step shows grouped results: Interactive Preview, Rough 3D Preview, Photoreal Package, and Captured Frames. If the 3D output is rough, the captured frames and generated model paths remain visible.
+
+### Export
+
+Tap `Export Results`. The app exports grouped results: Interactive Viewer, 3D Files, Photoreal Processing Package, and Project Files.
+
+Advanced Details are collapsed by default and expose internal files/actions for debugging.
 
 ## Run
 
@@ -104,7 +131,7 @@ ForgeScan/projects/{projectId}/
     README_EXPORTS.txt
 ```
 
-The full reconstruction test screen can also generate additional test outputs:
+Advanced Details and the full reconstruction test route can also generate additional test outputs:
 
 ```text
 exports/model.glb
@@ -115,7 +142,7 @@ exports/preview.gif
 exports/full-run-report.json
 ```
 
-## Segmentation
+## Object Preparation
 
 Fallback segmentation currently runs; AI model integration is the next replacement step.
 
@@ -129,7 +156,7 @@ src/segmentation/
 
 A stronger native or on-device AI segmenter can replace `LocalSegmentationEngine` later.
 
-## Reconstruction
+## Photogrammetry / Splatting
 
 Rough reconstruction/proxy export currently runs; production photogrammetry is the next replacement step.
 
@@ -146,7 +173,7 @@ The current reconstruction engine is `local-rough-proxy`. It creates:
 
 This is not true photogrammetry. It is a rough proxy output that proves storage, inputs, UI flow, and export paths.
 
-## Gaussian Splatting
+## Photoreal Package
 
 Gaussian Splatting job package is exported for future optimizer integration.
 
@@ -167,13 +194,11 @@ exports/splatting-job.json
 6. Keep capturing past the preset if desired.
 7. Complete each required rotation manually.
 8. Open Project Review.
-9. Tap `Run Background Removal`.
-10. Tap `Preview Masks`.
-11. Tap `Run Reconstruction`.
-12. Tap `Prepare Gaussian Splatting Job`.
-13. Tap `Export Viewer HTML`.
-14. Tap `Export Project Package`.
-15. Tap `Show Output Paths`.
+9. Tap `Create 3D Result`.
+10. Confirm Preview shows Interactive Preview, Rough 3D Preview, Photoreal Package, and Captured Frames.
+11. Tap `Export Results`.
+12. Confirm Export Complete shows grouped outputs.
+13. Open `Advanced Details` only if you need internal file paths or debug actions.
 
 ## Known Limitations
 

@@ -2,6 +2,12 @@
 
 This plan verifies the current executable prototype in one session.
 
+Normal users should only need this flow:
+
+```text
+Capture -> Photogrammetry / Splatting -> Preview -> Export
+```
+
 ## Preflight
 
 ```bash
@@ -27,16 +33,15 @@ There is no `npm test` script yet.
 11. Complete rotations manually.
 12. Open Project Review.
 13. Confirm actual frame counts and coverage tiers are shown.
-14. Tap `Run Background Removal`.
-15. Confirm mask files or fallback mask artifacts are created.
-16. Tap `Preview Masks`.
-17. Tap `Run Reconstruction`.
-18. Confirm at least one reconstruction artifact is created.
-19. Tap `Prepare Gaussian Splatting Job`.
-20. Tap `Export Viewer HTML`.
-21. Tap `Export Project Package`.
-22. Tap `Show Output Paths`.
-23. Inspect saved paths in the app output message.
+14. Tap `Create 3D Result`.
+15. Verify progress messages: Checking capture, Preparing object, Creating 3D preview, Preparing photoreal package, Creating viewer, Finished.
+16. Verify it finishes or reports a clear warning.
+17. Verify Preview shows Interactive Preview, Rough 3D Preview, Photoreal Package, and Captured Frames.
+18. Tap `Export Results`.
+19. Verify Export Complete appears.
+20. Verify grouped outputs: Interactive Viewer, 3D Files, Photoreal Processing Package, Project Files.
+21. Open `Advanced Details`.
+22. Verify internal files, mask paths, JSON outputs, and warnings are visible.
 
 ## iOS Test
 
@@ -50,12 +55,12 @@ There is no `npm test` script yet.
 8. Confirm capture can continue beyond the recommended preset.
 9. Complete required rotations manually.
 10. Open Project Review.
-11. Run background removal.
-12. Preview masks.
-13. Run reconstruction.
-14. Prepare Gaussian Splatting job.
-15. Export viewer HTML.
-16. Export project package.
+11. Tap `Create 3D Result`.
+12. Verify progress messages finish or show a clear warning.
+13. Verify Preview shows viewer path, rough model path if generated, and photoreal package status.
+14. Tap `Export Results`.
+15. Verify grouped outputs and project folder path.
+16. Open `Advanced Details`.
 17. Confirm warnings are based on coverage and missing optional underside, not hard limits.
 
 ## Expected Files
@@ -108,3 +113,10 @@ ForgeScan/projects/{projectId}/exports/full-run-report.json
 - Optional underside missing is a warning only.
 - Fewer than 24 frames is a warning only.
 - More than the recommended frame count is allowed and must not block processing.
+
+## Acceptance Criteria
+
+- Normal user flow is Capture, Photogrammetry / Splatting, Preview, Export.
+- No normal user is forced to run object separation, reconstruction, export JSON, or package writer steps manually.
+- Advanced Details is collapsed by default and keeps technical/debug visibility.
+- Typecheck passes.

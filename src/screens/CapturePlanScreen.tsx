@@ -85,7 +85,7 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       </Section>
 
       <Button
-        label="Review Project"
+        label="Review Capture"
         variant="secondary"
         onPress={() =>
           navigation.navigate("ProjectReview", {
