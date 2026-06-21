@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState
 } from "react";
 
@@ -62,6 +63,7 @@ export function ProjectProvider({
   const [projects, setProjects] = useState<ForgeScanProjectManifest[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const projectsRef = useRef<ForgeScanProjectManifest[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -69,6 +71,7 @@ export function ProjectProvider({
     loadStoredProjectManifests()
       .then((storedProjects) => {
         if (isMounted) {
+          projectsRef.current = storedProjects;
           setProjects(storedProjects);
           setStorageError(null);
         }
@@ -89,13 +92,17 @@ export function ProjectProvider({
     };
   }, []);
 
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
   const updateProject = useCallback(
     (
       projectId: string,
       updater: (project: ForgeScanProjectManifest) => ForgeScanProjectManifest
     ) => {
-      setProjects((currentProjects) =>
-        currentProjects.map((project) => {
+      setProjects((currentProjects) => {
+        const updatedProjects = currentProjects.map((project) => {
           if (project.project.id !== projectId) {
             return project;
           }
@@ -103,8 +110,11 @@ export function ProjectProvider({
           const updatedProject = updater(project);
           persistProjectManifest(updatedProject);
           return updatedProject;
-        })
-      );
+        });
+
+        projectsRef.current = updatedProjects;
+        return updatedProjects;
+      });
     },
     []
   );
@@ -123,7 +133,11 @@ export function ProjectProvider({
 
       ensureProjectStorage(manifest);
       persistProjectManifest(manifest);
-      setProjects((currentProjects) => [manifest, ...currentProjects]);
+      setProjects((currentProjects) => {
+        const updatedProjects = [manifest, ...currentProjects];
+        projectsRef.current = updatedProjects;
+        return updatedProjects;
+      });
       return manifest;
     },
     []
@@ -150,7 +164,7 @@ export function ProjectProvider({
       rotationId: RotationId,
       photo: CapturedPhotoInput
     ) => {
-      const currentProject = projects.find(
+      const currentProject = projectsRef.current.find(
         (project) => project.project.id === projectId
       );
       const rotation = currentProject?.capture.rotations.find(
@@ -184,13 +198,14 @@ export function ProjectProvider({
       });
 
       persistProjectManifest(updatedProject);
-      setProjects((currentProjects) =>
-        currentProjects.map((project) =>
-          project.project.id === projectId ? updatedProject : project
-        )
+      const updatedProjects = projectsRef.current.map((project) =>
+        project.project.id === projectId ? updatedProject : project
       );
+
+      projectsRef.current = updatedProjects;
+      setProjects(updatedProjects);
     },
-    [projects]
+    []
   );
 
   const retakeLastFrame = useCallback(
