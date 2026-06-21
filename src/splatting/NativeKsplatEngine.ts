@@ -3,6 +3,7 @@ import {
   getNativeKsplatOptimizerAvailability,
   runNativeKsplatOptimizer
 } from "../native/NativeKsplatOptimizer";
+import { NativeKsplatOptimizerProgress } from "../native/NativeKsplatOptimizerTypes";
 import { createPhotorealAsset } from "../reconstruction/splatting/photorealAsset";
 import { writeProjectFile } from "../storage/projectStorage";
 import { createKsplatOptimizerInput } from "./KsplatOptimizerInput";
@@ -17,12 +18,20 @@ export async function runNativeKsplatEngine(
   manifest: ForgeScanProjectManifest,
   masks: MaskArtifact[]
 ): Promise<KsplatOptimizerResult> {
+  return runKsplatGeneration(manifest, masks);
+}
+
+export async function runKsplatGeneration(
+  manifest: ForgeScanProjectManifest,
+  masks: MaskArtifact[] = [],
+  onProgress?: (progress: NativeKsplatOptimizerProgress) => void
+): Promise<KsplatOptimizerResult> {
   const input = createKsplatOptimizerInput(manifest, masks);
   const availability = await getNativeKsplatOptimizerAvailability();
 
   writeProjectFile(
     manifest,
-    "advanced/optimizer/ksplat-optimizer-input.json",
+    "advanced/splatting/ksplat-optimizer-input.json",
     JSON.stringify(input, null, 2)
   );
 
@@ -38,7 +47,7 @@ export async function runNativeKsplatEngine(
     });
   }
 
-  const result = await runNativeKsplatOptimizer(input);
+  const result = await runNativeKsplatOptimizer(input, onProgress);
   const validation = validateKsplatFile(result.ksplatUri);
 
   if (result.status === "generated" && validation.valid) {

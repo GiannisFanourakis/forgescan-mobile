@@ -23,6 +23,8 @@ export interface KsplatOptimizerInput {
   outputDirectory: string;
   outputPath: string;
   optimizerSettings: KsplatOptimizerSettings;
+  createdAt: string;
+  notes: string[];
 }
 
 export function createKsplatOptimizerInput(
@@ -76,7 +78,12 @@ export function createKsplatOptimizerInput(
       imageDownscale: orderedFrames.length >= 180 ? 2 : 1,
       useMasks: masks.length > 0,
       nativePreferred: true
-    }
+    },
+    createdAt: new Date().toISOString(),
+    notes: [
+      "Native .ksplat optimizer input package for controlled object splatting.",
+      "Expo Go writes this package internally but does not generate a fake .ksplat."
+    ]
   };
 }
 

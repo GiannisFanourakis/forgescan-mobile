@@ -7,9 +7,14 @@ import { getNativeKsplatOptimizerAvailability } from "../native/NativeKsplatOpti
 import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
 import { createPhotorealAsset } from "../reconstruction/splatting/photorealAsset";
 import { runMaskingForProject } from "../masking/MaskingEngine";
-import { validateMaskCoverage } from "../masking/MaskValidation";
-import { runNativeKsplatEngine } from "../splatting/NativeKsplatEngine";
+import {
+  createMaskingSummary,
+  validateMaskCoverage
+} from "../masking/MaskValidation";
+import { MaskingStatus } from "../masking/MaskingTypes";
+import { runKsplatGeneration } from "../splatting/NativeKsplatEngine";
 import { KsplatOptimizerResult } from "../splatting/KsplatOptimizerResult";
+import { KsplatOptimizerStatus } from "../splatting/KsplatTypes";
 import { writeViewerHtml } from "../storage/projectPackageWriter";
 import { writeProjectFile } from "../storage/projectStorage";
 import { NormalExportItem, createNormalExportItems } from "./exportArtifacts";
@@ -32,11 +37,16 @@ export interface PreviewStatusItem {
 
 export interface CreatePhotorealScanPipelineResult {
   success: boolean;
+  status: "generated" | "requires-native-build" | "failed";
+  ksplatStatus: KsplatOptimizerStatus;
+  maskingStatus: MaskingStatus;
   userMessage: string;
   progressSteps: string[];
   normalExports: NormalExportItem[];
   previewStatus: PreviewStatusItem[];
+  internalArtifacts: string[];
   warnings: string[];
+  errors: string[];
   advancedDetails: WorkflowAdvancedDetail[];
 }
 
@@ -67,7 +77,12 @@ export async function createPhotorealScan(
       progressSteps: progressSteps.slice(0, 1),
       normalExports: initialNormalExports,
       previewStatus: initialPreviewStatus,
+      status: "failed",
+      ksplatStatus: "failed",
+      maskingStatus: "not-started",
+      internalArtifacts: [],
       warnings: validation.warnings,
+      errors: validation.errors,
       advancedDetails: validation.errors.map((error) => ({
         label: "Capture issue",
         value: error
@@ -87,8 +102,9 @@ export async function createPhotorealScan(
   );
   const masking = await runMaskingForProject(manifest);
   const maskCoverage = validateMaskCoverage(manifest, masking.artifacts);
+  const maskingSummary = createMaskingSummary(manifest, masking.artifacts);
   const reconstruction = await runReconstructionJob(manifest);
-  const optimizerResult = await runNativeKsplatEngine(
+  const optimizerResult = await runKsplatGeneration(
     manifest,
     masking.artifacts
   );
@@ -105,9 +121,28 @@ export async function createPhotorealScan(
     ...validation.warnings,
     ...masking.warnings,
     ...maskCoverage.warnings,
-    ...reconstruction.warnings,
     ...optimizerResult.warnings
   );
+
+  const errors = [
+    ...validation.errors,
+    ...masking.errors,
+    ...maskCoverage.errors,
+    ...optimizerResult.errors
+  ];
+  const internalArtifacts = [
+    reconstructionPlanUri,
+    exportTargetsUri,
+    viewerUri,
+    "advanced/splatting/ksplat-optimizer-input.json",
+    "advanced/splatting/ksplat-result.json",
+    ...masking.artifacts.flatMap((artifact) =>
+      [artifact.rawMaskUri, artifact.refinedMaskUri].filter(
+        (uri): uri is string => Boolean(uri)
+      )
+    ),
+    ...reconstruction.artifacts.map((artifact) => artifact.uri)
+  ];
 
   advancedDetails.push(
     {
@@ -125,12 +160,14 @@ export async function createPhotorealScan(
           "Native .ksplat optimizer requires a development/native build.")
     },
     { label: "Primary .ksplat target", value: photorealAsset.path },
-    { label: "Optimizer input package", value: "advanced/optimizer/ksplat-optimizer-input.json" },
+    { label: "Optimizer input package", value: "advanced/splatting/ksplat-optimizer-input.json" },
     { label: "Optimizer status", value: optimizerResult.status },
     { label: "Preview fallback viewer", value: viewerUri },
+    { label: "Object preparation", value: maskingSummary.userMessage },
     { label: "Masking engine result", value: `${masking.engineName} / ${masking.status}` },
     { label: "Mask coverage", value: `${maskCoverage.maskCount}/${maskCoverage.requiredFrames} required frames` },
     { label: "Internal alignment engine", value: reconstruction.job.implementation },
+    { label: "Internal alignment warning", value: reconstruction.warnings.join(" ") },
     { label: "Internal alignment plan", value: reconstructionPlanUri },
     { label: "Export target plan", value: exportTargetsUri },
     ...masking.artifacts.flatMap((artifact) => [
@@ -148,14 +185,21 @@ export async function createPhotorealScan(
 
   return {
     success: true,
+    status: getResultStatus(optimizerResult),
+    ksplatStatus: optimizerResult.status,
+    maskingStatus: masking.status,
     userMessage: createUserMessage(optimizerResult),
     progressSteps,
     normalExports,
     previewStatus,
+    internalArtifacts: [...new Set(internalArtifacts)],
     warnings: [...new Set(warnings)],
+    errors: [...new Set(errors)],
     advancedDetails
   };
 }
+
+export type CreatePhotorealScanResult = CreatePhotorealScanPipelineResult;
 
 function createPreviewStatus(
   optimizerResult?: KsplatOptimizerResult
@@ -199,6 +243,12 @@ function getPhotorealAssetStatus(
   }
 
   return "requires-native-build";
+}
+
+function getResultStatus(
+  result: KsplatOptimizerResult
+): "generated" | "requires-native-build" | "failed" {
+  return getPhotorealAssetStatus(result);
 }
 
 function createUserMessage(result: KsplatOptimizerResult): string {

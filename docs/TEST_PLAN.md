@@ -23,26 +23,28 @@ preview.gif
 3. Run `npm run start`.
 4. Open the app in Expo Go.
 5. Create a project.
-6. Capture frames for required rotations.
-7. Open Project Review.
-8. Tap `Create Photoreal Scan`.
-9. Confirm progress messages:
+6. Capture the upright rotation.
+7. Capture the tilted rotation.
+8. Optional: capture the underside rotation.
+9. Open Project Review.
+10. Tap `Create Photoreal Scan`.
+11. Confirm progress messages:
    - Checking capture
    - Preparing object
    - Creating photoreal scan
    - Preparing preview
    - Finished
-10. Confirm native masking reports unavailable or fallback masking runs.
-11. Confirm `.ksplat` status is `Requires native build`.
-12. Confirm no fake `.ksplat` exists.
-13. Tap `Export .ksplat`.
-14. Confirm normal export UI only shows:
+12. Confirm native masking reports unavailable safely or fallback object preparation runs.
+13. Confirm `.ksplat` status is `Requires native build`.
+14. Confirm no fake `.ksplat` exists.
+15. Tap `Export .ksplat`.
+16. Confirm normal export UI only shows:
    - `ForgeScan_{projectName}.ksplat`
    - `preview.mp4`
    - `preview.gif`
-15. Confirm `preview.mp4` and `preview.gif` show `Requires native processing`.
-16. Expand Advanced Details.
-17. Confirm Advanced Details lists native availability, internal optimizer input, masks, and diagnostics.
+17. Confirm `preview.mp4` and `preview.gif` show `Requires native processing`.
+18. Expand Advanced Details.
+19. Confirm Advanced Details lists native availability, internal optimizer input, masks, logs, internal JSON, and diagnostics.
 
 ## Path B — Native/Dev Build
 
@@ -70,8 +72,8 @@ Expo Go may create:
 ```text
 ForgeScan/projects/{projectId}/advanced/masks/raw/{rotation}/frame_001.png
 ForgeScan/projects/{projectId}/advanced/masks/refined/{rotation}/frame_001.png
-ForgeScan/projects/{projectId}/advanced/optimizer/ksplat-optimizer-input.json
-ForgeScan/projects/{projectId}/advanced/optimizer/ksplat-result.json
+ForgeScan/projects/{projectId}/advanced/splatting/ksplat-optimizer-input.json
+ForgeScan/projects/{projectId}/advanced/splatting/ksplat-result.json
 ForgeScan/projects/{projectId}/open_viewer.html
 ```
 

@@ -40,10 +40,6 @@ export class FallbackMaskingEngine implements MaskingEngine {
     }
 
     const artifacts = rotationResults.flatMap((result) => result.artifacts);
-    const warnings = [
-      "Native AI masking requires a development/native build.",
-      "Fallback local masking wrote deterministic internal PNG mask artifacts."
-    ];
     const result: MaskingProjectResult = {
       projectId: manifest.project.id,
       status: "complete",
@@ -60,7 +56,7 @@ export class FallbackMaskingEngine implements MaskingEngine {
         .length,
       artifacts,
       rotationResults,
-      warnings,
+      warnings: ["Basic object preparation used."],
       errors: rotationResults.flatMap((rotation) => rotation.errors)
     };
 
@@ -183,15 +179,36 @@ export class FallbackMaskingEngine implements MaskingEngine {
           "PNG mask writing failed; JSON fallback mask artifacts were created."
         ]
       };
+      const createdAt = fallbackArtifact.createdAt ?? new Date().toISOString();
       const rawMaskUri = writeProjectFile(
         manifest,
         fallbackArtifact.rawMaskPath,
-        JSON.stringify(fallbackArtifact, null, 2)
+        JSON.stringify(
+          createFallbackMaskDocument(
+            manifest,
+            rotationId,
+            frame,
+            "raw",
+            createdAt
+          ),
+          null,
+          2
+        )
       );
       const refinedMaskUri = writeProjectFile(
         manifest,
         fallbackArtifact.refinedMaskPath,
-        JSON.stringify(fallbackArtifact, null, 2)
+        JSON.stringify(
+          createFallbackMaskDocument(
+            manifest,
+            rotationId,
+            frame,
+            "refined",
+            createdAt
+          ),
+          null,
+          2
+        )
       );
 
       return {
@@ -204,6 +221,53 @@ export class FallbackMaskingEngine implements MaskingEngine {
       };
     }
   }
+}
+
+function createFallbackMaskDocument(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId,
+  frame: CapturedFrame,
+  maskKind: "raw" | "refined",
+  createdAt: string
+): {
+  projectId: string;
+  rotationId: RotationId;
+  frameIndex: number;
+  sourceFrameUri: string;
+  maskKind: "raw" | "refined";
+  engine: "fallback-local";
+  format: "json";
+  createdAt: string;
+  objectRegionEstimate: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    confidence: number;
+  };
+  notes: string[];
+} {
+  return {
+    projectId: manifest.project.id,
+    rotationId,
+    frameIndex: frame.index,
+    sourceFrameUri: frame.uri,
+    maskKind,
+    engine: "fallback-local",
+    format: "json",
+    createdAt,
+    objectRegionEstimate: {
+      x: 0.2,
+      y: 0.12,
+      width: 0.6,
+      height: 0.76,
+      confidence: 0.25
+    },
+    notes: [
+      "Fallback segmentation currently runs; AI model integration is the next replacement step.",
+      "This JSON artifact stands in for a PNG mask only when PNG writing is blocked."
+    ]
+  };
 }
 
 export function createRawMaskPath(rotationId: RotationId, frameIndex: number): string {

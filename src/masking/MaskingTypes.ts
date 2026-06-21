@@ -72,6 +72,17 @@ export interface MaskCoverageValidation {
   errors: string[];
 }
 
+export interface MaskingSummary {
+  status: MaskingStatus;
+  engine: MaskingEngineMode;
+  totalFrames: number;
+  maskCount: number;
+  requiredFrames: number;
+  userMessage: string;
+  warnings: string[];
+  errors: string[];
+}
+
 export interface MaskingEngine {
   mode: MaskingEngineMode;
   runMaskingForProject(

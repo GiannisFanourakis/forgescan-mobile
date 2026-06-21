@@ -45,6 +45,15 @@ export function validateKsplatFile(uri?: string): KsplatValidationResult {
         errors: [".ksplat file was reported but does not exist."]
       };
     }
+
+    if (file.size <= 0) {
+      return {
+        valid: false,
+        status: "Failed",
+        warnings: [],
+        errors: [".ksplat file was reported but is empty."]
+      };
+    }
   } catch {
     return {
       valid: false,
@@ -68,7 +77,7 @@ export function registerKsplatResult(
 ): KsplatOptimizerResult {
   writeProjectFile(
     manifest,
-    "advanced/optimizer/ksplat-result.json",
+    "advanced/splatting/ksplat-result.json",
     JSON.stringify(result, null, 2)
   );
 
@@ -96,4 +105,10 @@ export function getExpectedKsplatDisplayPath(
   manifest: ForgeScanProjectManifest
 ): string {
   return getExpectedKsplatPath(manifest);
+}
+
+export function getKsplatExportLabel(
+  manifest: ForgeScanProjectManifest
+): string {
+  return createPhotorealAsset(manifest, "requires-native-build").filename;
 }

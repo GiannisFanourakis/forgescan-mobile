@@ -42,7 +42,7 @@ React Native / Expo UI
 -> Export
 ```
 
-Expo Go can capture frames, prepare internal data, run fallback masking, and show the correct status. Real `.ksplat` generation requires a development/native build until the native optimizer module is implemented and linked.
+Expo Go can capture frames, prepare internal data, run fallback object preparation, and show the correct status. Real `.ksplat` generation requires a development/native build until the native optimizer module is implemented and linked.
 
 No fake `.ksplat` is created.
 
@@ -57,7 +57,7 @@ No fake `.ksplat` is created.
 - Run one user-facing action: `Create Photoreal Scan`.
 - Prefer native masking and native `.ksplat` optimization when modules are available.
 - In Expo Go, report native masking and native `.ksplat` optimizer as requiring a development/native build.
-- Use fallback local masking only as a secondary Expo Go path.
+- Use fallback local object preparation only as a secondary Expo Go path.
 - Save optimizer input internally for native/dev-build processing.
 - Keep masks, JSON, OBJ, GLB, PLY, source frames, logs, and folders out of the normal export UI.
 
@@ -136,8 +136,8 @@ Current Expo Go internal files may include:
 ```text
 advanced/masks/raw/{rotation}/frame_001.png
 advanced/masks/refined/{rotation}/frame_001.png
-advanced/optimizer/ksplat-optimizer-input.json
-advanced/optimizer/ksplat-result.json
+advanced/splatting/ksplat-optimizer-input.json
+advanced/splatting/ksplat-result.json
 open_viewer.html
 source/
 fallback/

@@ -160,7 +160,10 @@ export function ProjectReviewScreen({
 
     try {
       const result = await exportPhotorealScan(activeProject);
-      setExportResult(result);
+      setExportResult({
+        ...result,
+        normalExports: scanResult?.normalExports ?? result.normalExports
+      });
       setAdvancedDetails((details) => [...details, ...result.advancedDetails]);
       setStatusMessage(result.userMessage);
     } catch (error: unknown) {

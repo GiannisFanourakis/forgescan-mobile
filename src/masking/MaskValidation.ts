@@ -2,7 +2,8 @@ import { ForgeScanProjectManifest } from "../core/manifest";
 import {
   MaskArtifact,
   MaskCoverageValidation,
-  MaskingStatus
+  MaskingStatus,
+  MaskingSummary
 } from "./MaskingTypes";
 
 export function validateMaskCoverage(
@@ -41,6 +42,39 @@ export function getMaskingStatus(
   masks: MaskArtifact[] = []
 ): MaskingStatus {
   return validateMaskCoverage(manifest, masks).status;
+}
+
+export function createMaskingSummary(
+  manifest: ForgeScanProjectManifest,
+  masks: MaskArtifact[] = []
+): MaskingSummary {
+  const coverage = validateMaskCoverage(manifest, masks);
+  const engines = [...new Set(masks.map((mask) => mask.engine))];
+  const engine =
+    engines.length === 1 && engines[0] !== undefined
+      ? engines[0]
+      : masks.length > 0
+        ? "fallback-local"
+        : "unavailable";
+
+  return {
+    status: coverage.status,
+    engine,
+    totalFrames: manifest.capture.rotations.reduce(
+      (sum, rotation) => sum + rotation.frames.length,
+      0
+    ),
+    maskCount: coverage.maskCount,
+    requiredFrames: coverage.requiredFrames,
+    userMessage:
+      engine === "fallback-local"
+        ? "Basic object preparation used."
+        : engine === "native-ai"
+          ? "Object preparation complete."
+          : "Native AI masking requires a development/native build.",
+    warnings: coverage.warnings,
+    errors: coverage.errors
+  };
 }
 
 function getMaskingStatusFromCounts(

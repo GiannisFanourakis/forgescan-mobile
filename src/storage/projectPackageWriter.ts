@@ -15,6 +15,7 @@ import {
   getPhotorealStatusLabel
 } from "../reconstruction/splatting/photorealAsset";
 import { runMaskingForProject } from "../masking/MaskingEngine";
+import { createKsplatOptimizerInput } from "../splatting/KsplatOptimizerInput";
 import {
   ensureProjectStorage,
   getProjectDirectory,
@@ -216,6 +217,13 @@ export async function writeFullProjectPackage(
   generatedFiles.push(...(await writeFallbackArtifacts(manifest, reconstruction)));
   warnings.push(...reconstruction.warnings);
 
+  generatedFiles.push(
+    writeProjectFile(
+      manifest,
+      "advanced/splatting/ksplat-optimizer-input.json",
+      JSON.stringify(createKsplatOptimizerInput(manifest, masking.artifacts), null, 2)
+    )
+  );
   generatedFiles.push(...writeSplattingJob(projectId, manifest));
   generatedFiles.push(writeViewerHtml(projectId, manifest));
   generatedFiles.push(writeReadmeExports(projectId, manifest));
@@ -378,6 +386,7 @@ function createReadme(manifest: ForgeScanProjectManifest): string {
     "Internal/debug files are kept for Advanced Details only:",
     "- photoreal/splatting-job.json",
     "- photoreal/cameras.json",
+    "- advanced/splatting/ksplat-optimizer-input.json",
     "- source/frames/frames.json",
     "- source/masks/masks.json",
     "- fallback/model.obj",
