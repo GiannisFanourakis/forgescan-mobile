@@ -21,8 +21,10 @@ export function createNativeMaskingInput(
       status: rotation.status
     })),
     outputDirectory: "advanced/masks",
-    modelHint: "birefnet-object-background",
+    modelHint: "mlkit-subject-segmentation",
     desiredMaskFormat: "png",
-    refinementEnabled: true
+    refinementEnabled: true,
+    modelPreference: "auto-mobile",
+    maskInputSize: 256
   };
 }

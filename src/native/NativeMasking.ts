@@ -12,8 +12,7 @@ const nativeMaskingModule = NativeModules.ForgeScanNativeMasking as
   | {
       getAvailability?: () => Promise<string>;
       runMasking?: (inputJson: string) => Promise<string>;
-      runOneFrameMaskTest?: () => Promise<string>;
-      runOneFrameBiRefNetMaskTest?: () => Promise<string>;
+      runOneFrameMaskTest?: (inputJson: string) => Promise<string>;
       cancelMasking?: () => Promise<void>;
     }
   | undefined;
@@ -26,7 +25,9 @@ export async function getNativeMaskingAvailability(): Promise<NativeMaskingAvail
       moduleName: "ForgeScanNativeMasking",
       reason: "Native AI masking requires a development/native build.",
       modelStatus: "missing",
-      maskingEngineStatus: "birefnet-model-missing",
+      maskingEngineStatus: "fallback-local",
+      mlKitAvailable: false,
+      defaultMaskingEngine: "mlkit-subject-segmentation",
       fallbackUsed: true
     };
   }
@@ -38,10 +39,15 @@ export async function getNativeMaskingAvailability(): Promise<NativeMaskingAvail
       ) as NativeMaskingAvailability;
     } catch {
       return {
-        available: true,
-        mode: "native-ai",
+        available: false,
+        mode: "unavailable",
         moduleName: "ForgeScanNativeMasking",
-      engineName: "native-ai"
+        reason: "Native masking availability returned invalid JSON.",
+        engineName: "android-masking",
+        modelStatus: "load-failed",
+        maskingEngineStatus: "failed",
+        mlKitAvailable: false,
+        fallbackUsed: true
       };
     }
   }
@@ -50,7 +56,10 @@ export async function getNativeMaskingAvailability(): Promise<NativeMaskingAvail
     available: true,
     mode: "native-ai",
     moduleName: "ForgeScanNativeMasking",
-    engineName: "native-ai"
+    engineName: "android-masking",
+    modelStatus: "not-loaded",
+    maskingEngineStatus: "available-not-loaded",
+    defaultMaskingEngine: "mlkit-subject-segmentation"
   };
 }
 
@@ -67,7 +76,7 @@ export async function runNativeMasking(
       engineName: "unavailable",
       modelName: input.modelHint,
       modelStatus: "missing",
-      maskingEngineStatus: "birefnet-model-missing",
+      maskingEngineStatus: "fallback-local",
       fallbackUsed: true,
       warnings: [
         availability.reason ??
@@ -84,10 +93,25 @@ export async function runNativeMasking(
     message: "Native object masking started."
   });
 
-  const outputJson = await nativeMaskingModule.runMasking(
-    JSON.stringify(input)
-  );
-  const output = JSON.parse(outputJson) as NativeMaskingOutput;
+  let output: NativeMaskingOutput;
+  try {
+    const outputJson = await nativeMaskingModule.runMasking(
+      JSON.stringify(input)
+    );
+    output = JSON.parse(outputJson) as NativeMaskingOutput;
+  } catch (error) {
+    return {
+      status: "failed",
+      maskArtifacts: [],
+      engineName: "android-masking",
+      modelName: input.modelHint,
+      modelStatus: "load-failed",
+      maskingEngineStatus: "failed",
+      fallbackUsed: true,
+      warnings: ["Native masking failed before returning a usable result."],
+      errors: [error instanceof Error ? error.message : "Native masking result parse failed."]
+    };
+  }
 
   onProgress?.({
     status: "processing",
@@ -113,7 +137,9 @@ export async function runNativeMaskingSmokeTest(): Promise<NativeMaskingSmokeTes
       status: "requires-native-build",
       modelExists: false,
       modelStatus: "missing",
-      maskingEngineStatus: "birefnet-model-missing",
+      maskingEngineStatus: "fallback-local",
+      mlKitAvailable: false,
+      defaultMaskingEngine: "mlkit-subject-segmentation",
       fallbackUsed: true,
       warnings: [
         availability.reason ??
@@ -123,35 +149,24 @@ export async function runNativeMaskingSmokeTest(): Promise<NativeMaskingSmokeTes
     };
   }
 
-  return JSON.parse(
-    await nativeMaskingModule.runOneFrameMaskTest()
-  ) as NativeMaskingSmokeTestResult;
-}
-
-export async function runNativeBiRefNetMaskingSmokeTest(): Promise<NativeMaskingSmokeTestResult> {
-  const availability = await getNativeMaskingAvailability();
-
-  if (!availability.available || !nativeMaskingModule?.runOneFrameBiRefNetMaskTest) {
+  try {
+    return JSON.parse(
+      await nativeMaskingModule.runOneFrameMaskTest(
+        JSON.stringify({
+          modelPreference: "auto-mobile",
+          maskInputSize: 192
+        })
+      )
+    ) as NativeMaskingSmokeTestResult;
+  } catch (error) {
     return {
-      status: "requires-native-build",
+      status: "fail",
       modelExists: false,
-      modelStatus: "missing",
-      modelName: "birefnet.onnx",
-      modelAssetPath: "models/masking/birefnet.onnx",
-      maskingEngineStatus: "birefnet-model-missing",
-      birefnetLoaded: false,
-      birefnetInferencePassed: false,
-      inferenceBackend: "onnxruntime",
-      fallbackUsed: false,
-      warnings: [
-        availability.reason ??
-          "Native AI masking requires a development/native build."
-      ],
-      errors: []
+      modelStatus: "load-failed",
+      maskingEngineStatus: "failed",
+      fallbackUsed: true,
+      warnings: ["One-frame ML Kit mask test failed before returning a usable result."],
+      errors: [error instanceof Error ? error.message : "Native mask test result parse failed."]
     };
   }
-
-  return JSON.parse(
-    await nativeMaskingModule.runOneFrameBiRefNetMaskTest()
-  ) as NativeMaskingSmokeTestResult;
 }

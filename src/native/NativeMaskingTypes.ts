@@ -1,17 +1,45 @@
 import { RotationId } from "../core/manifest";
 
 export type NativeMaskingAvailabilityMode = "native-ai" | "fallback-local" | "unavailable";
-export type NativeMaskingModelHint = "birefnet-object-background";
+export type NativeMaskingModelHint = "mlkit-subject-segmentation";
 export type NativeMaskingDesiredFormat = "png";
-export type NativeMaskingModelStatus = "loaded" | "missing" | "load-failed" | "inference-failed";
+export type NativeMaskingModelPreference =
+  | "auto-mobile"
+  | "mlkit-subject-segmentation"
+  | "fallback-local";
+export type NativeMaskingModelStatus =
+  | "loaded"
+  | "not-loaded"
+  | "missing"
+  | "load-failed"
+  | "inference-failed"
+  | "oom"
+  | "oom-guard"
+  | "full-model-disabled";
 export type NativeMaskingEngineStatus =
-  | "birefnet-model-missing"
-  | "birefnet-load-failed"
-  | "birefnet-running"
-  | "birefnet-complete"
-  | "temporary-deeplab-fallback"
+  | "mlkit-running"
+  | "mlkit-complete"
+  | "available-not-loaded"
   | "fallback-local"
   | "failed";
+
+export interface NativeMaskingMemorySnapshot {
+  maxMemoryBytes?: number;
+  totalMemoryBytes?: number;
+  freeMemoryBytes?: number;
+  availableMemoryBytes?: number;
+}
+
+export interface NativeMaskingDetectedModel {
+  path: string;
+  tier: string;
+  runtime: string;
+  present: boolean;
+  fileSize: number;
+  quantized: boolean;
+  fullModel: boolean;
+  defaultEligible: boolean;
+}
 
 export interface NativeMaskingAvailability {
   available: boolean;
@@ -20,18 +48,32 @@ export interface NativeMaskingAvailability {
   reason?: string;
   engineName?: string;
   engineVersion?: string;
+  mlKitAvailable?: boolean;
+  defaultMaskingEngine?: string;
+  confidenceThreshold?: number;
   modelExists?: boolean;
-  birefnetModelPresent?: boolean;
-  temporaryDeepLabModelPresent?: boolean;
+  modelPresent?: boolean;
+  modelPath?: string;
+  modelTier?: string;
+  modelPreference?: NativeMaskingModelPreference;
+  modelFileSize?: number;
+  runtime?: string;
+  runtimeClassesAvailable?: boolean;
+  heavyInitializationRequired?: boolean;
+  detectedModels?: NativeMaskingDetectedModel[];
   modelLoaded?: boolean;
   inferenceRan?: boolean;
   maskPngWritten?: boolean;
   modelName?: string;
   modelAssetPath?: string;
   modelStatus?: NativeMaskingModelStatus;
-  birefnetLoaded?: boolean;
-  birefnetInferencePassed?: boolean;
+  lastInferenceError?: string;
   inferenceBackend?: string;
+  errorCode?: string;
+  maskInputSize?: number;
+  memory?: NativeMaskingMemorySnapshot;
+  memoryBeforeLoad?: NativeMaskingMemorySnapshot;
+  memoryAfterLoad?: NativeMaskingMemorySnapshot;
   fallbackUsed?: boolean;
   activeMaskingEngine?: string;
   maskingEngineStatus?: NativeMaskingEngineStatus;
@@ -61,6 +103,8 @@ export interface NativeMaskingInput {
   modelHint: NativeMaskingModelHint;
   desiredMaskFormat: NativeMaskingDesiredFormat;
   refinementEnabled: boolean;
+  modelPreference?: NativeMaskingModelPreference;
+  maskInputSize?: 192 | 256 | 320 | 512;
 }
 
 export interface NativeMaskingProgress {
@@ -83,6 +127,9 @@ export interface NativeMaskArtifactOutput {
   modelLoaded?: boolean;
   inferenceRan?: boolean;
   maskPngWritten?: boolean;
+  inferenceTimeMs?: number;
+  confidenceThreshold?: number;
+  inputFramePath?: string;
   status: "complete" | "failed";
   warnings: string[];
   errors: string[];
@@ -95,14 +142,22 @@ export interface NativeMaskingOutput {
   engineVersion?: string;
   modelName: string;
   modelExists?: boolean;
-  birefnetModelPresent?: boolean;
-  temporaryDeepLabModelPresent?: boolean;
+  mlKitAvailable?: boolean;
+  defaultMaskingEngine?: string;
+  confidenceThreshold?: number;
+  modelTier?: string;
+  modelPreference?: NativeMaskingModelPreference;
+  modelAssetPath?: string;
+  modelFileSize?: number;
+  maskInputSize?: number;
+  errorCode?: string;
+  memoryBeforeLoad?: NativeMaskingMemorySnapshot;
+  memoryAfterLoad?: NativeMaskingMemorySnapshot;
   modelLoaded?: boolean;
   inferenceRan?: boolean;
   maskPngWritten?: boolean;
   modelStatus?: NativeMaskingModelStatus;
-  birefnetLoaded?: boolean;
-  birefnetInferencePassed?: boolean;
+  lastInferenceError?: string;
   inferenceBackend?: string;
   fallbackUsed?: boolean;
   activeMaskingEngine?: string;
@@ -115,18 +170,25 @@ export interface NativeMaskingSmokeTestResult {
   status: "pass" | "fail" | "requires-native-build";
   maskUri?: string;
   maskBytes?: number;
+  mlKitAvailable?: boolean;
+  defaultMaskingEngine?: string;
+  confidenceThreshold?: number;
   modelExists?: boolean;
-  birefnetModelPresent?: boolean;
-  temporaryDeepLabModelPresent?: boolean;
+  modelTier?: string;
+  modelPreference?: NativeMaskingModelPreference;
+  modelFileSize?: number;
+  maskInputSize?: number;
+  errorCode?: string;
+  memoryBeforeLoad?: NativeMaskingMemorySnapshot;
+  memoryAfterLoad?: NativeMaskingMemorySnapshot;
   modelLoaded?: boolean;
   inferenceRan?: boolean;
   maskPngWritten?: boolean;
   modelStatus?: NativeMaskingModelStatus;
+  lastInferenceError?: string;
   modelName?: string;
   engineName?: string;
   modelAssetPath?: string;
-  birefnetLoaded?: boolean;
-  birefnetInferencePassed?: boolean;
   inferenceBackend?: string;
   fallbackUsed?: boolean;
   activeMaskingEngine?: string;

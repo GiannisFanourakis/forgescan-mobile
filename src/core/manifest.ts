@@ -7,6 +7,7 @@ export type CaptureMode = "controlled-turntable";
 export type CapturePlan = "two-rotation" | "three-rotation";
 export type RotationId = "upright" | "tilted" | "underside";
 export type RotationStatus = "pending" | "capturing" | "complete";
+export type CaptureSource = "camera" | "simulated" | "imported" | "arcore";
 export type BackgroundRemovalEngine = "none" | "external" | "future-ai";
 export type ReconstructionEngine =
   | "none"
@@ -65,6 +66,19 @@ export interface CameraMetadata {
   iso?: number;
 }
 
+export interface CameraIntrinsics {
+  fx: number;
+  fy: number;
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+}
+
+export interface CameraExtrinsics {
+  transform: number[];
+}
+
 export interface FrameQualityChecks {
   blur: QualityCheckState;
   exposure: QualityCheckState;
@@ -79,7 +93,12 @@ export interface CapturedFrame {
   width?: number;
   height?: number;
   capturedAt: string;
+  captureSource?: CaptureSource;
   camera?: CameraMetadata;
+  timestamp?: string;
+  cameraIntrinsics?: CameraIntrinsics;
+  cameraExtrinsics?: CameraExtrinsics;
+  trackingState?: string;
   qualityChecks: FrameQualityChecks;
 }
 
@@ -181,7 +200,12 @@ export interface AddFrameInput {
   width?: number;
   height?: number;
   capturedAt?: string;
+  captureSource?: CaptureSource;
   camera?: CameraMetadata;
+  timestamp?: string;
+  cameraIntrinsics?: CameraIntrinsics;
+  cameraExtrinsics?: CameraExtrinsics;
+  trackingState?: string;
   qualityChecks?: Partial<FrameQualityChecks>;
 }
 
@@ -331,9 +355,22 @@ export function addFrameToRotation(
         centered: frameInput.qualityChecks?.centered ?? "not-run",
         notes: frameInput.qualityChecks?.notes ?? []
       },
+      ...(frameInput.captureSource !== undefined
+        ? { captureSource: frameInput.captureSource }
+        : {}),
       ...(frameInput.width !== undefined ? { width: frameInput.width } : {}),
       ...(frameInput.height !== undefined ? { height: frameInput.height } : {}),
-      ...(frameInput.camera !== undefined ? { camera: frameInput.camera } : {})
+      ...(frameInput.camera !== undefined ? { camera: frameInput.camera } : {}),
+      ...(frameInput.timestamp !== undefined ? { timestamp: frameInput.timestamp } : {}),
+      ...(frameInput.cameraIntrinsics !== undefined
+        ? { cameraIntrinsics: frameInput.cameraIntrinsics }
+        : {}),
+      ...(frameInput.cameraExtrinsics !== undefined
+        ? { cameraExtrinsics: frameInput.cameraExtrinsics }
+        : {}),
+      ...(frameInput.trackingState !== undefined
+        ? { trackingState: frameInput.trackingState }
+        : {})
     };
 
     return {

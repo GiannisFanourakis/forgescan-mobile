@@ -1,59 +1,19 @@
-# ForgeScan Masking Models
+# ForgeScan Masking Assets
 
-Android dev builds use ONNX Runtime for BiRefNet and TensorFlow Lite for the temporary fallback model.
+Android V1 uses Google ML Kit Subject Segmentation as the default on-phone masking engine.
 
-Primary BiRefNet path:
+No bundled segmentation model is required or supported in this project path.
+
+The native ML Kit runtime is added by:
 
 ```text
-assets/models/masking/birefnet.onnx
+plugins/withForgeScanNativeEngines.js
 ```
 
-Fallback temporary model:
+Current optional local assets:
 
 ```text
 assets/models/masking/mobile-segmentation.tflite
 ```
 
-During `npx expo prebuild`, `plugins/withForgeScanNativeEngines.js` copies non-Markdown files from this folder into:
-
-```text
-android/app/src/main/assets/models/masking/
-```
-
-Current Android dev builds bundle:
-
-```text
-assets/models/masking/birefnet.onnx
-assets/models/masking/mobile-segmentation.tflite
-```
-
-`birefnet.onnx` is the official smaller BiRefNet ONNX release asset:
-
-```text
-BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx
-```
-
-Install or check the model with:
-
-```bash
-npm run model:birefnet:install
-npm run model:birefnet:check
-```
-
-If no model is present, Android reports:
-
-```text
-BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx.
-```
-
-If the model exists but cannot load, Android reports:
-
-```text
-On-phone masking model failed to load.
-```
-
-If inference fails for a frame, Android reports:
-
-```text
-On-phone masking inference failed.
-```
+That file is retained only as a historical/local fallback asset. The normal Android masking path is ML Kit.

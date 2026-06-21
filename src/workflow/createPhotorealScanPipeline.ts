@@ -124,21 +124,15 @@ export async function createPhotorealScan(
     ...optimizerResult.warnings
   );
 
-  if (masking.maskingEngineStatus === "temporary-deeplab-fallback") {
-    warnings.push(
-      "Temporary DeepLab segmentation used. Object isolation may be imperfect."
-    );
-  }
-
   if (masking.maskingEngineStatus === "fallback-local") {
     warnings.push(
       "Fallback local object preparation used. This is not production object-background removal."
     );
   }
 
-  if (masking.maskingEngineStatus !== "birefnet-complete") {
+  if (masking.maskingEngineStatus !== "mlkit-complete") {
     warnings.push(
-      "BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx."
+      "Android V1 default masking is ML Kit Subject Segmentation; fallback masking is less precise."
     );
   }
 

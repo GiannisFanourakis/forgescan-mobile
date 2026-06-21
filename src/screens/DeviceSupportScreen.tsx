@@ -7,6 +7,11 @@ import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import {
+  getNativeARCaptureAvailability,
+  runNativeARCoreKeyframeSmokeTest
+} from "../native/NativeARCapture";
+import { NativeARCaptureAvailability } from "../native/NativeARCaptureTypes";
+import {
   getNativeKsplatOptimizerAvailability,
   runNativeGaussianTrainingSmokeTest,
   runNativeKsplatSmokeTest
@@ -14,7 +19,6 @@ import {
 import { NativeKsplatOptimizerAvailability } from "../native/NativeKsplatOptimizerTypes";
 import {
   getNativeMaskingAvailability,
-  runNativeBiRefNetMaskingSmokeTest,
   runNativeMaskingSmokeTest
 } from "../native/NativeMasking";
 import { NativeMaskingAvailability } from "../native/NativeMaskingTypes";
@@ -44,6 +48,7 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
   const currentPlatformLabel = getRuntimePlatformLabel();
   const hasForgeScanNativeModules = Boolean(
     NativeModules.ForgeScanNativeMasking ||
+      NativeModules.ForgeScanARCapture ||
       NativeModules.ForgeScanKsplatOptimizer
   );
   const [isRunning, setIsRunning] = useState(false);
@@ -53,7 +58,10 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
     useState<NativeMaskingAvailability | null>(null);
   const [optimizerAvailability, setOptimizerAvailability] =
     useState<NativeKsplatOptimizerAvailability | null>(null);
+  const [arAvailability, setArAvailability] =
+    useState<NativeARCaptureAvailability | null>(null);
   const [maskTestStatus, setMaskTestStatus] = useState<SmokeStatus>("not run");
+  const [arSmokeStatus, setArSmokeStatus] = useState<SmokeStatus>("not run");
   const [trainingSmokeStatus, setTrainingSmokeStatus] =
     useState<SmokeStatus>("not run");
   const [splatSmokeStatus, setSplatSmokeStatus] = useState<SmokeStatus>("not run");
@@ -109,9 +117,9 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             : "This preview runtime uses shared capture only."}
         </Text>
         <Text style={styles.summaryMeta}>
-          Android V1 can use BiRefNet ONNX when the model is present,
-          temporary DeepLab as fallback, and trainable Gaussian Splat V1.
-          Production 3DGS is not implemented.
+          Android V1 defaults to ML Kit Subject Segmentation for object masks,
+          uses ARCore readiness when available, and runs the local Gaussian
+          Splat V1 optimizer.
         </Text>
       </View>
 
@@ -136,16 +144,16 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             value={getReactNativeArchitectureReason(architectureStatus)}
           />
           <DiagnosticLine
-            label="Temporary DeepLab model"
-            value={formatPresence(maskingAvailability?.temporaryDeepLabModelPresent)}
+            label="Default masking engine"
+            value={maskingAvailability?.defaultMaskingEngine ?? "mlkit-subject-segmentation"}
           />
           <DiagnosticLine
-            label="BiRefNet model"
-            value={formatPresence(maskingAvailability?.birefnetModelPresent)}
+            label="ML Kit available"
+            value={formatPresence(maskingAvailability?.mlKitAvailable)}
           />
           <DiagnosticLine
-            label="BiRefNet setup command"
-            value="npm run model:birefnet:install"
+            label="Mask confidence threshold"
+            value={`${maskingAvailability?.confidenceThreshold ?? 0.85}`}
           />
           <DiagnosticLine
             label="Active masking engine"
@@ -161,7 +169,16 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                   : "no"
             }
           />
-          <DiagnosticLine label="One-frame BiRefNet mask test" value={maskTestStatus} />
+          <DiagnosticLine label="One-frame ML Kit mask test" value={maskTestStatus} />
+          <DiagnosticLine
+            label="ARCore available"
+            value={formatPresence(arAvailability?.arCoreAvailable)}
+          />
+          <DiagnosticLine
+            label="ARCore tracking state"
+            value={arAvailability?.trackingState ?? "unknown"}
+          />
+          <DiagnosticLine label="ARCore keyframe smoke test" value={arSmokeStatus} />
           <DiagnosticLine
             label="Trainable Gaussian V1 engine"
             value={
@@ -198,10 +215,10 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
           <DiagnosticLine label="Last native error" value={lastNativeError} />
           <Button
             disabled={isRunning}
-            label="Test BiRefNet Model Load"
+            label="Test ML Kit Availability"
             variant="secondary"
             onPress={() => {
-              void runDiagnostic("BiRefNet model load", async () => {
+              void runDiagnostic("ML Kit availability", async () => {
                 const availability = await getNativeMaskingAvailability();
                 setMaskingAvailability(availability);
                 return [
@@ -211,38 +228,39 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     detail: availability.available ? "yes" : "no"
                   },
                   {
-                    label: "BiRefNet model exists",
-                    status: availability.birefnetModelPresent ? "pass" : "fail",
-                    detail: availability.birefnetModelPresent
-                      ? "yes"
-                      : "BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx."
+                    label: "ML Kit Subject Segmentation",
+                    status: availability.mlKitAvailable ? "pass" : "fail",
+                    detail: availability.mlKitAvailable ? "available" : "unavailable"
                   },
                   {
-                    label: "Temporary DeepLab model",
-                    status: availability.temporaryDeepLabModelPresent ? "warn" : "fail",
-                    detail: formatPresence(availability.temporaryDeepLabModelPresent)
+                    label: "Default masking engine",
+                    status:
+                      availability.defaultMaskingEngine === "mlkit-subject-segmentation"
+                        ? "pass"
+                        : "warn",
+                    detail: availability.defaultMaskingEngine ?? "unknown"
                   },
                   {
-                    label: "BiRefNet loaded",
-                    status: availability.birefnetLoaded ? "pass" : "fail",
-                    detail: availability.birefnetLoaded
-                      ? availability.modelName ?? "loaded"
-                      : availability.reason ??
-                        "BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx."
+                    label: "Confidence threshold",
+                    status: availability.confidenceThreshold === 0.85 ? "pass" : "warn",
+                    detail: `${availability.confidenceThreshold ?? 0.85}`
                   },
                   {
                     label: "Inference backend",
-                    status: availability.inferenceBackend === "tflite" ? "pass" : "warn",
+                    status:
+                      availability.inferenceBackend === "mlkit-subject-segmentation"
+                        ? "pass"
+                        : "warn",
                     detail: availability.inferenceBackend ?? "unknown"
                   },
                   {
                     label: "Active masking engine",
                     status:
-                      availability.maskingEngineStatus === "birefnet-running"
+                      availability.maskingEngineStatus === "available-not-loaded"
                         ? "pass"
-                        : availability.maskingEngineStatus === "temporary-deeplab-fallback"
-                          ? "warn"
-                          : "fail",
+                        : availability.maskingEngineStatus === "fallback-local"
+                            ? "warn"
+                            : "fail",
                     detail:
                       availability.maskingEngineStatus ??
                       availability.engineName ??
@@ -259,24 +277,33 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
           />
           <Button
             disabled={isRunning}
-            label="Run One-Frame BiRefNet Mask Test"
+            label="Run One-Frame ML Kit Mask Test"
             variant="secondary"
             onPress={() => {
-              void runDiagnostic("One-frame BiRefNet mask", async () => {
-                const result = await runNativeBiRefNetMaskingSmokeTest();
+              void runDiagnostic("One-frame ML Kit mask", async () => {
+                const result = await runNativeMaskingSmokeTest();
                 const passed =
                   result.status === "pass" &&
-                  Boolean(result.birefnetInferencePassed) &&
+                  Boolean(result.inferenceRan) &&
                   (result.maskBytes ?? 0) > 0;
                 setMaskTestStatus(passed ? "passed" : "failed");
                 return [
                   {
-                    label: "BiRefNet inference",
-                    status: result.birefnetInferencePassed ? "pass" : "fail",
+                    label: "ML Kit inference",
+                    status:
+                      result.maskingEngineStatus === "mlkit-complete" &&
+                      result.inferenceRan
+                        ? "pass"
+                        : "fail",
                     detail:
-                      result.birefnetInferencePassed
-                        ? `${result.engineName ?? "BiRefNet"} inference passed`
+                      result.inferenceRan
+                        ? `${result.engineName ?? "ML Kit"} inference passed`
                         : result.warnings.join(" ") || result.errors.join(" ")
+                  },
+                  {
+                    label: "Confidence threshold",
+                    status: result.confidenceThreshold === 0.85 ? "pass" : "warn",
+                    detail: `${result.confidenceThreshold ?? 0.85}`
                   },
                   {
                     label: "Mask PNG written",
@@ -292,9 +319,65 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     detail: result.maskUri ?? "no mask output"
                   },
                   {
-                    label: "BiRefNet model status",
-                    status: result.birefnetLoaded ? "pass" : "fail",
+                    label: "Masking model status",
+                    status: result.modelLoaded ? "pass" : "fail",
                     detail: `${result.modelName ?? "unknown"} / ${result.modelStatus ?? "unknown"}`
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Start ARCore Keyframe Capture Test"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("ARCore keyframe capture", async () => {
+                const availability = await getNativeARCaptureAvailability();
+                setArAvailability(availability);
+                const frames =
+                  latestProject?.capture.rotations.flatMap((rotation) =>
+                    rotation.frames.map((frame) => ({
+                      rotationId: rotation.id,
+                      frameIndex: frame.index,
+                      frameUri: frame.uri,
+                      ...(frame.width !== undefined ? { width: frame.width } : {}),
+                      ...(frame.height !== undefined ? { height: frame.height } : {}),
+                      capturedAt: frame.capturedAt
+                    }))
+                  ) ?? [];
+                const result = await runNativeARCoreKeyframeSmokeTest({
+                  projectId: latestProject?.project.id ?? "arcore-smoke",
+                  frames,
+                  outputDirectory: "advanced/camera"
+                });
+                setArSmokeStatus(
+                  result.status === "fallback-turntable" || result.status === "ready"
+                    ? "passed"
+                    : "failed"
+                );
+                return [
+                  {
+                    label: "ARCore runtime",
+                    status: result.arCoreRuntimePresent ? "pass" : "fail",
+                    detail: result.arCoreAvailability ?? "unknown"
+                  },
+                  {
+                    label: "ARCore tracking",
+                    status: result.arCoreAvailable ? "pass" : "warn",
+                    detail: result.trackingState ?? "unknown"
+                  },
+                  {
+                    label: "Keyframe metadata",
+                    status: (result.keyframesBytes ?? 0) > 0 ? "pass" : "warn",
+                    detail: `${result.keyframesUri ?? "not written"} / ${result.keyframesBytes ?? 0} bytes`
+                  },
+                  {
+                    label: "Pose source",
+                    status: result.fallbackTurntablePoseUsed ? "warn" : "pass",
+                    detail: result.fallbackTurntablePoseUsed
+                      ? "ARCore tracking unavailable. Using turntable pose assumptions."
+                      : "ARCore pose metadata captured."
                   }
                 ];
               });
@@ -528,14 +611,14 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
 
                 const availability = await getNativeMaskingAvailability();
                 setMaskingAvailability(availability);
-                if (!availability.modelLoaded) {
+                if (!availability.available) {
                   return [
                     {
-                      label: "Masking model",
+                      label: "Masking engine",
                       status: "fail",
-                      detail: availability.modelExists
-                        ? "bad model load"
-                        : "masking model missing"
+                      detail:
+                        availability.reason ??
+                        "ML Kit Subject Segmentation or fallback masking is unavailable."
                     }
                   ];
                 }
@@ -544,7 +627,6 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                 const firstRealMask = masking.artifacts.find(
                   (artifact) =>
                     artifact.status === "complete" &&
-                    artifact.inferenceRan &&
                     getFileSize(artifact.refinedMaskUri) > 0
                 );
                 if (!firstRealMask) {
@@ -666,11 +748,11 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                   {
                     label: "Masking engine",
                     status:
-                      masking.maskingEngineStatus === "birefnet-complete"
+                      masking.maskingEngineStatus === "mlkit-complete"
                         ? "pass"
-                        : masking.maskingEngineStatus === "temporary-deeplab-fallback"
-                          ? "warn"
-                          : "fail",
+                        : masking.maskingEngineStatus === "fallback-local"
+                            ? "warn"
+                            : "fail",
                     detail: masking.maskingEngineStatus ?? masking.engineName
                   },
                   {

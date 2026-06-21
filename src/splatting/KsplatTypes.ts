@@ -1,4 +1,9 @@
-import { RotationId } from "../core/manifest";
+import {
+  CameraExtrinsics,
+  CameraIntrinsics,
+  CaptureSource,
+  RotationId
+} from "../core/manifest";
 
 export type KsplatOptimizerMode =
   | "native-on-device"
@@ -40,6 +45,11 @@ export interface OrderedFrameInput {
   frameIndex: number;
   frameUri: string;
   order: number;
+  captureSource?: CaptureSource;
+  timestamp?: string;
+  cameraIntrinsics?: CameraIntrinsics;
+  cameraExtrinsics?: CameraExtrinsics;
+  trackingState?: string;
 }
 
 export interface ObjectMaskInput {
@@ -61,6 +71,10 @@ export interface CameraFrameData {
   rotationId: RotationId;
   frameIndex: number;
   frameUri: string;
+  captureSource?: CaptureSource;
+  cameraIntrinsics?: CameraIntrinsics;
+  cameraExtrinsics?: CameraExtrinsics;
+  trackingState?: string;
   assumedPose: {
     yawDegrees: number;
     tiltDegrees: number;
@@ -69,8 +83,9 @@ export interface CameraFrameData {
 
 export interface KsplatCameraData {
   cameraModel: "unknown-mobile-camera";
-  poseSource: "ordered-turntable-fallback";
+  poseSource: "arcore" | "ordered-turntable-fallback";
   motion: "controlled-object-turntable";
+  fallbackTurntablePoseUsed: boolean;
   frames: CameraFrameData[];
 }
 
@@ -84,4 +99,6 @@ export interface KsplatOptimizerSettings {
   useMasks: boolean;
   nativePreferred: boolean;
   objectTurntableMode: boolean;
+  objectMaskThreshold: number;
+  poseSource: "arcore" | "ordered-turntable-fallback";
 }

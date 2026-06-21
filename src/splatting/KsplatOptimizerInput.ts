@@ -23,6 +23,10 @@ export interface KsplatOptimizerInput {
   outputDirectory: string;
   outputPath: string;
   optimizerSettings: KsplatOptimizerSettings;
+  frameSampling: {
+    targetKeyframeIntervalSeconds: number;
+    targetFrames: string;
+  };
   createdAt: string;
   notes: string[];
 }
@@ -39,10 +43,22 @@ export function createKsplatOptimizerInput(
         rotationId: rotation.id,
         frameIndex: frame.index,
         frameUri: frame.uri,
-        order
+        order,
+        ...(frame.captureSource !== undefined
+          ? { captureSource: frame.captureSource }
+          : {}),
+        ...(frame.timestamp !== undefined ? { timestamp: frame.timestamp } : {}),
+        ...(frame.cameraIntrinsics !== undefined
+          ? { cameraIntrinsics: frame.cameraIntrinsics }
+          : {}),
+        ...(frame.cameraExtrinsics !== undefined
+          ? { cameraExtrinsics: frame.cameraExtrinsics }
+          : {}),
+        ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {})
       };
     })
   );
+  const cameraData = createCameraData(manifest);
 
   return {
     projectId: manifest.project.id,
@@ -61,7 +77,7 @@ export function createKsplatOptimizerInput(
 
       return objectMask;
     }),
-    cameraData: createCameraData(manifest),
+    cameraData,
     rotationMetadata: manifest.capture.rotations.map((rotation) => ({
       rotationId: rotation.id,
       label: rotation.label,
@@ -81,7 +97,13 @@ export function createKsplatOptimizerInput(
       qualityPreset: "smoke",
       useMasks: masks.length > 0,
       nativePreferred: true,
-      objectTurntableMode: true
+      objectTurntableMode: true,
+      objectMaskThreshold: 0.85,
+      poseSource: cameraData.poseSource
+    },
+    frameSampling: {
+      targetKeyframeIntervalSeconds: 0.5,
+      targetFrames: "40-60"
     },
     createdAt: new Date().toISOString(),
     notes: [
@@ -94,15 +116,30 @@ export function createKsplatOptimizerInput(
 function createCameraData(
   manifest: ForgeScanProjectManifest
 ): KsplatCameraData {
+  const hasTrackedPose = manifest.capture.rotations.some((rotation) =>
+    rotation.frames.some((frame) => frame.cameraExtrinsics !== undefined)
+  );
+
   return {
     cameraModel: "unknown-mobile-camera",
-    poseSource: "ordered-turntable-fallback",
+    poseSource: hasTrackedPose ? "arcore" : "ordered-turntable-fallback",
     motion: "controlled-object-turntable",
+    fallbackTurntablePoseUsed: !hasTrackedPose,
     frames: manifest.capture.rotations.flatMap((rotation) =>
       rotation.frames.map((frame, index) => ({
         rotationId: rotation.id,
         frameIndex: frame.index,
         frameUri: frame.uri,
+        ...(frame.captureSource !== undefined
+          ? { captureSource: frame.captureSource }
+          : {}),
+        ...(frame.cameraIntrinsics !== undefined
+          ? { cameraIntrinsics: frame.cameraIntrinsics }
+          : {}),
+        ...(frame.cameraExtrinsics !== undefined
+          ? { cameraExtrinsics: frame.cameraExtrinsics }
+          : {}),
+        ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
         assumedPose: {
           yawDegrees:
             rotation.frames.length > 0

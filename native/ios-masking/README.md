@@ -14,6 +14,6 @@ Expo Go does not include this module. In Expo Go, JavaScript reports:
 Native AI masking requires a development/native build.
 ```
 
-The intended native implementation can use Core ML, Vision/Core Image preprocessing, and Metal acceleration. A BiRefNet-style object/background separation model should be packaged natively, not in JavaScript.
+The intended native implementation can use Core ML, Vision/Core Image preprocessing, and Metal acceleration. Any future object/background model should be packaged natively, not in JavaScript.
 
 This is a contract stub until the native engine internals are implemented.

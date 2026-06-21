@@ -8,8 +8,9 @@ const {
 const packageImport = "com.forgescan.nativeengines.ForgeScanEnginesPackage";
 const kotlinPackageCall = "add(ForgeScanEnginesPackage())";
 const javaPackageCall = "packages.add(new ForgeScanEnginesPackage());";
-const tfliteDependency = 'implementation("org.tensorflow:tensorflow-lite:2.16.1")';
-const onnxRuntimeDependency = 'implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")';
+const mlKitSubjectSegmentationDependency =
+  'implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")';
+const arCoreDependency = 'implementation("com.google.ar:core:1.54.0")';
 
 function copyDirectory(source, destination) {
   if (!fs.existsSync(source)) {
@@ -67,12 +68,12 @@ function addAndroidEngineDependencies(platformProjectRoot) {
   let contents = fs.readFileSync(buildGradlePath, "utf8");
   const dependencies = [];
 
-  if (!contents.includes("org.tensorflow:tensorflow-lite")) {
-    dependencies.push(tfliteDependency);
+  if (!contents.includes("play-services-mlkit-subject-segmentation")) {
+    dependencies.push(mlKitSubjectSegmentationDependency);
   }
 
-  if (!contents.includes("com.microsoft.onnxruntime:onnxruntime-android")) {
-    dependencies.push(onnxRuntimeDependency);
+  if (!contents.includes("com.google.ar:core")) {
+    dependencies.push(arCoreDependency);
   }
 
   if (dependencies.length === 0) {

@@ -5,13 +5,19 @@ import {
 } from "../core/manifest";
 
 export type MaskingEngineMode = "native-ai" | "fallback-local" | "unavailable";
-export type MaskingModelStatus = "loaded" | "missing" | "load-failed" | "inference-failed";
+export type MaskingModelStatus =
+  | "loaded"
+  | "not-loaded"
+  | "missing"
+  | "load-failed"
+  | "inference-failed"
+  | "oom"
+  | "oom-guard"
+  | "full-model-disabled";
 export type MaskingEngineStatus =
-  | "birefnet-model-missing"
-  | "birefnet-load-failed"
-  | "birefnet-running"
-  | "birefnet-complete"
-  | "temporary-deeplab-fallback"
+  | "mlkit-running"
+  | "mlkit-complete"
+  | "available-not-loaded"
   | "fallback-local"
   | "failed";
 

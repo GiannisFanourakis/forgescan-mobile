@@ -36,7 +36,7 @@ Input JSON:
     }
   ],
   "outputDirectory": "advanced/masks",
-  "modelHint": "birefnet-object-background",
+  "modelHint": "mlkit-subject-segmentation",
   "desiredMaskFormat": "png",
   "refinementEnabled": true
 }
@@ -49,7 +49,7 @@ Output JSON:
   "status": "complete",
   "engineName": "native-ai",
   "engineVersion": "0.1.0",
-  "modelName": "birefnet-object-background",
+  "modelName": "mlkit-subject-segmentation",
   "maskArtifacts": [
     {
       "rotationId": "upright",

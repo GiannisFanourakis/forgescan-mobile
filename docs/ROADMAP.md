@@ -6,13 +6,13 @@
 - Unlimited frame capture with recommended presets.
 - Manual rotation completion.
 - Local project persistence.
-- Android BiRefNet ONNX masking path.
+- Android ML Kit Subject Segmentation masking path.
 - Android Gaussian Splat V1 trainable loop.
 - Validated `.ksplat` export gate.
 
 ## Improve Segmentation Quality
 
-- Improve BiRefNet mask quality and fallback thresholds.
+- Improve ML Kit mask quality and fallback thresholds.
 - Add preview overlay rendering in-app.
 - Track mask confidence and per-frame failures.
 - Add batch retry for failed masks.
