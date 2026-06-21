@@ -1,9 +1,9 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { ReactElement } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Button } from "../components/Button";
-import { Screen, Section } from "../components/Screen";
+import { ForgeScanLogo } from "../components/ForgeScanLogo";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
@@ -11,99 +11,156 @@ import { colors, spacing } from "../ui/theme";
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export function HomeScreen({ navigation }: Props): ReactElement {
-  const { isLoadingProjects, projects, storageError } = useProjects();
+  const { projects } = useProjects();
+  const recentProject = projects[0];
 
   return (
-    <Screen>
-      <View style={styles.hero}>
-        <View>
-          <Text style={styles.title}>ForgeScan</Text>
-          <Text style={styles.subtitle}>Guided object capture</Text>
+    <SafeAreaView style={styles.root}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.brandRow}>
+          <ForgeScanLogo showWordmark />
         </View>
-        <View style={styles.statBlock}>
-          <Text style={styles.statValue}>{projects.length}</Text>
-          <Text style={styles.statLabel}>Projects</Text>
+
+        <View style={styles.hero}>
+          <ForgeScanLogo size={112} />
+          <Text style={styles.title}>Capture. Reconstruct. Export.</Text>
+          <Text style={styles.subtitle}>
+            Phone-based object capture for clean 3D project packages.
+          </Text>
         </View>
-      </View>
 
-      <Button
-        label="New Scan"
-        onPress={() => navigation.navigate("NewProject")}
-      />
-      <Button
-        label="Android and iOS Support"
-        variant="secondary"
-        onPress={() => navigation.navigate("DeviceSupport")}
-      />
+        <View style={styles.actionGrid}>
+          <ActionCard
+            label="Capture"
+            meta="New scan"
+            tone="primary"
+            onPress={() => navigation.navigate("NewProject")}
+          />
+          <ActionCard
+            label="Load"
+            meta={`${projects.length} saved`}
+            tone="secondary"
+            onPress={() => navigation.navigate("LoadProject")}
+          />
+        </View>
 
-      <Section>
-        <Text style={styles.sectionTitle}>Local projects</Text>
-        {storageError ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Storage unavailable</Text>
-            <Text style={styles.emptyText}>{storageError}</Text>
-          </View>
+        <View style={styles.statusGrid}>
+          <Metric label="Formats" value="GLB STL OBJ" />
+          <Metric label="Device" value="Android iOS" />
+        </View>
+
+        {recentProject ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              navigation.navigate("CapturePlan", {
+                projectId: recentProject.project.id
+              })
+            }
+            style={({ pressed }) => [
+              styles.recentProject,
+              pressed ? styles.pressed : undefined
+            ]}
+          >
+            <View style={styles.recentText}>
+              <Text style={styles.recentLabel}>Recent scan</Text>
+              <Text style={styles.recentTitle}>{recentProject.project.title}</Text>
+            </View>
+            <Text style={styles.recentMeta}>
+              {recentProject.capture.targetFrameCount} frames
+            </Text>
+          </Pressable>
         ) : null}
-        {isLoadingProjects ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Loading projects</Text>
-            <Text style={styles.emptyText}>
-              Reading saved manifests from local device storage.
-            </Text>
-          </View>
-        ) : projects.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No projects yet</Text>
-            <Text style={styles.emptyText}>
-              Create a scan to start a local capture package.
-            </Text>
-          </View>
-        ) : (
-          projects.map((project) => (
-            <Pressable
-              accessibilityRole="button"
-              key={project.project.id}
-              onPress={() =>
-                navigation.navigate("CapturePlan", {
-                  projectId: project.project.id
-                })
-              }
-              style={styles.projectRow}
-            >
-              <View style={styles.projectRowText}>
-                <Text style={styles.projectTitle}>{project.project.title}</Text>
-                <Text style={styles.projectMeta}>
-                  {project.capture.targetFrameCount} frames per rotation
-                </Text>
-              </View>
-              <View style={styles.planBadge}>
-                <Text style={styles.planBadgeText}>
-                  {project.capture.plan === "three-rotation" ? "3 rot" : "2 rot"}
-                </Text>
-              </View>
-            </Pressable>
-          ))
-        )}
-      </Section>
-    </Screen>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate("DeviceSupport")}
+          style={({ pressed }) => [
+            styles.supportButton,
+            pressed ? styles.pressed : undefined
+          ]}
+        >
+          <Text style={styles.supportText}>Device support</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+interface ActionCardProps {
+  label: string;
+  meta: string;
+  tone: "primary" | "secondary";
+  onPress: () => void;
+}
+
+function ActionCard({
+  label,
+  meta,
+  tone,
+  onPress
+}: ActionCardProps): ReactElement {
+  const isPrimary = tone === "primary";
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionCard,
+        isPrimary ? styles.actionPrimary : styles.actionSecondary,
+        pressed ? styles.pressed : undefined
+      ]}
+    >
+      <Text
+        style={[
+          styles.actionLabel,
+          isPrimary ? styles.actionPrimaryLabel : styles.actionSecondaryLabel
+        ]}
+      >
+        {label}
+      </Text>
+      <Text
+        style={[
+          styles.actionMeta,
+          isPrimary ? styles.actionPrimaryMeta : styles.actionSecondaryMeta
+        ]}
+      >
+        {meta}
+      </Text>
+    </Pressable>
+  );
+}
+
+interface MetricProps {
+  label: string;
+  value: string;
+}
+
+function Metric({ label, value }: MetricProps): ReactElement {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    color: colors.text,
-    fontSize: 34,
-    fontWeight: "800"
+  root: {
+    backgroundColor: colors.background,
+    flex: 1
   },
-  subtitle: {
-    color: colors.mutedText,
-    fontSize: 16,
-    lineHeight: 23
+  content: {
+    flex: 1,
+    flexGrow: 1,
+    gap: spacing.md,
+    justifyContent: "center",
+    padding: spacing.md,
+    paddingBottom: spacing.xl
   },
-  sectionTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "800"
+  brandRow: {
+    alignItems: "flex-start"
   },
   hero: {
     alignItems: "center",
@@ -111,89 +168,140 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: spacing.lg,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 2
+    shadowRadius: 22,
+    elevation: 3
   },
-  statBlock: {
-    alignItems: "center",
-    backgroundColor: "#dfece8",
-    borderRadius: 8,
-    minWidth: 78,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
-  statValue: {
-    color: colors.accent,
-    fontSize: 24,
-    fontWeight: "800"
-  },
-  statLabel: {
-    color: colors.mutedText,
-    fontSize: 12,
-    fontWeight: "700"
-  },
-  emptyState: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: spacing.xs,
-    padding: spacing.md
-  },
-  emptyTitle: {
+  title: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "700"
+    fontSize: 32,
+    fontWeight: "900",
+    lineHeight: 38,
+    textAlign: "center"
   },
-  emptyText: {
+  subtitle: {
     color: colors.mutedText,
-    fontSize: 14,
-    lineHeight: 20
+    fontSize: 15,
+    lineHeight: 22,
+    maxWidth: 290,
+    textAlign: "center"
   },
-  projectRow: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+  actionGrid: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  actionCard: {
     borderRadius: 8,
     borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.md,
+    flex: 1,
+    minHeight: 118,
     justifyContent: "space-between",
     padding: spacing.md,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 1
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 2
   },
-  projectRowText: {
+  actionPrimary: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  actionSecondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border
+  },
+  actionLabel: {
+    fontSize: 25,
+    fontWeight: "900"
+  },
+  actionPrimaryLabel: {
+    color: "#ffffff"
+  },
+  actionSecondaryLabel: {
+    color: colors.text
+  },
+  actionMeta: {
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  actionPrimaryMeta: {
+    color: "#dff1ef"
+  },
+  actionSecondaryMeta: {
+    color: colors.mutedText
+  },
+  statusGrid: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  metric: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    gap: 4,
+    padding: spacing.md
+  },
+  metricValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  metricLabel: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  recentProject: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  recentText: {
     flex: 1,
     gap: 2
   },
-  projectTitle: {
+  recentLabel: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  recentTitle: {
     color: colors.text,
     fontSize: 16,
-    fontWeight: "700"
-  },
-  projectMeta: {
-    color: colors.mutedText,
-    fontSize: 13
-  },
-  planBadge: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  planBadgeText: {
-    color: colors.text,
-    fontSize: 12,
     fontWeight: "800"
+  },
+  recentMeta: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  supportButton: {
+    alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center"
+  },
+  supportText: {
+    color: colors.mutedText,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  pressed: {
+    opacity: 0.78
   }
 });

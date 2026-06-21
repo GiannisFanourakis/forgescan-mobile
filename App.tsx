@@ -8,6 +8,7 @@ import { CapturePlanScreen } from "./src/screens/CapturePlanScreen";
 import { CaptureRotationScreen } from "./src/screens/CaptureRotationScreen";
 import { DeviceSupportScreen } from "./src/screens/DeviceSupportScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
+import { LoadProjectScreen } from "./src/screens/LoadProjectScreen";
 import { NewProjectScreen } from "./src/screens/NewProjectScreen";
 import { ProjectReviewScreen } from "./src/screens/ProjectReviewScreen";
 import { ReconstructionPlanScreen } from "./src/screens/ReconstructionPlanScreen";
@@ -33,7 +34,12 @@ export default function App(): ReactElement {
           <Stack.Screen
             name="Home"
             component={HomeScreen}
-            options={{ title: "ForgeScan" }}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="LoadProject"
+            component={LoadProjectScreen}
+            options={{ title: "Load Scan" }}
           />
           <Stack.Screen
             name="NewProject"
