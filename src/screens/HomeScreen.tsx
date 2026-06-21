@@ -26,6 +26,11 @@ export function HomeScreen({ navigation }: Props): ReactElement {
         label="New Scan"
         onPress={() => navigation.navigate("NewProject")}
       />
+      <Button
+        label="Android and iOS Support"
+        variant="secondary"
+        onPress={() => navigation.navigate("DeviceSupport")}
+      />
 
       <Section>
         <Text style={styles.sectionTitle}>Local projects</Text>

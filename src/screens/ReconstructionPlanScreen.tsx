@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { Screen, Section } from "../components/Screen";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
 import { RootStackParamList } from "../navigation/types";
+import { getCurrentPlatformEngine } from "../reconstruction/engineRegistry";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 
@@ -17,6 +18,10 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
     () => (project ? createReconstructionPlan(project) : undefined),
     [project]
   );
+  const platformJobPlan = useMemo(() => {
+    const engine = getCurrentPlatformEngine();
+    return project && engine ? engine.createJobPlan(project) : undefined;
+  }, [project]);
 
   if (!project || !plan) {
     return (
@@ -44,6 +49,21 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
           Target exports: {plan.targetFormats.join(", ")}
         </Text>
       </View>
+
+      {platformJobPlan ? (
+        <View style={styles.summary}>
+          <Text style={styles.summaryText}>
+            Native path: {platformJobPlan.nativeModuleName}
+          </Text>
+          <Text style={styles.summaryMeta}>
+            {platformJobPlan.platform.toUpperCase()} plan only. Real
+            reconstruction starts after the native module is implemented.
+          </Text>
+          <Text style={styles.summaryMeta}>
+            Native stages: {platformJobPlan.stages.join(", ")}
+          </Text>
+        </View>
+      ) : null}
 
       <Section>
         {plan.stages.map((stage) => (

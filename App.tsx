@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 import { ProjectProvider } from "./src/state/ProjectContext";
 import { CapturePlanScreen } from "./src/screens/CapturePlanScreen";
 import { CaptureRotationScreen } from "./src/screens/CaptureRotationScreen";
+import { DeviceSupportScreen } from "./src/screens/DeviceSupportScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { NewProjectScreen } from "./src/screens/NewProjectScreen";
 import { ProjectReviewScreen } from "./src/screens/ProjectReviewScreen";
@@ -38,6 +39,11 @@ export default function App(): ReactElement {
             name="NewProject"
             component={NewProjectScreen}
             options={{ title: "New Scan" }}
+          />
+          <Stack.Screen
+            name="DeviceSupport"
+            component={DeviceSupportScreen}
+            options={{ title: "Device Support" }}
           />
           <Stack.Screen
             name="CapturePlan"

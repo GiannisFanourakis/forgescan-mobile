@@ -10,6 +10,7 @@ ForgeScan is a controlled object-capture prototype for future photorealistic 3D 
 - Export a project manifest as JSON.
 - Export a 3D format target plan for GLB, USDZ, OBJ, STL, HTML, MP4, and GIF outputs.
 - Generate a structured reconstruction-plan placeholder.
+- Track Android and iOS native reconstruction paths behind one shared app interface.
 
 This prototype does not implement paid services, a backend, cloud upload, real photogrammetry, AI model inference, or background removal.
 
@@ -58,6 +59,34 @@ Mobile capture
 -> export HTML/MP4/GIF previews
 ```
 
+## Android And iOS Versions
+
+ForgeScan is developed as one shared React Native app with platform-specific native reconstruction engines:
+
+```text
+shared app
+  -> capture workflow
+  -> manifest and validation
+  -> export contracts
+  -> reconstruction interface
+
+android native engine
+  -> ARCore
+  -> Kotlin/C++ NDK
+  -> OpenCV
+  -> MediaPipe or LiteRT
+  -> GPU acceleration
+
+ios native engine
+  -> ARKit/RealityKit
+  -> Swift native module
+  -> Vision or Core ML
+  -> Metal acceleration
+  -> USDZ-first export
+```
+
+The shared TypeScript contracts live in `src/reconstruction/`. Platform implementation notes live in `native/android-reconstruction/` and `native/ios-reconstruction/`.
+
 ## Export Targets
 
 ForgeScan tracks these intended export artifacts:
@@ -95,5 +124,6 @@ npm run typecheck
 - Local project persistence is not implemented; projects live in memory for the running session.
 - Manifest and 3D format plan exports currently display JSON in-app instead of writing a ZIP/package.
 - Reconstruction-plan generation is a contract for future processing only.
+- Android and iOS native reconstruction modules are planned, not implemented yet.
 - GLB, USDZ, OBJ, STL, HTML, MP4, and GIF files are planned outputs, not generated binaries yet.
 - Background removal and frame quality scoring are represented in the schema but are not executed.
