@@ -26,7 +26,12 @@ export interface NormalExportItem {
   label: string;
   filename: string;
   path: string;
-  status: "Generated" | "Requires native/external splat optimizer" | "Failed" | "Unavailable";
+  status:
+    | "Generated"
+    | "Requires native build"
+    | "Requires native processing"
+    | "Failed"
+    | "Not available";
   uri?: string;
 }
 
@@ -53,14 +58,14 @@ export function createNormalExportItems(
       label: "Preview Video",
       filename: "preview.mp4",
       path: "preview/preview.mp4",
-      status: "Unavailable"
+      status: "Requires native processing"
     },
     {
       type: "gif",
       label: "Preview GIF",
       filename: "preview.gif",
       path: "preview/preview.gif",
-      status: "Unavailable"
+      status: "Requires native processing"
     }
   ];
 }

@@ -1,5 +1,4 @@
 import { ForgeScanProjectManifest } from "../../core/manifest";
-import { createExpectedMaskArtifacts } from "../../core/segmentationPlan";
 
 export type PhotorealAssetFormat = "ksplat" | "splat-ply";
 
@@ -7,6 +6,7 @@ export type PhotorealAssetStatus =
   | "not-started"
   | "processing"
   | "generated"
+  | "requires-native-build"
   | "requires-external-optimizer"
   | "failed";
 
@@ -25,7 +25,7 @@ export interface PhotorealAsset {
 
 export function createPhotorealAsset(
   manifest: ForgeScanProjectManifest,
-  status: PhotorealAssetStatus = "requires-external-optimizer",
+  status: PhotorealAssetStatus = "requires-native-build",
   uri?: string
 ): PhotorealAsset {
   const asset: PhotorealAsset = {
@@ -36,13 +36,16 @@ export function createPhotorealAsset(
     sourceFrames: manifest.capture.rotations.flatMap((rotation) =>
       rotation.frames.map((frame) => frame.uri)
     ),
-    sourceMasks: createExpectedMaskArtifacts(manifest).map(
-      (artifact) => artifact.refinedMaskPath
+    sourceMasks: manifest.capture.rotations.flatMap((rotation) =>
+      rotation.frames.map(
+        (frame) =>
+          `advanced/masks/refined/${rotation.id}/frame_${String(frame.index).padStart(3, "0")}.png`
+      )
     ),
     cameraDataPath: "photoreal/cameras.json",
     notes: [
       "ForgeScan treats .ksplat as the primary photoreal scan asset.",
-      "Expo Go does not include a native splat optimizer, so this build prepares optimizer-ready inputs."
+      "Expo Go can capture and prepare data, but real .ksplat generation requires a development/native build."
     ]
   };
 
@@ -75,8 +78,10 @@ export function getPhotorealStatusLabel(
   switch (status) {
     case "generated":
       return "Generated";
+    case "requires-native-build":
+      return "Requires native build";
     case "requires-external-optimizer":
-      return "Requires native/external splat optimizer";
+      return "Requires native build";
     case "failed":
       return "Failed";
     case "processing":

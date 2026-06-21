@@ -8,13 +8,13 @@ import { StatusPill } from "../components/StatusPill";
 import { getCoverageLabel } from "../core/coverage";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
-import { segmentationPlanJson } from "../core/segmentationPlan";
 import { RootStackParamList } from "../navigation/types";
 import { exportTargetPlanJson } from "../core/exportTargets";
 import { exportProjectManifestJson } from "../core/projectPackage";
+import { createNativeMaskingInput } from "../masking/NativeMaskingInput";
+import { runMaskingForProject } from "../masking/MaskingEngine";
 import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
 import { exportSplattingJob } from "../reconstruction/splatting/splattingPackage";
-import { runSegmentationForProject } from "../segmentation/LocalSegmentationEngine";
 import { useProjects } from "../state/ProjectContext";
 import {
   getProjectStoragePaths,
@@ -135,9 +135,8 @@ export function ProjectReviewScreen({
     setProgressSteps([
       "Checking capture",
       "Preparing object",
-      "Preparing alignment",
-      "Creating splat data",
-      "Preparing preview fallback"
+      "Creating photoreal scan",
+      "Preparing preview"
     ]);
 
     try {
@@ -337,8 +336,8 @@ export function ProjectReviewScreen({
               variant="secondary"
               onPress={() => {
                 void runAdvancedAction("Prepare Object Masks", async () => {
-                  const result = await runSegmentationForProject(activeProject);
-                  return `${result.successfulFrames}/${result.totalFrames} object-separation masks written.`;
+                  const result = await runMaskingForProject(activeProject);
+                  return `${result.successfulFrames}/${result.totalFrames} internal masks written with ${result.engineName}.`;
                 });
               }}
             />
@@ -348,11 +347,11 @@ export function ProjectReviewScreen({
               variant="secondary"
               onPress={() => {
                 void runAdvancedAction("Preview Masks", async () => {
-                  const result = await runSegmentationForProject(activeProject);
+                  const result = await runMaskingForProject(activeProject);
                   const uri = writeProjectFile(
                     activeProject,
                     "exports/mask-preview.json",
-                    JSON.stringify(result.previews, null, 2)
+                    JSON.stringify(result.artifacts, null, 2)
                   );
                   return uri;
                 });
@@ -418,14 +417,14 @@ export function ProjectReviewScreen({
             />
             <Button
               disabled={isRunning}
-              label="Save Segmentation Plan"
+              label="Save Native Masking Input"
               variant="secondary"
               onPress={() => {
-                void runAdvancedAction("Save Segmentation Plan", () =>
+                void runAdvancedAction("Save Native Masking Input", () =>
                   writeProjectExportJson(
                     activeProject,
-                    "segmentation-plan.json",
-                    segmentationPlanJson(activeProject)
+                    "native-masking-input.json",
+                    JSON.stringify(createNativeMaskingInput(activeProject), null, 2)
                   )
                 );
               }}

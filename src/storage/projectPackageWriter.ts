@@ -14,7 +14,7 @@ import {
   createPhotorealAsset,
   getPhotorealStatusLabel
 } from "../reconstruction/splatting/photorealAsset";
-import { runSegmentationForProject } from "../segmentation/LocalSegmentationEngine";
+import { runMaskingForProject } from "../masking/MaskingEngine";
 import {
   ensureProjectStorage,
   getProjectDirectory,
@@ -165,15 +165,15 @@ export async function writeFullProjectPackage(
   generatedFiles.push(writeSegmentationPlan(projectId, manifest));
   generatedFiles.push(writeReconstructionPlan(projectId, manifest));
 
-  const segmentation = await runSegmentationForProject(manifest);
+  const masking = await runMaskingForProject(manifest);
   generatedFiles.push(
-    ...segmentation.artifacts.flatMap((artifact) =>
+    ...masking.artifacts.flatMap((artifact) =>
       [artifact.rawMaskUri, artifact.refinedMaskUri].filter(
         (uri): uri is string => Boolean(uri)
       )
     )
   );
-  warnings.push(...segmentation.notes);
+  warnings.push(...masking.warnings);
   generatedFiles.push(
     writeProjectFile(
       manifest,
@@ -194,7 +194,7 @@ export async function writeFullProjectPackage(
     writeProjectFile(
       manifest,
       "source/masks/masks.json",
-      JSON.stringify(segmentation.artifacts, null, 2)
+      JSON.stringify(masking.artifacts, null, 2)
     ),
     writeProjectFile(
       manifest,
@@ -220,8 +220,8 @@ export async function writeFullProjectPackage(
   generatedFiles.push(writeViewerHtml(projectId, manifest));
   generatedFiles.push(writeReadmeExports(projectId, manifest));
   warnings.push(
-    "Photoreal .ksplat output requires native/external splat optimization; no fake .ksplat was created.",
-    "Preview MP4/GIF are unavailable until a native preview renderer is connected."
+    "Native processing is required to generate .ksplat; no fake .ksplat was created.",
+    "Preview MP4/GIF require native preview rendering."
   );
 
   return {
@@ -234,7 +234,7 @@ export async function writeFullProjectPackage(
 function createViewerHtml(manifest: ForgeScanProjectManifest): string {
   const photorealAsset = createPhotorealAsset(
     manifest,
-    "requires-external-optimizer"
+    "requires-native-build"
   );
   const frames = manifest.capture.rotations.flatMap((rotation) =>
     rotation.frames.map((frame) => ({
@@ -267,7 +267,7 @@ function createViewerHtml(manifest: ForgeScanProjectManifest): string {
     "<body>",
     "<main>",
     `<h1>${escapeHtml(photorealAsset.filename)}</h1>`,
-    '<p class="notice">Photoreal .ksplat output requires native/external optimization. Showing preview fallback.</p>',
+    '<p class="notice">Native processing is required to generate the photoreal scan. Showing preview fallback.</p>',
     '<div class="viewport"><img id="frame" alt="Captured frame"></div>',
     '<div class="bar"><button id="prev">Prev</button><div class="meta" id="meta"></div><button id="next">Next</button></div>',
     "</main>",
@@ -358,7 +358,7 @@ async function copyProjectFileToRelativePath(
 function createReadme(manifest: ForgeScanProjectManifest): string {
   const photorealAsset = createPhotorealAsset(
     manifest,
-    "requires-external-optimizer"
+    "requires-native-build"
   );
 
   return [
@@ -367,13 +367,13 @@ function createReadme(manifest: ForgeScanProjectManifest): string {
     `Primary scan target: ${photorealAsset.filename}`,
     `Status: ${getPhotorealStatusLabel(photorealAsset.status)}`,
     "",
-    "A real .ksplat is not generated in this Expo build.",
-    "Use photoreal/splatting-job.json and photoreal/cameras.json with a native or external splat optimizer to create the final .ksplat.",
+    "A real .ksplat is not generated in Expo Go.",
+    "Use a development/native build with the native .ksplat optimizer to create the final .ksplat.",
     "",
     "Normal user exports:",
-    `- ${photorealAsset.filename} (created after native/external optimization)`,
-    "- preview.mp4 (not generated in this build)",
-    "- preview.gif (not generated in this build)",
+    `- ${photorealAsset.filename} (created after native processing)`,
+    "- preview.mp4 (requires native preview rendering)",
+    "- preview.gif (requires native preview rendering)",
     "",
     "Internal/debug files are kept for Advanced Details only:",
     "- photoreal/splatting-job.json",

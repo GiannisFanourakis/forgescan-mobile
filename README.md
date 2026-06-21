@@ -1,41 +1,65 @@
 # ForgeScan Mobile
 
-ForgeScan Mobile is an Expo/React Native prototype for controlled object splatting with turntable-style capture.
+ForgeScan Mobile is a controlled object splatting app with turntable-style capture.
 
 ```text
 Capture -> Splatting -> Preview -> Export
 ```
 
-The product goal is simple: capture ordered object rotations, create a photoreal splat result, and export one normal 3D asset:
+The normal final 3D export is:
 
 ```text
 ForgeScan_{projectName}.ksplat
 ```
 
-Preview media can also be exported when available:
+Optional normal preview exports:
 
 ```text
 preview.mp4
 preview.gif
 ```
 
-Everything else is internal implementation detail, cache, source data, debug output, or Advanced Details.
+Everything else is internal or Advanced Details.
+
+## V3 Native-First Target
+
+ForgeScan is designed to go directly for on-phone processing:
+
+- Native/on-phone object masking and background removal.
+- Native/on-phone Gaussian Splat optimization.
+- Native/on-phone `.ksplat` output.
+- Preview.
+- Export `.ksplat`.
+
+Intended architecture:
+
+```text
+React Native / Expo UI
+-> native masking engine
+-> native Gaussian Splat optimizer
+-> ForgeScan_{projectName}.ksplat
+-> Preview
+-> Export
+```
+
+Expo Go can capture frames, prepare internal data, run fallback masking, and show the correct status. Real `.ksplat` generation requires a development/native build until the native optimizer module is implemented and linked.
+
+No fake `.ksplat` is created.
 
 ## What Works Now
 
 - Create local scan projects.
 - Choose 2 rotations or 3 rotations.
-- Choose a recommended frame preset or custom recommended count.
 - Capture real camera photos, timed bursts, and muted video clips.
 - Capture unlimited frames per rotation.
-- Retake/delete the last photo or video.
 - Complete each rotation manually.
 - Show actual frame counts and coverage quality.
-- Run one user-facing splatting action: `Create Photoreal Scan`.
-- Prepare object masks, alignment data, source frame order, and splatting inputs internally.
-- Export a native/external optimizer-ready splatting package in Advanced Details.
-- Show `.ksplat` honestly as requiring native/external splat optimization when not generated on-device.
-- Keep mesh, point-cloud, JSON, masks, source data, logs, and fallback files out of the normal export UI.
+- Run one user-facing action: `Create Photoreal Scan`.
+- Prefer native masking and native `.ksplat` optimization when modules are available.
+- In Expo Go, report native masking and native `.ksplat` optimizer as requiring a development/native build.
+- Use fallback local masking only as a secondary Expo Go path.
+- Save optimizer input internally for native/dev-build processing.
+- Keep masks, JSON, OBJ, GLB, PLY, source frames, logs, and folders out of the normal export UI.
 
 ## Product Flow
 
@@ -45,130 +69,109 @@ Create a project, choose 2 or 3 rotations, and capture unlimited images. More fr
 
 ### Splatting
 
-Tap `Create Photoreal Scan`. The app validates capture, prepares object data, prepares alignment data, creates splatting input data, and prepares preview fallback files.
+Tap `Create Photoreal Scan`.
+
+The app runs:
+
+1. Capture validation.
+2. Native masking if available.
+3. Fallback masking if native masking is unavailable.
+4. Native `.ksplat` optimizer input creation.
+5. Native optimizer if available.
+6. Preview preparation.
+
+In Expo Go, the app shows:
+
+```text
+Native processing is required to generate .ksplat.
+```
 
 ### Preview
 
-The Preview step shows the best available preview status. If a real `.ksplat` is not generated in this Expo build, the UI says so and uses a fallback preview.
+Preview prioritizes `.ksplat`.
+
+If `.ksplat` is generated in a native/dev build, Preview can show it as Generated. If not, Preview clearly says native processing is required and only shows fallback preview status.
 
 ### Export
 
-Tap `Export .ksplat`. The normal export UI only shows:
+Normal Export only shows:
 
 - `ForgeScan_{projectName}.ksplat`
 - `preview.mp4`
 - `preview.gif`
 
-OBJ, GLB, STL, USDZ, PLY, JSON, masks, source frames, project folders, viewer HTML, and logs are internal or Advanced Details only. They are not final user exports.
+Statuses are one of:
+
+- Generated
+- Requires native build
+- Requires native processing
+- Not available
+- Failed
+
+Advanced Details are collapsed by default and contain internal diagnostics only.
+
+## Native Modules
+
+Native contracts live under:
+
+```text
+native/android-masking/
+native/ios-masking/
+native/android-ksplat-optimizer/
+native/ios-ksplat-optimizer/
+```
+
+The production native optimizer must write:
+
+```text
+photoreal/ForgeScan_{projectName}.ksplat
+```
+
+Do not return `generated` unless a real valid `.ksplat` file exists.
+
+## Internal Files
+
+Current Expo Go internal files may include:
+
+```text
+advanced/masks/raw/{rotation}/frame_001.png
+advanced/masks/refined/{rotation}/frame_001.png
+advanced/optimizer/ksplat-optimizer-input.json
+advanced/optimizer/ksplat-result.json
+open_viewer.html
+source/
+fallback/
+exports/
+```
+
+These are not normal user exports.
 
 ## Run
 
 ```bash
 npm install
+npm run typecheck
 npm run start
 ```
 
-Checks:
-
-```bash
-npm run typecheck
-```
-
 There is no `npm test` script in this prototype yet.
-
-## Unlimited Capture
-
-`targetFrameCount` still exists in the manifest for backward compatibility, but the UI treats it as a recommended count. It is not a hard limit.
-
-Coverage tiers:
-
-```text
-0 frames       empty
-1-23 frames    low coverage
-24-71 frames   basic coverage
-72-119 frames  standard coverage
-120-179 frames high coverage
-180+ frames    very high coverage
-```
-
-Validation blocks splatting only when required rotations are incomplete or complete with zero frames. Under 24 frames is a warning. Over-capture is allowed.
-
-## Generated Project Structure
-
-Normal export targets:
-
-```text
-ForgeScan/projects/{projectId}/
-  photoreal/
-    ForgeScan_{projectName}.ksplat   # expected final asset; only present after native/external optimization
-  preview/
-    preview.mp4                      # unavailable in current Expo build
-    preview.gif                      # unavailable in current Expo build
-```
-
-Current Expo build internal files:
-
-```text
-ForgeScan/projects/{projectId}/
-  manifest.json
-  README.txt
-  open_viewer.html
-  rotations/
-  masks/
-  reconstruction/
-  photoreal/
-    cameras.json
-    splatting-job.json
-  source/
-    manifest.json
-    frames/frames.json
-    masks/masks.json
-    reconstruction-report.json
-  fallback/
-    model.obj
-    point-cloud.ply
-  exports/
-    export-targets.json
-    segmentation-plan.json
-    reconstruction-plan.json
-    reconstruction-job.json
-    splatting-job.json
-```
-
-## Splatting Status
-
-`.ksplat` is the only normal 3D export.
-
-This Expo build does not generate a valid `.ksplat` on-device. It prepares the internal splatting package and marks the photoreal scan as:
-
-```text
-Requires native/external splat optimizer
-```
-
-Do not treat OBJ, GLB, STL, USDZ, PLY, or point-cloud files as final user exports. Any mesh or point-cloud files are debug/fallback/internal artifacts.
 
 ## Manual Test
 
 1. Open the app.
 2. Create a project.
-3. Pick a recommended frame preset or custom count.
-4. Pick 2 or 3 rotations.
-5. Capture real photos, timed burst photos, or video.
-6. Keep capturing past the preset if desired.
-7. Complete each required rotation manually.
-8. Open Project Review.
-9. Tap `Create Photoreal Scan`.
-10. Confirm Preview shows photoreal scan status and fallback preview status.
-11. Tap `Export .ksplat`.
-12. Confirm the normal export UI only shows `ForgeScan_{projectName}.ksplat`, `preview.mp4`, and `preview.gif`.
-13. Open `Advanced Details`.
-14. Confirm internal splatting package, masks, source frames, fallback files, and logs are only shown there.
+3. Capture frames for required rotations.
+4. Open Project Review.
+5. Tap `Create Photoreal Scan`.
+6. In Expo Go, confirm `.ksplat` status is `Requires native build`.
+7. Tap `Export .ksplat`.
+8. Confirm normal export UI only shows `.ksplat`, `preview.mp4`, and `preview.gif`.
+9. Expand Advanced Details for native availability, fallback masks, optimizer input, and internal diagnostics.
 
 ## Known Limitations
 
-- A real `.ksplat` is not generated in Expo Go yet.
-- `.ksplat` output currently requires native/external splat optimization.
-- `preview.mp4` and `preview.gif` are not generated in the normal Expo flow yet.
-- Object masks are fallback artifacts, not production AI matting.
-- Mesh and point-cloud files are internal fallback/debug artifacts, not normal exports.
-- Native Android/iOS engines are still future work for on-device splat optimization and preview rendering.
+- Expo Go cannot run the native masking or native `.ksplat` optimizer modules.
+- Path B native/dev-build processing requires implementing and linking native engine internals.
+- Fallback masking is not production AI matting.
+- `preview.mp4` and `preview.gif` require native preview rendering.
+- Internal fallback OBJ/PLY files may exist for diagnostics only; they are not normal exports.

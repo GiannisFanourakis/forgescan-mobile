@@ -79,7 +79,7 @@ export const androidReconstructionEngine: PlatformReconstructionEngine = {
       order: 4,
       title: "Ship device-tiered splatting",
       detail:
-        "Run local .ksplat optimization on high-end devices and optimizer-ready export elsewhere."
+        "Run local .ksplat optimization on high-end devices and report requires-native-build on unsupported runtimes."
     }
   ],
   createJobPlan: createAndroidJobPlan

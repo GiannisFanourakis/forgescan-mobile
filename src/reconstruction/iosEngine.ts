@@ -79,7 +79,7 @@ export const iosReconstructionEngine: PlatformReconstructionEngine = {
       order: 4,
       title: "Ship iOS local splatting",
       detail:
-        "Generate .ksplat locally on supported devices and optimizer-ready inputs elsewhere."
+        "Generate .ksplat locally on supported devices and report requires-native-build on unsupported runtimes."
     }
   ],
   createJobPlan: createIOSJobPlan

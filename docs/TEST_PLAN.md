@@ -1,6 +1,6 @@
 # ForgeScan Mobile Test Plan
 
-This plan verifies the splatting-first prototype in one session.
+This plan verifies the V3 native-first splatting flow.
 
 Normal user flow:
 
@@ -8,108 +8,89 @@ Normal user flow:
 Capture -> Splatting -> Preview -> Export
 ```
 
-## Preflight
-
-```bash
-npm install
-npm run typecheck
-npm run start
-```
-
-There is no `npm test` script yet.
-
-## Main Test Flow
-
-1. Open the app in Expo Go or an emulator.
-2. Create a project.
-3. Choose a recommended preset or custom recommended frame count.
-4. Choose 2 or 3 rotations.
-5. Capture any number of frames per rotation.
-6. Confirm the app never blocks capture because the preset count was reached.
-7. Complete required rotations manually.
-8. Open Project Review.
-9. Confirm actual frame counts and coverage tiers are shown.
-10. Tap `Create Photoreal Scan`.
-11. Verify progress messages: Checking capture, Preparing object, Preparing alignment, Creating splat data, Preparing preview fallback, Finished.
-12. Verify it finishes or reports a clear warning.
-13. Verify Preview shows photoreal scan status and fallback preview status.
-14. Tap `Export .ksplat`.
-15. Confirm the normal export UI only shows:
-    - `ForgeScan_{projectName}.ksplat`
-    - `preview.mp4`
-    - `preview.gif`
-16. Confirm `.ksplat` status is either `Generated`, `Requires native/external splat optimizer`, or `Failed`.
-17. Confirm current Expo build shows `Requires native/external splat optimizer`.
-18. Confirm `preview.mp4` and `preview.gif` show unavailable unless a native preview renderer has generated them.
-19. Expand `Advanced Details`.
-20. Confirm internal artifacts are only shown there.
-
-## Advanced Details Checks
-
-Advanced Details may list:
+Normal export UI must only show:
 
 ```text
-photoreal/splatting-job.json
-photoreal/cameras.json
-source frames
-masks
-alignment data
-fallback/model.obj
-fallback/point-cloud.ply
-open_viewer.html
-manifest.json
-logs
-project folder path
+ForgeScan_{projectName}.ksplat
+preview.mp4
+preview.gif
 ```
 
-Advanced Details must be collapsed by default.
+## Path A — Expo Go
 
-## Expected Internal Files
+1. Run `npm install`.
+2. Run `npm run typecheck`.
+3. Run `npm run start`.
+4. Open the app in Expo Go.
+5. Create a project.
+6. Capture frames for required rotations.
+7. Open Project Review.
+8. Tap `Create Photoreal Scan`.
+9. Confirm progress messages:
+   - Checking capture
+   - Preparing object
+   - Creating photoreal scan
+   - Preparing preview
+   - Finished
+10. Confirm native masking reports unavailable or fallback masking runs.
+11. Confirm `.ksplat` status is `Requires native build`.
+12. Confirm no fake `.ksplat` exists.
+13. Tap `Export .ksplat`.
+14. Confirm normal export UI only shows:
+   - `ForgeScan_{projectName}.ksplat`
+   - `preview.mp4`
+   - `preview.gif`
+15. Confirm `preview.mp4` and `preview.gif` show `Requires native processing`.
+16. Expand Advanced Details.
+17. Confirm Advanced Details lists native availability, internal optimizer input, masks, and diagnostics.
 
-Required internal files for the current Expo build:
+## Path B — Native/Dev Build
+
+1. Run a development/native build with native modules linked.
+2. Confirm native masking availability if implemented.
+3. Confirm native `.ksplat` optimizer availability if implemented.
+4. Capture required rotations.
+5. Tap `Create Photoreal Scan`.
+6. Confirm native masking runs.
+7. Confirm native optimizer runs.
+8. Confirm real `.ksplat` is generated at:
 
 ```text
-ForgeScan/projects/{projectId}/manifest.json
-ForgeScan/projects/{projectId}/README.txt
+photoreal/ForgeScan_{projectName}.ksplat
+```
+
+9. Confirm Export marks `.ksplat` as `Generated`.
+
+If native internals are stubbed only, Path B requires completing native engine internals.
+
+## Expected Expo Go Internal Files
+
+Expo Go may create:
+
+```text
+ForgeScan/projects/{projectId}/advanced/masks/raw/{rotation}/frame_001.png
+ForgeScan/projects/{projectId}/advanced/masks/refined/{rotation}/frame_001.png
+ForgeScan/projects/{projectId}/advanced/optimizer/ksplat-optimizer-input.json
+ForgeScan/projects/{projectId}/advanced/optimizer/ksplat-result.json
 ForgeScan/projects/{projectId}/open_viewer.html
-ForgeScan/projects/{projectId}/photoreal/cameras.json
-ForgeScan/projects/{projectId}/photoreal/splatting-job.json
-ForgeScan/projects/{projectId}/source/manifest.json
-ForgeScan/projects/{projectId}/source/frames/frames.json
-ForgeScan/projects/{projectId}/source/masks/masks.json
-ForgeScan/projects/{projectId}/source/reconstruction-report.json
-ForgeScan/projects/{projectId}/exports/export-targets.json
-ForgeScan/projects/{projectId}/exports/segmentation-plan.json
-ForgeScan/projects/{projectId}/exports/reconstruction-plan.json
-ForgeScan/projects/{projectId}/exports/reconstruction-job.json
-ForgeScan/projects/{projectId}/exports/splatting-job.json
 ```
 
-If real `.ksplat` optimization is available, this file may exist:
+If PNG mask writing is blocked, fallback mask artifacts may be:
 
 ```text
-ForgeScan/projects/{projectId}/photoreal/ForgeScan_{projectName}.ksplat
+ForgeScan/projects/{projectId}/advanced/masks/raw/{rotation}/frame_001.mask.json
+ForgeScan/projects/{projectId}/advanced/masks/refined/{rotation}/frame_001.mask.json
 ```
 
-If real `.ksplat` optimization is not available, this file must not be faked.
-
-Fallback/internal artifacts may exist:
-
-```text
-ForgeScan/projects/{projectId}/fallback/model.obj
-ForgeScan/projects/{projectId}/fallback/point-cloud.ply
-ForgeScan/projects/{projectId}/masks/raw/{rotation}/frame_001.png
-ForgeScan/projects/{projectId}/masks/refined/{rotation}/frame_001.png
-```
+These files are internal and belong only in Advanced Details.
 
 ## Acceptance Criteria
 
-- No normal user-facing photogrammetry route.
-- No normal user-facing mesh export route.
-- No normal user-facing OBJ/GLB/STL/USDZ/PLY export.
-- No normal user-facing JSON, masks, frames, project folder, viewer HTML, or logs export.
-- `.ksplat` is the primary output.
-- MP4/GIF are preview-only exports.
+- Native processing is the preferred architecture.
+- Expo Go reports native masking and native optimizer requirements honestly.
+- No fake `.ksplat` is created.
+- `.ksplat` is marked Generated only if a real valid `.ksplat` exists.
 - Normal export UI only shows `.ksplat`, `preview.mp4`, and `preview.gif`.
-- Advanced Details contains internal artifacts.
+- Masks, JSON, OBJ, GLB, PLY, logs, source frames, and project folders are not normal exports.
+- Advanced Details is collapsed by default and contains internal diagnostics.
 - Typecheck passes.

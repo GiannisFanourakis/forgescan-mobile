@@ -95,13 +95,13 @@ export function createSplattingInputPackage(
     createdAt: new Date().toISOString(),
     status: "package-ready",
     note:
-      "Controlled object splatting is packaged for a native/external optimizer; .ksplat optimization is not run inside Expo Go.",
+      "Controlled object splatting is packaged for the native .ksplat optimizer; Expo Go cannot run the native optimizer.",
     primaryOutput,
     optionalIntermediate: "photoreal/splat.ply",
     viewerTarget: "open_viewer.html",
     photorealAsset: createPhotorealAsset(
       manifest,
-      "requires-external-optimizer"
+      "requires-native-build"
     ),
     frames,
     masks: maskArtifacts.map((artifact) => artifact.refinedMaskPath),

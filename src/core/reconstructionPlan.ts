@@ -180,7 +180,7 @@ function createPlanStages(
       inputs: ["photoreal/source-detail.json"],
       outputs: ["photoreal/optimizer-input.json"],
       notes:
-        "Normalize source data before native or external .ksplat optimization."
+        "Normalize source data before native .ksplat optimization."
     },
     {
       sequence: 8,

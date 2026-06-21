@@ -22,10 +22,7 @@ export async function exportPhotorealScan(
     manifest.project.id,
     manifest
   );
-  const photorealAsset = createPhotorealAsset(
-    manifest,
-    "requires-external-optimizer"
-  );
+  const photorealAsset = createPhotorealAsset(manifest, "requires-native-build");
   const normalExports = createNormalExportItems(manifest, photorealAsset);
 
   return {

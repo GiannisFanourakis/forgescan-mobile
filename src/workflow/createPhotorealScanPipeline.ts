@@ -2,11 +2,14 @@ import { createExportTargetPlan } from "../core/exportTargets";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { ForgeScanProjectManifest } from "../core/manifest";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
-import { createSegmentationPlan } from "../core/segmentationPlan";
+import { getNativeMaskingAvailability } from "../native/NativeMasking";
+import { getNativeKsplatOptimizerAvailability } from "../native/NativeKsplatOptimizer";
 import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
 import { createPhotorealAsset } from "../reconstruction/splatting/photorealAsset";
-import { exportSplattingJob } from "../reconstruction/splatting/splattingPackage";
-import { runSegmentationForProject } from "../segmentation/LocalSegmentationEngine";
+import { runMaskingForProject } from "../masking/MaskingEngine";
+import { validateMaskCoverage } from "../masking/MaskValidation";
+import { runNativeKsplatEngine } from "../splatting/NativeKsplatEngine";
+import { KsplatOptimizerResult } from "../splatting/KsplatOptimizerResult";
 import { writeViewerHtml } from "../storage/projectPackageWriter";
 import { writeProjectFile } from "../storage/projectStorage";
 import { NormalExportItem, createNormalExportItems } from "./exportArtifacts";
@@ -18,7 +21,12 @@ export interface WorkflowAdvancedDetail {
 
 export interface PreviewStatusItem {
   label: string;
-  status: "Ready" | "Fallback" | "Unavailable";
+  status:
+    | "Generated"
+    | "Fallback"
+    | "Requires native processing"
+    | "Not available"
+    | "Failed";
   detail: string;
 }
 
@@ -38,18 +46,17 @@ export async function createPhotorealScan(
   const progressSteps = [
     "Checking capture",
     "Preparing object",
-    "Preparing alignment",
-    "Creating splat data",
-    "Preparing preview fallback",
+    "Creating photoreal scan",
+    "Preparing preview",
     "Finished"
   ];
   const validation = validateProjectForReconstruction(manifest);
-  const photorealAsset = createPhotorealAsset(
-    manifest,
-    "requires-external-optimizer"
-  );
-  const normalExports = createNormalExportItems(manifest, photorealAsset);
-  const previewStatus = createPreviewStatus();
+  const nativeMaskingAvailability = await getNativeMaskingAvailability();
+  const nativeOptimizerAvailability =
+    await getNativeKsplatOptimizerAvailability();
+  const initialAsset = createPhotorealAsset(manifest, "requires-native-build");
+  const initialNormalExports = createNormalExportItems(manifest, initialAsset);
+  const initialPreviewStatus = createPreviewStatus();
   const warnings: string[] = [];
   const advancedDetails: WorkflowAdvancedDetail[] = [];
 
@@ -58,8 +65,8 @@ export async function createPhotorealScan(
       success: false,
       userMessage: validation.errors.join(" "),
       progressSteps: progressSteps.slice(0, 1),
-      normalExports,
-      previewStatus,
+      normalExports: initialNormalExports,
+      previewStatus: initialPreviewStatus,
       warnings: validation.warnings,
       advancedDetails: validation.errors.map((error) => ({
         label: "Capture issue",
@@ -68,11 +75,6 @@ export async function createPhotorealScan(
     };
   }
 
-  const segmentationPlanUri = writeProjectFile(
-    manifest,
-    "exports/segmentation-plan.json",
-    JSON.stringify(createSegmentationPlan(manifest), null, 2)
-  );
   const reconstructionPlanUri = writeProjectFile(
     manifest,
     "exports/reconstruction-plan.json",
@@ -83,31 +85,55 @@ export async function createPhotorealScan(
     "exports/export-targets.json",
     JSON.stringify(createExportTargetPlan(manifest), null, 2)
   );
-  const segmentation = await runSegmentationForProject(manifest);
+  const masking = await runMaskingForProject(manifest);
+  const maskCoverage = validateMaskCoverage(manifest, masking.artifacts);
   const reconstruction = await runReconstructionJob(manifest);
-  const splattingPackage = exportSplattingJob(manifest);
+  const optimizerResult = await runNativeKsplatEngine(
+    manifest,
+    masking.artifacts
+  );
   const viewerUri = writeViewerHtml(manifest.project.id, manifest);
+  const photorealAsset = createPhotorealAsset(
+    manifest,
+    getPhotorealAssetStatus(optimizerResult),
+    optimizerResult.ksplatUri
+  );
+  const normalExports = createNormalExportItems(manifest, photorealAsset);
+  const previewStatus = createPreviewStatus(optimizerResult);
 
   warnings.push(
     ...validation.warnings,
-    ...segmentation.notes,
+    ...masking.warnings,
+    ...maskCoverage.warnings,
     ...reconstruction.warnings,
-    "Requires native/external splat optimizer",
-    "Preview fallback is available; no fake .ksplat was created."
+    ...optimizerResult.warnings
   );
 
   advancedDetails.push(
-    { label: "Primary .ksplat target", value: splattingPackage.primaryOutput },
-    { label: "Splatting package", value: "photoreal/splatting-job.json" },
-    { label: "Camera data", value: splattingPackage.cameraDataPath },
+    {
+      label: "Native masking availability",
+      value: nativeMaskingAvailability.available
+        ? "available"
+        : (nativeMaskingAvailability.reason ??
+          "Native AI masking requires a development/native build.")
+    },
+    {
+      label: "Native .ksplat optimizer availability",
+      value: nativeOptimizerAvailability.available
+        ? "available"
+        : (nativeOptimizerAvailability.reason ??
+          "Native .ksplat optimizer requires a development/native build.")
+    },
+    { label: "Primary .ksplat target", value: photorealAsset.path },
+    { label: "Optimizer input package", value: "advanced/optimizer/ksplat-optimizer-input.json" },
+    { label: "Optimizer status", value: optimizerResult.status },
     { label: "Preview fallback viewer", value: viewerUri },
-    { label: "Object preparation engine", value: segmentation.engine },
-    { label: "Object preparation result", value: `${segmentation.successfulFrames}/${segmentation.totalFrames} frames` },
-    { label: "Alignment/reconstruction engine", value: reconstruction.job.implementation },
-    { label: "Segmentation plan", value: segmentationPlanUri },
-    { label: "Reconstruction plan", value: reconstructionPlanUri },
+    { label: "Masking engine result", value: `${masking.engineName} / ${masking.status}` },
+    { label: "Mask coverage", value: `${maskCoverage.maskCount}/${maskCoverage.requiredFrames} required frames` },
+    { label: "Internal alignment engine", value: reconstruction.job.implementation },
+    { label: "Internal alignment plan", value: reconstructionPlanUri },
     { label: "Export target plan", value: exportTargetsUri },
-    ...segmentation.artifacts.flatMap((artifact) => [
+    ...masking.artifacts.flatMap((artifact) => [
       { label: "Raw mask", value: artifact.rawMaskUri ?? artifact.rawMaskPath },
       {
         label: "Refined mask",
@@ -122,8 +148,7 @@ export async function createPhotorealScan(
 
   return {
     success: true,
-    userMessage:
-      "Photoreal scan inputs are ready. .ksplat requires native/external splat optimization.",
+    userMessage: createUserMessage(optimizerResult),
     progressSteps,
     normalExports,
     previewStatus,
@@ -132,23 +157,58 @@ export async function createPhotorealScan(
   };
 }
 
-function createPreviewStatus(): PreviewStatusItem[] {
+function createPreviewStatus(
+  optimizerResult?: KsplatOptimizerResult
+): PreviewStatusItem[] {
+  const ksplatGenerated =
+    optimizerResult?.status === "generated" && optimizerResult.ksplatUri;
+  const ksplatFailed = optimizerResult?.status === "failed";
+
   return [
     {
       label: "Photoreal Scan",
-      status: "Fallback",
-      detail:
-        ".ksplat preview requires native/external splat optimization. Showing capture preview fallback."
+      status: ksplatGenerated ? "Generated" : ksplatFailed ? "Failed" : "Fallback",
+      detail: ksplatGenerated
+        ? `${optimizerResult.outputFilename} generated.`
+        : ksplatFailed
+          ? "Native processing failed. See Advanced Details."
+          : "Native processing is required to generate the photoreal scan. Showing fallback preview only."
     },
     {
       label: "Preview Video",
-      status: "Unavailable",
-      detail: "preview.mp4 is not generated in this Expo build."
+      status: "Requires native processing",
+      detail: "preview.mp4 requires native preview rendering."
     },
     {
       label: "Preview GIF",
-      status: "Unavailable",
-      detail: "preview.gif is not generated in this Expo build."
+      status: "Requires native processing",
+      detail: "preview.gif requires native preview rendering."
     }
   ];
+}
+
+function getPhotorealAssetStatus(
+  result: KsplatOptimizerResult
+): "generated" | "requires-native-build" | "failed" {
+  if (result.status === "generated" && result.ksplatUri) {
+    return "generated";
+  }
+
+  if (result.status === "failed") {
+    return "failed";
+  }
+
+  return "requires-native-build";
+}
+
+function createUserMessage(result: KsplatOptimizerResult): string {
+  if (result.status === "generated") {
+    return ".ksplat generated.";
+  }
+
+  if (result.status === "failed") {
+    return "Photoreal scan failed. See Advanced Details.";
+  }
+
+  return "Native processing is required to generate .ksplat.";
 }
