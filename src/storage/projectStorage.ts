@@ -120,6 +120,14 @@ export function writeProjectExportJson(
   filename: string,
   jsonContent: string
 ): string {
+  return writeProjectExportFile(manifest, filename, jsonContent);
+}
+
+export function writeProjectExportFile(
+  manifest: ForgeScanProjectManifest,
+  filename: string,
+  content: string | Uint8Array
+): string {
   ensureProjectStorage(manifest);
   const exportsDirectory = new Directory(
     getProjectDirectory(manifest.project.id),
@@ -132,7 +140,7 @@ export function writeProjectExportJson(
     exportFile.create({ intermediates: true, overwrite: true });
   }
 
-  exportFile.write(jsonContent);
+  exportFile.write(content);
   return exportFile.uri;
 }
 

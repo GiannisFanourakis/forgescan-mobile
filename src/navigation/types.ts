@@ -9,4 +9,5 @@ export type RootStackParamList = {
   CaptureRotation: { projectId: string; rotationId: RotationId };
   ProjectReview: { projectId: string };
   ReconstructionPlan: { projectId: string };
+  FullReconstructionRun: { projectId: string };
 };

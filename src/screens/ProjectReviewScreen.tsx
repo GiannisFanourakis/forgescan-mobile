@@ -190,7 +190,16 @@ export function ProjectReviewScreen({
 
       <Section>
         <Button
+          label="Run Full Reconstruction Test"
+          onPress={() =>
+            navigation.navigate("FullReconstructionRun", {
+              projectId: activeProject.project.id
+            })
+          }
+        />
+        <Button
           label="Prepare Reconstruction Plan"
+          variant="secondary"
           onPress={() =>
             navigation.navigate("ReconstructionPlan", {
               projectId: activeProject.project.id

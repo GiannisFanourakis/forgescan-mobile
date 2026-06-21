@@ -7,6 +7,7 @@ import { ProjectProvider } from "./src/state/ProjectContext";
 import { CapturePlanScreen } from "./src/screens/CapturePlanScreen";
 import { CaptureRotationScreen } from "./src/screens/CaptureRotationScreen";
 import { DeviceSupportScreen } from "./src/screens/DeviceSupportScreen";
+import { FullReconstructionRunScreen } from "./src/screens/FullReconstructionRunScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { LoadProjectScreen } from "./src/screens/LoadProjectScreen";
 import { NewProjectScreen } from "./src/screens/NewProjectScreen";
@@ -70,6 +71,11 @@ export default function App(): ReactElement {
             name="ReconstructionPlan"
             component={ReconstructionPlanScreen}
             options={{ title: "Reconstruction Plan" }}
+          />
+          <Stack.Screen
+            name="FullReconstructionRun"
+            component={FullReconstructionRunScreen}
+            options={{ title: "Full Reconstruction Test" }}
           />
         </Stack.Navigator>
       </NavigationContainer>
