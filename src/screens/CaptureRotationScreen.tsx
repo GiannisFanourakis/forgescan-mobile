@@ -1,9 +1,7 @@
-import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { CameraCapturedPicture, CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import type { ReactElement } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Image,
   Pressable,
@@ -15,32 +13,19 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "../components/Button";
-import { Screen, Section } from "../components/Screen";
+import { Screen } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CaptureRotation">;
-type CaptureTimingMode = "single" | "burst";
-type BurstIntervalMs = 500 | 1000 | 2000;
-type FocusMode = "off" | "on";
+type ToolbarMenu = "capture" | "frames" | "actions";
 
-const captureModeOptions: { label: string; value: CaptureTimingMode }[] = [
-  { label: "Single", value: "single" },
-  { label: "Burst", value: "burst" }
+const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
+  { label: "Capture", value: "capture" },
+  { label: "Frames", value: "frames" },
+  { label: "Actions", value: "actions" }
 ];
-
-const burstIntervalOptions: { label: string; value: BurstIntervalMs }[] = [
-  { label: "0.5s", value: 500 },
-  { label: "1s", value: 1000 },
-  { label: "2s", value: 2000 }
-];
-
-const zoomOptions = [
-  { label: "Wide", value: 0 },
-  { label: "Near", value: 0.22 },
-  { label: "Detail", value: 0.4 }
-] as const;
 
 export function CaptureRotationScreen({
   navigation,
@@ -52,37 +37,13 @@ export function CaptureRotationScreen({
     getProject,
     retakeLastFrame
   } = useProjects();
-  const isFocused = useIsFocused();
-  const cameraRef = useRef<CameraView>(null);
-  const captureInFlightRef = useRef(false);
-  const burstStopRequestedRef = useRef(false);
-  const burstDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const burstDelayResolveRef = useRef<(() => void) | null>(null);
-  const [permission, requestPermission] = useCameraPermissions();
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [isLaunchingSystemCamera, setIsLaunchingSystemCamera] = useState(false);
-  const [isBurstRunning, setIsBurstRunning] = useState(false);
-  const [captureMode, setCaptureMode] =
-    useState<CaptureTimingMode>("single");
-  const [burstIntervalMs, setBurstIntervalMs] =
-    useState<BurstIntervalMs>(1000);
-  const [torchEnabled, setTorchEnabled] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(0);
-  const [focusMode, setFocusMode] = useState<FocusMode>("off");
-  const [burstStatus, setBurstStatus] = useState<string | null>(null);
-  const [isCameraReady, setIsCameraReady] = useState(false);
-  const [cameraMountError, setCameraMountError] = useState<string | null>(null);
+  const [activeMenu, setActiveMenu] = useState<ToolbarMenu>("capture");
+  const [isLaunchingCamera, setIsLaunchingCamera] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const project = getProject(route.params.projectId);
   const rotation = project?.capture.rotations.find(
     (candidate) => candidate.id === route.params.rotationId
   );
-
-  useEffect(() => {
-    if (!isFocused) {
-      setIsCameraReady(false);
-    }
-  }, [isFocused]);
 
   if (!project || !rotation) {
     return (
@@ -92,38 +53,29 @@ export function CaptureRotationScreen({
     );
   }
 
-  const activeRotation = rotation;
   const frameCount = rotation.frames.length;
   const targetFrameCount = project.capture.targetFrameCount;
   const lastFrame = rotation.frames[frameCount - 1];
   const remainingFrames = Math.max(0, targetFrameCount - frameCount);
+  const progressPercent =
+    targetFrameCount > 0 ? Math.min(100, (frameCount / targetFrameCount) * 100) : 0;
   const canCapture = remainingFrames > 0;
   const projectId = project.project.id;
   const rotationId = rotation.id;
-  const canUseCamera =
-    permission?.granted === true && isCameraReady && !cameraMountError;
+  const nextFrameNumber = Math.min(frameCount + 1, targetFrameCount);
 
-  function handleCompleteRotation(): void {
-    completeRotation(projectId, rotationId);
-    navigation.navigate("CapturePlan", { projectId });
-  }
-
-  async function handleCaptureFrame(): Promise<void> {
-    await captureOneFrame();
-  }
-
-  async function handleSystemCameraCapture(): Promise<void> {
-    if (!canCapture || isLaunchingSystemCamera || isBurstRunning) {
+  async function handleOpenSystemCamera(): Promise<void> {
+    if (!canCapture || isLaunchingCamera) {
       return;
     }
 
     setCaptureError(null);
-    setIsLaunchingSystemCamera(true);
+    setIsLaunchingCamera(true);
 
     try {
-      const systemPermission = await ImagePicker.requestCameraPermissionsAsync();
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
 
-      if (!systemPermission.granted) {
+      if (!permission.granted) {
         setCaptureError("System camera access was denied.");
         return;
       }
@@ -140,7 +92,13 @@ export function CaptureRotationScreen({
         return;
       }
 
-      await saveImagePickerFrame(result.assets[0]);
+      await addCapturedFrame(projectId, rotationId, {
+        uri: result.assets[0].uri,
+        ...(result.assets[0].width > 0 ? { width: result.assets[0].width } : {}),
+        ...(result.assets[0].height > 0
+          ? { height: result.assets[0].height }
+          : {})
+      });
     } catch (error: unknown) {
       setCaptureError(
         error instanceof Error
@@ -148,469 +106,170 @@ export function CaptureRotationScreen({
           : "System camera capture failed."
       );
     } finally {
-      setIsLaunchingSystemCamera(false);
+      setIsLaunchingCamera(false);
     }
   }
 
-  async function saveImagePickerFrame(
-    asset: ImagePicker.ImagePickerAsset
-  ): Promise<void> {
-    await addCapturedFrame(projectId, rotationId, {
-      uri: asset.uri,
-      ...(asset.width > 0 ? { width: asset.width } : {}),
-      ...(asset.height > 0 ? { height: asset.height } : {})
-    });
+  function handleRetakeLastFrame(): void {
+    retakeLastFrame(projectId, rotationId);
   }
 
-  async function captureOneFrame(): Promise<boolean> {
-    if (
-      !cameraRef.current ||
-      !canCapture ||
-      !canUseCamera ||
-      captureInFlightRef.current
-    ) {
-      return false;
-    }
-
-    captureInFlightRef.current = true;
-    setIsCapturing(true);
-    setCaptureError(null);
-
-    try {
-      const photo: CameraCapturedPicture =
-        await cameraRef.current.takePictureAsync({
-          quality: 0.92,
-          skipProcessing: false
-        });
-
-      await addCapturedFrame(projectId, rotationId, {
-        uri: photo.uri,
-        width: photo.width,
-        height: photo.height
-      });
-      return true;
-    } catch (error: unknown) {
-      setCaptureError(
-        error instanceof Error ? error.message : "Frame capture failed."
-      );
-      return false;
-    } finally {
-      captureInFlightRef.current = false;
-      setIsCapturing(false);
-    }
-  }
-
-  async function handleStartBurst(): Promise<void> {
-    if (!canUseCamera || !canCapture || isBurstRunning) {
-      return;
-    }
-
-    const framesToCapture = remainingFrames;
-    burstStopRequestedRef.current = false;
-    setCaptureError(null);
-    setIsBurstRunning(true);
-
-    try {
-      for (let frameNumber = 1; frameNumber <= framesToCapture; frameNumber += 1) {
-        if (burstStopRequestedRef.current) {
-          break;
-        }
-
-        setBurstStatus(`Burst ${frameNumber}/${framesToCapture}`);
-        const didCapture = await captureOneFrame();
-
-        if (!didCapture || burstStopRequestedRef.current) {
-          break;
-        }
-
-        if (frameNumber < framesToCapture) {
-          await waitForBurstInterval(burstIntervalMs);
-        }
-      }
-    } finally {
-      clearBurstDelay();
-      burstStopRequestedRef.current = false;
-      setBurstStatus(null);
-      setIsBurstRunning(false);
-    }
-  }
-
-  function handleStopBurst(): void {
-    burstStopRequestedRef.current = true;
-    setBurstStatus("Stopping burst");
-    clearBurstDelay();
-  }
-
-  function waitForBurstInterval(durationMs: number): Promise<void> {
-    return new Promise((resolve) => {
-      burstDelayResolveRef.current = resolve;
-      burstDelayRef.current = setTimeout(() => {
-        burstDelayRef.current = null;
-        burstDelayResolveRef.current = null;
-        resolve();
-      }, durationMs);
-    });
-  }
-
-  function clearBurstDelay(): void {
-    if (burstDelayRef.current) {
-      clearTimeout(burstDelayRef.current);
-    }
-
-    const resolveDelay = burstDelayResolveRef.current;
-    burstDelayRef.current = null;
-    burstDelayResolveRef.current = null;
-    resolveDelay?.();
-  }
-
-  function renderCamera(): ReactElement {
-    if (!permission) {
-      return (
-        <View style={styles.cameraPanel}>
-          <Text style={styles.cameraTitle}>Preparing camera</Text>
-        </View>
-      );
-    }
-
-    if (!permission.granted) {
-      return (
-        <View style={styles.cameraPanel}>
-          <Text style={styles.cameraTitle}>Camera access needed</Text>
-          <Text style={styles.cameraText}>
-            ForgeScan stores captured frames locally in this project.
-          </Text>
-          <Button label="Grant Camera Access" onPress={requestPermission} />
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.cameraShell}>
-        {isFocused ? (
-          <CameraView
-            key={`${projectId}-${rotationId}`}
-            ref={cameraRef}
-            autofocus={focusMode}
-            enableTorch={torchEnabled}
-            facing="back"
-            onCameraReady={() => {
-              setIsCameraReady(true);
-              setCameraMountError(null);
-            }}
-            onMountError={(event) => {
-              setIsCameraReady(false);
-              setCameraMountError(event.message);
-            }}
-            style={styles.cameraView}
-            zoom={zoomLevel}
-          />
-        ) : null}
-        <View pointerEvents="none" style={styles.cameraOverlay}>
-          {!isCameraReady && !cameraMountError ? (
-            <Text style={styles.previewStatus}>Starting camera</Text>
-          ) : null}
-          <View style={styles.guideCircle} />
-          <View style={styles.guideLineHorizontal} />
-          <View style={styles.guideLineVertical} />
-          <View style={styles.overlayTop}>
-            <Text style={styles.overlayTitle}>{activeRotation.label}</Text>
-            <View style={styles.overlayMetaRow}>
-              <Text style={styles.overlayMeta}>
-                {frameCount}/{targetFrameCount} frames
-              </Text>
-              <Text style={styles.overlayBadge}>
-                {captureMode === "burst" ? `${burstIntervalMs / 1000}s` : "Single"}
-              </Text>
-            </View>
-            {burstStatus ? (
-              <Text style={styles.overlayStatus}>{burstStatus}</Text>
-            ) : null}
-          </View>
-        </View>
-      </View>
-    );
+  function handleCompleteRotation(): void {
+    completeRotation(projectId, rotationId);
+    navigation.navigate("CapturePlan", { projectId });
   }
 
   return (
     <SafeAreaView style={styles.screenRoot}>
-      <View style={styles.headerSection}>
-        <Text style={styles.title}>{rotation.label}</Text>
-        <Text style={styles.meta}>{rotation.angleHint}</Text>
+      <View style={styles.topBar}>
+        <View style={styles.titleGroup}>
+          <Text style={styles.eyebrow}>{project.project.title}</Text>
+          <Text style={styles.title}>{rotation.label}</Text>
+        </View>
+        <View style={styles.frameBadge}>
+          <Text style={styles.frameBadgeValue}>{frameCount}</Text>
+          <Text style={styles.frameBadgeLabel}>Frames</Text>
+        </View>
       </View>
 
-      {renderCamera()}
+      <View style={styles.previewShell}>
+        <View style={styles.previewGrid}>
+          <View style={styles.previewGuide} />
+          <View style={styles.previewLineHorizontal} />
+          <View style={styles.previewLineVertical} />
+          <View style={styles.previewCornerTopLeft} />
+          <View style={styles.previewCornerTopRight} />
+          <View style={styles.previewCornerBottomLeft} />
+          <View style={styles.previewCornerBottomRight} />
+        </View>
 
-      <ScrollView contentContainerStyle={styles.controlContent}>
-        <Section>
-          <View style={styles.counterRow}>
-            <View>
-              <Text style={styles.counterLabel}>Frames</Text>
-              <Text style={styles.counterSubLabel}>
-                {remainingFrames} remaining
-              </Text>
-            </View>
-            <Text style={styles.counterValue}>
-              {frameCount}/{targetFrameCount}
+        <View style={styles.previewStatusBar}>
+          <Text style={styles.previewStatusLabel}>Frame {nextFrameNumber}</Text>
+          <Text style={styles.previewStatusValue}>
+            {frameCount}/{targetFrameCount}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.toolbar}>
+        {toolbarMenus.map((menu) => (
+          <Pressable
+            accessibilityRole="button"
+            key={menu.value}
+            onPress={() => setActiveMenu(menu.value)}
+            style={({ pressed }) => [
+              styles.toolbarItem,
+              activeMenu === menu.value ? styles.toolbarItemActive : undefined,
+              pressed ? styles.pressed : undefined
+            ]}
+          >
+            <Text
+              style={[
+                styles.toolbarText,
+                activeMenu === menu.value ? styles.toolbarTextActive : undefined
+              ]}
+            >
+              {menu.label}
             </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressTitle}>{rotation.angleHint}</Text>
+            <Text style={styles.progressMeta}>{remainingFrames} remaining</Text>
           </View>
-          {lastFrame ? (
-            <View style={styles.lastFrameRow}>
-              <Image source={{ uri: lastFrame.uri }} style={styles.thumbnail} />
-              <View style={styles.lastFrameText}>
-                <Text style={styles.lastFrameTitle}>{lastFrame.filename}</Text>
-                <Text style={styles.lastFrameMeta}>
-                  {lastFrame.width ?? "?"} x {lastFrame.height ?? "?"}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          {cameraMountError ? (
-            <Text style={styles.errorMessage}>
-              Camera preview error: {cameraMountError}
-            </Text>
-          ) : null}
-          {captureError ? (
-            <Text style={styles.errorMessage}>{captureError}</Text>
-          ) : null}
-        </Section>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
+          </View>
+        </View>
 
-        <Section>
-          <View style={styles.captureConsole}>
-            <View style={styles.consoleHeader}>
-              <Text style={styles.consoleTitle}>Capture</Text>
-              {isBurstRunning ? (
-                <Text style={styles.livePill}>Burst active</Text>
-              ) : null}
+        {activeMenu === "capture" ? (
+          <View style={styles.menuPanel}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>System Camera</Text>
+              <Text style={styles.menuMeta}>OEM camera app</Text>
             </View>
-
-            <View style={styles.segmentedControl}>
-              {captureModeOptions.map((option) => (
-                <ToggleOption
-                  disabled={isBurstRunning}
-                  key={option.value}
-                  label={option.label}
-                  selected={captureMode === option.value}
-                  onPress={() => setCaptureMode(option.value)}
-                />
-              ))}
-            </View>
-
-            {captureMode === "burst" ? (
-              <View style={styles.optionBlock}>
-                <Text style={styles.optionLabel}>Interval</Text>
-                <View style={styles.chipRow}>
-                  {burstIntervalOptions.map((option) => (
-                    <ChipOption
-                      disabled={isBurstRunning}
-                      key={option.value}
-                      label={option.label}
-                      selected={burstIntervalMs === option.value}
-                      onPress={() => setBurstIntervalMs(option.value)}
-                    />
-                  ))}
+            <Button
+              disabled={!canCapture || isLaunchingCamera}
+              label={
+                canCapture
+                  ? isLaunchingCamera
+                    ? "Opening Camera"
+                    : "Open Camera"
+                  : "Frame Target Reached"
+              }
+              onPress={handleOpenSystemCamera}
+            />
+            {lastFrame ? (
+              <View style={styles.lastFrameCard}>
+                <Image source={{ uri: lastFrame.uri }} style={styles.thumbnail} />
+                <View style={styles.lastFrameText}>
+                  <Text style={styles.lastFrameTitle}>{lastFrame.filename}</Text>
+                  <Text style={styles.lastFrameMeta}>
+                    {lastFrame.width ?? "?"} x {lastFrame.height ?? "?"}
+                  </Text>
                 </View>
               </View>
             ) : null}
+          </View>
+        ) : null}
 
-            <View style={styles.optionBlock}>
-              <Text style={styles.optionLabel}>Camera</Text>
-              <View style={styles.cameraControlGrid}>
-                <DeviceOption
-                  disabled={isBurstRunning}
-                  label={torchEnabled ? "Torch On" : "Torch Off"}
-                  selected={torchEnabled}
-                  onPress={() => setTorchEnabled((enabled) => !enabled)}
-                />
-                <DeviceOption
-                  disabled={isBurstRunning}
-                  label={focusMode === "on" ? "AF Lock" : "AF Auto"}
-                  selected={focusMode === "on"}
-                  onPress={() =>
-                    setFocusMode((mode) => (mode === "off" ? "on" : "off"))
-                  }
-                />
-              </View>
-              <Button
-                disabled={!canCapture || isLaunchingSystemCamera || isBurstRunning}
-                label={
-                  isLaunchingSystemCamera
-                    ? "Opening System Camera"
-                    : "Use System Camera"
-                }
-                variant="secondary"
-                onPress={handleSystemCameraCapture}
-              />
+        {activeMenu === "frames" ? (
+          <View style={styles.menuPanel}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Frames</Text>
+              <Text style={styles.menuMeta}>{frameCount} captured</Text>
             </View>
-
-            <View style={styles.optionBlock}>
-              <Text style={styles.optionLabel}>Zoom</Text>
-              <View style={styles.chipRow}>
-                {zoomOptions.map((option) => (
-                  <ChipOption
-                    disabled={isBurstRunning}
-                    key={option.label}
-                    label={option.label}
-                    selected={zoomLevel === option.value}
-                    onPress={() => setZoomLevel(option.value)}
-                  />
+            {rotation.frames.length === 0 ? (
+              <View style={styles.emptyFrameList}>
+                <Text style={styles.emptyFrameText}>No frames captured</Text>
+              </View>
+            ) : (
+              <View style={styles.frameStrip}>
+                {rotation.frames.slice(-8).map((frame) => (
+                  <View key={frame.filename} style={styles.frameTile}>
+                    <Image source={{ uri: frame.uri }} style={styles.frameTileImage} />
+                    <Text style={styles.frameTileLabel}>{frame.index}</Text>
+                  </View>
                 ))}
               </View>
-            </View>
+            )}
+            <Button
+              disabled={frameCount === 0 || isLaunchingCamera}
+              label="Retake Last Frame"
+              variant="secondary"
+              onPress={handleRetakeLastFrame}
+            />
           </View>
-        </Section>
+        ) : null}
 
-        <Section>
-          {captureMode === "burst" ? (
+        {activeMenu === "actions" ? (
+          <View style={styles.menuPanel}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Actions</Text>
+              <Text style={styles.menuMeta}>Rotation workflow</Text>
+            </View>
             <Button
-              disabled={!isBurstRunning && (!canCapture || !canUseCamera)}
-              label={
-                isBurstRunning
-                  ? "Stop Burst"
-                  : canCapture
-                    ? `Start Burst (${remainingFrames})`
-                    : "Frame Target Reached"
-              }
-              variant={isBurstRunning ? "danger" : "primary"}
-              onPress={isBurstRunning ? handleStopBurst : handleStartBurst}
+              disabled={frameCount === 0 || isLaunchingCamera}
+              label="Complete Rotation"
+              onPress={handleCompleteRotation}
             />
-          ) : (
             <Button
-              disabled={
-                !canCapture ||
-                isCapturing ||
-                isLaunchingSystemCamera ||
-                isBurstRunning ||
-                !canUseCamera
-              }
-              label={
-                canCapture
-                  ? isCapturing
-                    ? "Capturing"
-                    : "Capture Frame"
-                  : "Frame Target Reached"
-              }
-              onPress={handleCaptureFrame}
+              label="Back to Plan"
+              variant="secondary"
+              onPress={() => navigation.navigate("CapturePlan", { projectId })}
             />
-          )}
-          <Button
-            disabled={
-              frameCount === 0 ||
-              isBurstRunning ||
-              isCapturing ||
-              isLaunchingSystemCamera
-            }
-            label="Retake Last Frame"
-            variant="secondary"
-            onPress={() => retakeLastFrame(projectId, rotationId)}
-          />
-          <Button
-            disabled={
-              frameCount === 0 ||
-              isBurstRunning ||
-              isCapturing ||
-              isLaunchingSystemCamera
-            }
-            label="Complete Rotation"
-            variant="secondary"
-            onPress={handleCompleteRotation}
-          />
-        </Section>
+          </View>
+        ) : null}
+
+        {captureError ? (
+          <Text style={styles.errorMessage}>{captureError}</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-interface OptionProps {
-  label: string;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}
-
-function ToggleOption({
-  label,
-  selected,
-  disabled,
-  onPress
-}: OptionProps): ReactElement {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.segmentButton,
-        selected ? styles.segmentButtonActive : undefined,
-        pressed && !disabled ? styles.pressed : undefined,
-        disabled ? styles.segmentButtonDisabled : undefined
-      ]}
-    >
-      <Text
-        style={[
-          styles.segmentLabel,
-          selected ? styles.segmentLabelActive : undefined
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function ChipOption({
-  label,
-  selected,
-  disabled,
-  onPress
-}: OptionProps): ReactElement {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        selected ? styles.chipActive : undefined,
-        pressed && !disabled ? styles.pressed : undefined,
-        disabled ? styles.chipDisabled : undefined
-      ]}
-    >
-      <Text
-        style={[styles.chipLabel, selected ? styles.chipLabelActive : undefined]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function DeviceOption({
-  label,
-  selected,
-  disabled,
-  onPress
-}: OptionProps): ReactElement {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.deviceButton,
-        selected ? styles.deviceButtonActive : undefined,
-        pressed && !disabled ? styles.pressed : undefined,
-        disabled ? styles.chipDisabled : undefined
-      ]}
-    >
-      <Text
-        style={[
-          styles.deviceButtonLabel,
-          selected ? styles.deviceButtonLabelActive : undefined
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -619,198 +278,211 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1
   },
-  headerSection: {
-    gap: spacing.xs,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md
-  },
-  controlContent: {
+  topBar: {
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.md,
-    padding: spacing.md,
-    paddingBottom: spacing.xl
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm
+  },
+  titleGroup: {
+    flex: 1,
+    gap: 2
+  },
+  eyebrow: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase"
   },
   title: {
     color: colors.text,
-    fontSize: 24,
-    fontWeight: "800"
+    fontSize: 25,
+    fontWeight: "900"
   },
-  meta: {
-    color: colors.mutedText,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  cameraShell: {
-    aspectRatio: 3 / 4,
+  frameBadge: {
+    alignItems: "center",
     backgroundColor: colors.text,
     borderRadius: 8,
+    minWidth: 70,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  frameBadgeValue: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  frameBadgeLabel: {
+    color: "#dfece8",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  previewShell: {
+    backgroundColor: "#101817",
+    borderRadius: 8,
+    height: 250,
     marginHorizontal: spacing.md,
     overflow: "hidden"
   },
-  cameraView: {
-    flex: 1
-  },
-  cameraOverlay: {
+  previewGrid: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center"
   },
-  previewStatus: {
-    backgroundColor: "rgba(20, 27, 25, 0.72)",
-    borderRadius: 8,
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    position: "absolute",
-    zIndex: 2
-  },
-  overlayTop: {
-    backgroundColor: "rgba(20, 27, 25, 0.72)",
-    borderRadius: 8,
-    left: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    position: "absolute",
-    right: spacing.md,
-    top: spacing.md
-  },
-  overlayTitle: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "800"
-  },
-  overlayMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    marginTop: 4
-  },
-  overlayMeta: {
-    color: "#dfece8",
-    flexShrink: 1,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  overlayBadge: {
-    backgroundColor: "rgba(255, 255, 255, 0.16)",
-    borderColor: "rgba(255, 255, 255, 0.22)",
-    borderRadius: 999,
-    borderWidth: 1,
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3
-  },
-  overlayStatus: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "800",
-    marginTop: spacing.xs
-  },
-  guideCircle: {
-    borderColor: "rgba(255, 255, 255, 0.9)",
+  previewGuide: {
+    borderColor: "rgba(255, 255, 255, 0.34)",
     borderRadius: 999,
     borderWidth: 2,
-    height: "54%",
+    height: "58%",
     width: "72%"
   },
-  guideLineHorizontal: {
-    backgroundColor: "rgba(255, 255, 255, 0.45)",
+  previewLineHorizontal: {
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
     height: 1,
     position: "absolute",
-    width: "76%"
+    width: "78%"
   },
-  guideLineVertical: {
-    backgroundColor: "rgba(255, 255, 255, 0.45)",
-    height: "58%",
+  previewLineVertical: {
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    height: "65%",
     position: "absolute",
     width: 1
   },
-  cameraPanel: {
+  previewCornerTopLeft: {
+    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderLeftWidth: 2,
+    borderTopWidth: 2,
+    height: 34,
+    left: spacing.md,
+    position: "absolute",
+    top: spacing.md,
+    width: 34
+  },
+  previewCornerTopRight: {
+    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderRightWidth: 2,
+    borderTopWidth: 2,
+    height: 34,
+    position: "absolute",
+    right: spacing.md,
+    top: spacing.md,
+    width: 34
+  },
+  previewCornerBottomLeft: {
+    borderBottomWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderLeftWidth: 2,
+    bottom: spacing.md,
+    height: 34,
+    left: spacing.md,
+    position: "absolute",
+    width: 34
+  },
+  previewCornerBottomRight: {
+    borderBottomWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+    borderRightWidth: 2,
+    bottom: spacing.md,
+    height: 34,
+    position: "absolute",
+    right: spacing.md,
+    width: 34
+  },
+  previewStatusBar: {
     alignItems: "center",
-    aspectRatio: 3 / 4,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: spacing.sm,
-    justifyContent: "center",
-    marginHorizontal: spacing.md,
-    padding: spacing.md
-  },
-  cameraTitle: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "800"
-  },
-  cameraText: {
-    color: colors.mutedText,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center"
-  },
-  counterRow: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    bottom: 0,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: spacing.md
+    left: 0,
+    padding: spacing.md,
+    position: "absolute",
+    right: 0
   },
-  counterLabel: {
-    color: colors.mutedText,
-    fontSize: 14,
-    fontWeight: "700"
+  previewStatusLabel: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900"
   },
-  counterSubLabel: {
-    color: colors.text,
+  previewStatusValue: {
+    color: "#dfece8",
     fontSize: 13,
-    fontWeight: "700",
-    marginTop: 2
-  },
-  counterValue: {
-    color: colors.text,
-    fontSize: 24,
     fontWeight: "800"
   },
-  lastFrameRow: {
-    alignItems: "center",
+  toolbar: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    padding: 4
   },
-  thumbnail: {
-    backgroundColor: colors.surfaceMuted,
+  toolbarItem: {
+    alignItems: "center",
     borderRadius: 6,
-    height: 56,
-    width: 56
-  },
-  lastFrameText: {
     flex: 1,
-    gap: 2
+    justifyContent: "center",
+    minHeight: 42
   },
-  lastFrameTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800"
+  toolbarItemActive: {
+    backgroundColor: colors.text
   },
-  lastFrameMeta: {
+  toolbarText: {
     color: colors.mutedText,
-    fontSize: 14
+    fontSize: 13,
+    fontWeight: "900"
   },
-  captureConsole: {
+  toolbarTextActive: {
+    color: "#ffffff"
+  },
+  content: {
+    gap: spacing.md,
+    padding: spacing.md,
+    paddingBottom: spacing.xl
+  },
+  progressCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  progressHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  progressTitle: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  progressMeta: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  progressTrack: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    height: 8,
+    overflow: "hidden"
+  },
+  progressFill: {
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    height: 8
+  },
+  menuPanel: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
@@ -823,122 +495,87 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 2
   },
-  consoleHeader: {
+  menuHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between"
   },
-  consoleTitle: {
+  menuTitle: {
     color: colors.text,
     fontSize: 18,
-    fontWeight: "800"
+    fontWeight: "900"
   },
-  livePill: {
-    backgroundColor: "#e5f2ec",
-    borderRadius: 999,
-    color: colors.success,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4
-  },
-  segmentedControl: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    flexDirection: "row",
-    padding: 4
-  },
-  segmentButton: {
-    alignItems: "center",
-    borderRadius: 6,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 40
-  },
-  segmentButtonActive: {
-    backgroundColor: colors.text
-  },
-  segmentButtonDisabled: {
-    opacity: 0.72
-  },
-  segmentLabel: {
-    color: colors.mutedText,
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  segmentLabelActive: {
-    color: "#ffffff"
-  },
-  optionBlock: {
-    gap: spacing.xs
-  },
-  optionLabel: {
+  menuMeta: {
     color: colors.mutedText,
     fontSize: 12,
     fontWeight: "800",
     textTransform: "uppercase"
   },
-  chipRow: {
+  lastFrameCard: {
+    alignItems: "center",
+    backgroundColor: "#f7fafb",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  thumbnail: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 6,
+    height: 62,
+    width: 62
+  },
+  lastFrameText: {
+    flex: 1,
+    gap: 2
+  },
+  lastFrameTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  lastFrameMeta: {
+    color: colors.mutedText,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  emptyFrameList: {
+    alignItems: "center",
+    backgroundColor: "#f7fafb",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 72
+  },
+  emptyFrameText: {
+    color: colors.mutedText,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  frameStrip: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
   },
-  chip: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+  frameTile: {
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 40,
-    minWidth: 72,
-    paddingHorizontal: spacing.md
+    overflow: "hidden",
+    width: 70
   },
-  chipActive: {
-    backgroundColor: "#ecf6f6",
-    borderColor: colors.accent
+  frameTileImage: {
+    height: 64,
+    width: 70
   },
-  chipDisabled: {
-    opacity: 0.58
-  },
-  chipLabel: {
+  frameTileLabel: {
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  chipLabelActive: {
-    color: colors.accent
-  },
-  cameraControlGrid: {
-    flexDirection: "row",
-    gap: spacing.sm
-  },
-  deviceButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: spacing.sm
-  },
-  deviceButtonActive: {
-    backgroundColor: colors.text,
-    borderColor: colors.text
-  },
-  deviceButtonLabel: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  deviceButtonLabelActive: {
-    color: "#ffffff"
-  },
-  pressed: {
-    opacity: 0.78
+    fontSize: 12,
+    fontWeight: "900",
+    padding: 6,
+    textAlign: "center"
   },
   errorMessage: {
     backgroundColor: "#f0d8d5",
@@ -947,5 +584,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     padding: spacing.md
+  },
+  pressed: {
+    opacity: 0.78
   }
 });
