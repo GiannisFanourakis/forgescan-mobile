@@ -7,7 +7,9 @@ export type PhotorealAssetStatus =
   | "processing"
   | "generated"
   | "requires-native-build"
+  | "requires-model"
   | "requires-external-optimizer"
+  | "requires-production-optimizer"
   | "failed";
 
 export interface PhotorealAsset {
@@ -80,8 +82,12 @@ export function getPhotorealStatusLabel(
       return "Generated";
     case "requires-native-build":
       return "Requires native build";
+    case "requires-model":
+      return "Requires model";
     case "requires-external-optimizer":
       return "Requires native build";
+    case "requires-production-optimizer":
+      return "Requires production optimizer";
     case "failed":
       return "Failed";
     case "processing":

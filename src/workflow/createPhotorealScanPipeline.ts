@@ -29,7 +29,7 @@ export interface PreviewStatusItem {
   status:
     | "Generated"
     | "Fallback"
-    | "Requires native processing"
+    | "Requires native preview rendering"
     | "Not available"
     | "Failed";
   detail: string;
@@ -124,6 +124,34 @@ export async function createPhotorealScan(
     ...optimizerResult.warnings
   );
 
+  if (masking.maskingEngineStatus === "temporary-deeplab-fallback") {
+    warnings.push(
+      "Temporary DeepLab segmentation used. Object isolation may be imperfect."
+    );
+  }
+
+  if (masking.maskingEngineStatus === "fallback-local") {
+    warnings.push(
+      "Fallback local object preparation used. This is not production object-background removal."
+    );
+  }
+
+  if (masking.maskingEngineStatus !== "birefnet-complete") {
+    warnings.push(
+      "BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx."
+    );
+  }
+
+  if (optimizerResult.status === "generated") {
+    if (optimizerResult.qualityTier === "trainable-v1") {
+      warnings.push(
+        "This is Android V1 optimization, not final production 3DGS quality."
+      );
+    } else {
+      warnings.push("Coarse on-phone splat generated. Quality is limited.");
+    }
+  }
+
   const errors = [
     ...validation.errors,
     ...masking.errors,
@@ -162,9 +190,44 @@ export async function createPhotorealScan(
     { label: "Primary .ksplat target", value: photorealAsset.path },
     { label: "Optimizer input package", value: "advanced/splatting/ksplat-optimizer-input.json" },
     { label: "Optimizer status", value: optimizerResult.status },
+    { label: ".ksplat engine status", value: optimizerResult.ksplatEngineStatus ?? "unknown" },
+    { label: ".ksplat quality tier", value: optimizerResult.qualityTier ?? "none" },
+    { label: ".ksplat writer status", value: optimizerResult.ksplatWriterStatus ?? "unknown" },
+    { label: "Optimizer runtime status", value: optimizerResult.optimizerRuntimeStatus ?? "unknown" },
+    { label: "Optimizer blocker", value: optimizerResult.optimizerBlocker ?? "none" },
+    { label: "Optimizer engine", value: optimizerResult.optimizerName ?? "unavailable" },
+    {
+      label: "Optimizer iterations",
+      value: `${optimizerResult.iterationCount ?? 0}`
+    },
+    {
+      label: "Optimizer gaussian count",
+      value: `${optimizerResult.gaussianCount ?? 0}`
+    },
+    {
+      label: "Optimizer final loss",
+      value:
+        optimizerResult.finalLoss === undefined
+          ? "n/a"
+          : optimizerResult.finalLoss.toFixed(4)
+    },
+    {
+      label: "Production 3DGS",
+      value: optimizerResult.production3dgs ? "yes" : "no"
+    },
     { label: "Preview fallback viewer", value: viewerUri },
     { label: "Object preparation", value: maskingSummary.userMessage },
     { label: "Masking engine result", value: `${masking.engineName} / ${masking.status}` },
+    { label: "Masking engine status", value: masking.maskingEngineStatus ?? "unknown" },
+    { label: "Masking model status", value: masking.modelStatus ?? "unknown" },
+    {
+      label: "Masking inference",
+      value: masking.inferenceRan ? "ran" : "not run"
+    },
+    {
+      label: "Mask PNG output",
+      value: masking.maskPngWritten ? "written" : "not written"
+    },
     { label: "Mask coverage", value: `${maskCoverage.maskCount}/${maskCoverage.requiredFrames} required frames` },
     { label: "Internal alignment engine", value: reconstruction.job.implementation },
     { label: "Internal alignment warning", value: reconstruction.warnings.join(" ") },
@@ -213,20 +276,20 @@ function createPreviewStatus(
       label: "Photoreal Scan",
       status: ksplatGenerated ? "Generated" : ksplatFailed ? "Failed" : "Fallback",
       detail: ksplatGenerated
-        ? `${optimizerResult.outputFilename} generated.`
+        ? `${optimizerResult.outputFilename} generated with ${optimizerResult.qualityTier ?? "coarse-v1"} quality.`
         : ksplatFailed
           ? "Native processing failed. See Advanced Details."
           : "Native processing is required to generate the photoreal scan. Showing fallback preview only."
     },
     {
       label: "Preview Video",
-      status: "Requires native processing",
-      detail: "preview.mp4 requires native preview rendering."
+      status: "Requires native preview rendering",
+      detail: "Preview video/GIF requires future native preview rendering."
     },
     {
       label: "Preview GIF",
-      status: "Requires native processing",
-      detail: "preview.gif requires native preview rendering."
+      status: "Requires native preview rendering",
+      detail: "Preview video/GIF requires future native preview rendering."
     }
   ];
 }
@@ -253,11 +316,15 @@ function getResultStatus(
 
 function createUserMessage(result: KsplatOptimizerResult): string {
   if (result.status === "generated") {
-    return ".ksplat generated.";
+    if (result.qualityTier === "trainable-v1") {
+      return "Photoreal scan generated with Android Gaussian Splat V1.";
+    }
+
+    return "Coarse on-phone splat generated. Quality is limited.";
   }
 
   if (result.status === "failed") {
-    return "Photoreal scan failed. See Advanced Details.";
+    return "On-phone splat generation failed. See Advanced Details.";
   }
 
   return "Native processing is required to generate .ksplat.";

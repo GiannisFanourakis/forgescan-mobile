@@ -50,7 +50,7 @@ export default function App(): ReactElement {
           <Stack.Screen
             name="DeviceSupport"
             component={DeviceSupportScreen}
-            options={{ title: "Device Support" }}
+            options={{ title: "Native Engine Diagnostics" }}
           />
           <Stack.Screen
             name="CapturePlan"

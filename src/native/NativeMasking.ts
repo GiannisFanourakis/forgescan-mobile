@@ -4,13 +4,16 @@ import {
   NativeMaskingAvailability,
   NativeMaskingInput,
   NativeMaskingOutput,
-  NativeMaskingProgress
+  NativeMaskingProgress,
+  NativeMaskingSmokeTestResult
 } from "./NativeMaskingTypes";
 
 const nativeMaskingModule = NativeModules.ForgeScanNativeMasking as
   | {
       getAvailability?: () => Promise<string>;
       runMasking?: (inputJson: string) => Promise<string>;
+      runOneFrameMaskTest?: () => Promise<string>;
+      runOneFrameBiRefNetMaskTest?: () => Promise<string>;
       cancelMasking?: () => Promise<void>;
     }
   | undefined;
@@ -21,7 +24,10 @@ export async function getNativeMaskingAvailability(): Promise<NativeMaskingAvail
       available: false,
       mode: "unavailable",
       moduleName: "ForgeScanNativeMasking",
-      reason: "Native AI masking requires a development/native build."
+      reason: "Native AI masking requires a development/native build.",
+      modelStatus: "missing",
+      maskingEngineStatus: "birefnet-model-missing",
+      fallbackUsed: true
     };
   }
 
@@ -35,7 +41,7 @@ export async function getNativeMaskingAvailability(): Promise<NativeMaskingAvail
         available: true,
         mode: "native-ai",
         moduleName: "ForgeScanNativeMasking",
-        engineName: "native-ai"
+      engineName: "native-ai"
       };
     }
   }
@@ -60,6 +66,9 @@ export async function runNativeMasking(
       maskArtifacts: [],
       engineName: "unavailable",
       modelName: input.modelHint,
+      modelStatus: "missing",
+      maskingEngineStatus: "birefnet-model-missing",
+      fallbackUsed: true,
       warnings: [
         availability.reason ??
           "Native AI masking requires a development/native build."
@@ -94,4 +103,55 @@ export async function runNativeMasking(
 
 export async function cancelNativeMasking(): Promise<void> {
   await nativeMaskingModule?.cancelMasking?.();
+}
+
+export async function runNativeMaskingSmokeTest(): Promise<NativeMaskingSmokeTestResult> {
+  const availability = await getNativeMaskingAvailability();
+
+  if (!availability.available || !nativeMaskingModule?.runOneFrameMaskTest) {
+    return {
+      status: "requires-native-build",
+      modelExists: false,
+      modelStatus: "missing",
+      maskingEngineStatus: "birefnet-model-missing",
+      fallbackUsed: true,
+      warnings: [
+        availability.reason ??
+          "Native AI masking requires a development/native build."
+      ],
+      errors: []
+    };
+  }
+
+  return JSON.parse(
+    await nativeMaskingModule.runOneFrameMaskTest()
+  ) as NativeMaskingSmokeTestResult;
+}
+
+export async function runNativeBiRefNetMaskingSmokeTest(): Promise<NativeMaskingSmokeTestResult> {
+  const availability = await getNativeMaskingAvailability();
+
+  if (!availability.available || !nativeMaskingModule?.runOneFrameBiRefNetMaskTest) {
+    return {
+      status: "requires-native-build",
+      modelExists: false,
+      modelStatus: "missing",
+      modelName: "birefnet.onnx",
+      modelAssetPath: "models/masking/birefnet.onnx",
+      maskingEngineStatus: "birefnet-model-missing",
+      birefnetLoaded: false,
+      birefnetInferencePassed: false,
+      inferenceBackend: "onnxruntime",
+      fallbackUsed: false,
+      warnings: [
+        availability.reason ??
+          "Native AI masking requires a development/native build."
+      ],
+      errors: []
+    };
+  }
+
+  return JSON.parse(
+    await nativeMaskingModule.runOneFrameBiRefNetMaskTest()
+  ) as NativeMaskingSmokeTestResult;
 }

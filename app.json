@@ -3,6 +3,7 @@
     "name": "ForgeScan",
     "slug": "forgescan-mobile",
     "version": "0.1.0",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,7 +22,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f4f7f8"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "com.anonymous.forgescanmobile"
     },
     "plugins": [
       [
@@ -31,7 +36,8 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/withForgeScanNativeEngines"
     ]
   }
 }

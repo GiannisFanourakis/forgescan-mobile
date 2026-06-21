@@ -5,6 +5,11 @@ import {
 } from "../reconstruction/splatting/photorealAsset";
 
 export type NormalExportType = "ksplat" | "mp4" | "gif";
+export type PreviewExportStatus =
+  | "requires-native-preview-rendering"
+  | "generated"
+  | "failed"
+  | "not-available";
 
 export type InternalArtifactType =
   | "splat-ply"
@@ -29,7 +34,9 @@ export interface NormalExportItem {
   status:
     | "Generated"
     | "Requires native build"
-    | "Requires native processing"
+    | "Requires model"
+    | "Requires production optimizer"
+    | "Requires native preview rendering"
     | "Failed"
     | "Not available";
   uri?: string;
@@ -58,14 +65,14 @@ export function createNormalExportItems(
       label: "Preview Video",
       filename: "preview.mp4",
       path: "preview/preview.mp4",
-      status: "Requires native processing"
+      status: "Requires native preview rendering"
     },
     {
       type: "gif",
       label: "Preview GIF",
       filename: "preview.gif",
       path: "preview/preview.gif",
-      status: "Requires native processing"
+      status: "Requires native preview rendering"
     }
   ];
 }

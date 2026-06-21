@@ -1,14 +1,12 @@
 # ForgeScan Mobile Test Plan
 
-This plan verifies the V3 native-first splatting flow.
-
-Normal user flow:
+This plan verifies:
 
 ```text
 Capture -> Splatting -> Preview -> Export
 ```
 
-Normal export UI must only show:
+Normal export UI must show only:
 
 ```text
 ForgeScan_{projectName}.ksplat
@@ -16,83 +14,157 @@ preview.mp4
 preview.gif
 ```
 
-## Path A — Expo Go
+## Expo Go Fallback
 
 1. Run `npm install`.
 2. Run `npm run typecheck`.
 3. Run `npm run start`.
 4. Open the app in Expo Go.
 5. Create a project.
-6. Capture the upright rotation.
-7. Capture the tilted rotation.
-8. Optional: capture the underside rotation.
-9. Open Project Review.
-10. Tap `Create Photoreal Scan`.
-11. Confirm progress messages:
-   - Checking capture
-   - Preparing object
-   - Creating photoreal scan
-   - Preparing preview
-   - Finished
-12. Confirm native masking reports unavailable safely or fallback object preparation runs.
-13. Confirm `.ksplat` status is `Requires native build`.
-14. Confirm no fake `.ksplat` exists.
-15. Tap `Export .ksplat`.
-16. Confirm normal export UI only shows:
-   - `ForgeScan_{projectName}.ksplat`
-   - `preview.mp4`
-   - `preview.gif`
-17. Confirm `preview.mp4` and `preview.gif` show `Requires native processing`.
-18. Expand Advanced Details.
-19. Confirm Advanced Details lists native availability, internal optimizer input, masks, logs, internal JSON, and diagnostics.
+6. Capture required rotations.
+7. Open Project Review.
+8. Tap `Create Photoreal Scan`.
+9. Confirm native masking reports development/native build required or fallback object preparation is clearly marked.
+10. Confirm native `.ksplat` generation reports development/native build required.
+11. Confirm no fake `.ksplat` is created.
+12. Tap `Export .ksplat`.
+13. Confirm normal export UI only shows:
+    - `ForgeScan_{projectName}.ksplat`
+    - `preview.mp4`
+    - `preview.gif`
+14. Confirm `preview.mp4` and `preview.gif` show `Requires native preview rendering`.
+15. Confirm internal masks/JSON/logs/viewer/source files appear only in Advanced Details.
 
-## Path B — Native/Dev Build
+## Android Real Engine Test
 
-1. Run a development/native build with native modules linked.
-2. Confirm native masking availability if implemented.
-3. Confirm native `.ksplat` optimizer availability if implemented.
-4. Capture required rotations.
-5. Tap `Create Photoreal Scan`.
-6. Confirm native masking runs.
-7. Confirm native optimizer runs.
-8. Confirm real `.ksplat` is generated at:
+Requirements:
 
-```text
-photoreal/ForgeScan_{projectName}.ksplat
+- Physical Android phone.
+- Android development/native build, not Expo Go.
+- Android SDK installed.
+- USB debugging enabled.
+- Good lighting and static background.
+- Object on a turntable or stable surface.
+- BiRefNet model at `assets/models/masking/birefnet.onnx`.
+
+Commands:
+
+```bash
+npm install
+npm run typecheck
+npm run model:birefnet:install
+npm run model:birefnet:check
+npx expo prebuild
+npx expo run:android
 ```
 
-9. Confirm Export marks `.ksplat` as `Generated`.
+Phone flow:
 
-If native internals are stubbed only, Path B requires completing native engine internals.
+1. Open Android dev build.
+2. Open `Native Engine Diagnostics`.
+3. Tap `Test BiRefNet Model Load`.
+4. If `assets/models/masking/birefnet.onnx` is missing, confirm:
+   - `BiRefNet model exists` fails.
+   - The message says `BiRefNet model is missing. Add the model at assets/models/masking/birefnet.onnx.`
+   - Temporary DeepLab is shown as fallback if bundled.
+5. If BiRefNet model is present, confirm:
+   - model exists
+   - model loaded
+   - inference backend is `onnxruntime`
+6. Tap `Run One-Frame BiRefNet Mask Test`.
+7. Pass only if:
+   - BiRefNet inference passes
+   - PNG mask output path is shown
+   - PNG mask size is greater than 0
+8. Tap `Test Gaussian Splat Optimizer`.
+9. Confirm:
+   - optimizer backend is `trainable-3dgs-android-v1`
+   - trainable loop is available
+   - coarse fallback is available
+   - `.ksplat` writer status is `experimental-ksplat`
+   - production 3DGS is not implemented
+10. Tap `Run Tiny Gaussian Training Test`.
+11. Pass only if:
+    - iterations are greater than 0
+    - Gaussian count is greater than 0
+    - final loss is shown
+    - optimizer runtime status is `trainable-loop-complete` or a specific blocker is shown
+    - smoke `.ksplat` exists and size is greater than 0
+12. Tap `Run Tiny .ksplat Writer Test`.
+13. Pass only if writer smoke `.ksplat` exists and size is greater than 0.
+14. Confirm smoke-test files are not shown as user scan exports.
+15. Create a real scan.
+16. Capture upright rotation.
+17. Capture tilted rotation.
+18. Optional: capture underside rotation.
+19. Complete rotations manually.
+20. Tap `Create Photoreal Scan`.
+21. Confirm object masking ran:
+    - `birefnet-complete` if BiRefNet model is installed and inference passed
+    - `temporary-deeplab-fallback` if BiRefNet is missing and fallback model ran
+    - `fallback-local` only if native masking failed
+22. Confirm at least one real mask file exists and size is greater than 0.
+23. Confirm Gaussian optimizer ran:
+    - `trainable-v1` when Android Gaussian Splat V1 loop succeeds
+    - `coarse-v1` only if coarse fallback was needed
+24. Confirm `.ksplat` exists, filename ends in `.ksplat`, and size is greater than 0.
+25. Confirm `.ksplat` writer status is shown.
+26. Confirm warning says Android V1 is not final production 3DGS quality.
+27. Tap `Export .ksplat`.
+28. Confirm Export shows only:
+    - `ForgeScan_{projectName}.ksplat`
+    - `preview.mp4`
+    - `preview.gif`
+29. Confirm preview MP4/GIF status is `Requires native preview rendering`.
+30. Confirm `.ksplat` export is blocked unless validation passes.
 
-## Expected Expo Go Internal Files
+## Full Android Scan Test Button
 
-Expo Go may create:
+In `Native Engine Diagnostics`, `Run Full Android Scan Test` must fail with exact messages:
 
-```text
-ForgeScan/projects/{projectId}/advanced/masks/raw/{rotation}/frame_001.png
-ForgeScan/projects/{projectId}/advanced/masks/refined/{rotation}/frame_001.png
-ForgeScan/projects/{projectId}/advanced/splatting/ksplat-optimizer-input.json
-ForgeScan/projects/{projectId}/advanced/splatting/ksplat-result.json
-ForgeScan/projects/{projectId}/open_viewer.html
-```
+- `no captured frames`
+- `required rotation incomplete`
+- `masking model missing`
+- `bad model load`
+- `mask output missing`
+- `coarse splat V1 failed`
+- `.ksplat missing`
+- `.ksplat zero bytes`
 
-If PNG mask writing is blocked, fallback mask artifacts may be:
+It passes only if:
 
-```text
-ForgeScan/projects/{projectId}/advanced/masks/raw/{rotation}/frame_001.mask.json
-ForgeScan/projects/{projectId}/advanced/masks/refined/{rotation}/frame_001.mask.json
-```
-
-These files are internal and belong only in Advanced Details.
+- active project exists
+- capture validates
+- masking writes at least one non-empty mask
+- trainable V1 or coarse fallback writes a non-empty `.ksplat`
+- quality tier is shown
+- production 3DGS remains marked not implemented
 
 ## Acceptance Criteria
 
-- Native processing is the preferred architecture.
-- Expo Go reports native masking and native optimizer requirements honestly.
-- No fake `.ksplat` is created.
-- `.ksplat` is marked Generated only if a real valid `.ksplat` exists.
-- Normal export UI only shows `.ksplat`, `preview.mp4`, and `preview.gif`.
-- Masks, JSON, OBJ, GLB, PLY, logs, source frames, and project folders are not normal exports.
-- Advanced Details is collapsed by default and contains internal diagnostics.
-- Typecheck passes.
+- App builds as Android dev build.
+- Real camera capture works.
+- BiRefNet ONNX path exists and fails clearly if model is missing.
+- Temporary DeepLab fallback runs only as fallback.
+- At least one real mask file is created and size is greater than 0.
+- Android Gaussian Splat V1 trainable loop runs on phone.
+- Coarse V1 fallback remains available.
+- `.ksplat` exists and size is greater than 0 before status is Generated.
+- Quality tier is `trainable-v1` or `coarse-v1`.
+- App warns this is not production Gaussian training.
+- Normal export UI only shows `.ksplat`, `.mp4`, and `.gif`.
+- Preview MP4/GIF are marked as requiring future native preview rendering.
+- BiRefNet is not claimed as running unless actual model inference succeeds.
+- React Native New Architecture remains disabled unless the Windows long-path issue is fixed and verified.
+
+## Failure Cases
+
+- Missing BiRefNet model.
+- Bad BiRefNet model load.
+- Segmentation output missing.
+- `.ksplat` missing.
+- `.ksplat` zero bytes.
+- Android build failure.
+- Windows long-path native C++ build issue.
+- New Architecture accidentally re-enabled.
+- Normal export UI exposes masks, JSON, OBJ, GLB, PLY, logs, frames, project folders, or smoke-test files.

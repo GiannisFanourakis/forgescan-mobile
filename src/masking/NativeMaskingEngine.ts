@@ -47,6 +47,8 @@ export class NativeMaskingEngine implements MaskingEngine {
     }
 
     const output = await runNativeMasking(input);
+    const engineMode =
+      output.engineName === "fallback-local" ? "fallback-local" : this.mode;
     const artifacts: MaskArtifact[] = output.maskArtifacts.map((artifact) => ({
       rotationId: artifact.rotationId,
       frameIndex: artifact.frameIndex,
@@ -58,7 +60,12 @@ export class NativeMaskingEngine implements MaskingEngine {
       rawMaskPath: artifact.rawMaskPath,
       refinedMaskPath: artifact.refinedMaskPath,
       status: artifact.status,
-      engine: this.mode,
+      engine: artifact.engineName === "fallback-local" ? "fallback-local" : engineMode,
+      engineName: artifact.engineName ?? output.engineName,
+      modelName: artifact.modelName ?? output.modelName,
+      ...optionalBoolean("modelLoaded", artifact.modelLoaded ?? output.modelLoaded),
+      ...optionalBoolean("inferenceRan", artifact.inferenceRan ?? output.inferenceRan),
+      ...optionalBoolean("maskPngWritten", artifact.maskPngWritten ?? output.maskPngWritten),
       createdAt: new Date().toISOString(),
       warnings: artifact.warnings,
       errors: artifact.errors
@@ -66,10 +73,18 @@ export class NativeMaskingEngine implements MaskingEngine {
     const result: MaskingProjectResult = {
       projectId: manifest.project.id,
       status: output.status,
-      engine: this.mode,
+      engine: engineMode,
       engineName: output.engineName,
       ...(output.engineVersion ? { engineVersion: output.engineVersion } : {}),
       modelName: output.modelName,
+      ...optionalBoolean("modelExists", output.modelExists),
+      ...optionalBoolean("modelLoaded", output.modelLoaded),
+      ...optionalBoolean("inferenceRan", output.inferenceRan),
+      ...optionalBoolean("maskPngWritten", output.maskPngWritten),
+      ...(output.modelStatus ? { modelStatus: output.modelStatus } : {}),
+      ...(output.maskingEngineStatus
+        ? { maskingEngineStatus: output.maskingEngineStatus }
+        : {}),
       createdAt: new Date().toISOString(),
       totalFrames: input.frames.length,
       successfulFrames: artifacts.filter(
@@ -135,4 +150,11 @@ export class NativeMaskingEngine implements MaskingEngine {
       artifact
     };
   }
+}
+
+function optionalBoolean<T extends string>(
+  key: T,
+  value: boolean | undefined
+): { [K in T]?: boolean } {
+  return value === undefined ? {} : { [key]: value } as { [K in T]?: boolean };
 }

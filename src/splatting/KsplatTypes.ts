@@ -13,6 +13,28 @@ export type KsplatOptimizerStatus =
   | "requires-native-build"
   | "failed";
 
+export type KsplatQualityTier =
+  | "none"
+  | "smoke-test"
+  | "trainable-v1"
+  | "coarse-v1"
+  | "production-3dgs";
+
+export type KsplatEngineStatus =
+  | "production-3dgs-running"
+  | "trainable-3dgs-v1-running"
+  | "coarse-v1-fallback"
+  | "generated"
+  | "coarse-v1-running"
+  | "coarse-v1-generated"
+  | "production-3dgs-missing"
+  | "failed";
+
+export type KsplatWriterStatus =
+  | "valid-ksplat"
+  | "experimental-ksplat"
+  | "unsupported";
+
 export interface OrderedFrameInput {
   rotationId: RotationId;
   frameIndex: number;
@@ -55,7 +77,11 @@ export interface KsplatCameraData {
 export interface KsplatOptimizerSettings {
   target: "ksplat";
   maxIterations: number;
+  gaussianCount: number;
   imageDownscale: number;
+  learningRate: number;
+  qualityPreset: "smoke" | "fast" | "standard";
   useMasks: boolean;
   nativePreferred: boolean;
+  objectTurntableMode: boolean;
 }

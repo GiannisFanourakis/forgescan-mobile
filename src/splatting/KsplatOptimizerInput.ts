@@ -74,10 +74,14 @@ export function createKsplatOptimizerInput(
     outputPath: getExpectedKsplatPath(manifest),
     optimizerSettings: {
       target: "ksplat",
-      maxIterations: 7000,
+      maxIterations: 18,
+      gaussianCount: orderedFrames.length >= 180 ? 900 : 600,
       imageDownscale: orderedFrames.length >= 180 ? 2 : 1,
+      learningRate: 0.08,
+      qualityPreset: "smoke",
       useMasks: masks.length > 0,
-      nativePreferred: true
+      nativePreferred: true,
+      objectTurntableMode: true
     },
     createdAt: new Date().toISOString(),
     notes: [

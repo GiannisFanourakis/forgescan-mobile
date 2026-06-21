@@ -35,6 +35,7 @@ import {
   exportPhotorealScan
 } from "../workflow/exportKsplatsPipeline";
 import { NormalExportItem } from "../workflow/exportArtifacts";
+import { validateKsplatFile } from "../splatting/KsplatValidation";
 import {
   WorkflowStage,
   canRunPrimaryAction,
@@ -159,6 +160,31 @@ export function ProjectReviewScreen({
     setStatusMessage("Exporting .ksplat");
 
     try {
+      const currentExports = scanResult?.normalExports ?? [];
+      const currentKsplat = currentExports.find((item) => item.type === "ksplat");
+      const validationResult = validateKsplatFile(currentKsplat?.uri);
+      if (scanResult && !validationResult.valid) {
+        const warning =
+          validationResult.errors[0] ??
+          validationResult.warnings[0] ??
+          "A valid generated .ksplat is required before export.";
+        setExportResult({
+          success: false,
+          userMessage: "Export blocked: valid .ksplat required.",
+          normalExports: currentExports,
+          warnings: [warning],
+          advancedDetails: [
+            { label: ".ksplat export blocked", value: warning }
+          ]
+        });
+        setAdvancedDetails((details) => [
+          ...details,
+          { label: ".ksplat export blocked", value: warning }
+        ]);
+        setStatusMessage("Export blocked: valid .ksplat required.");
+        return;
+      }
+
       const result = await exportPhotorealScan(activeProject);
       setExportResult({
         ...result,

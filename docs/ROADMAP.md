@@ -6,23 +6,20 @@
 - Unlimited frame capture with recommended presets.
 - Manual rotation completion.
 - Local project persistence.
-- Fallback-local segmentation artifacts.
-- Rough reconstruction package and proxy mesh.
-- Gaussian Splatting job package.
-- HTML viewer export.
-- Full project package writer.
+- Android BiRefNet ONNX masking path.
+- Android Gaussian Splat V1 trainable loop.
+- Validated `.ksplat` export gate.
 
 ## Improve Segmentation Quality
 
-- Replace one-pixel fallback masks with image-derived masks.
+- Improve BiRefNet mask quality and fallback thresholds.
 - Add preview overlay rendering in-app.
 - Track mask confidence and per-frame failures.
 - Add batch retry for failed masks.
 
 ## Integrate True AI Background Removal
 
-- Evaluate Expo-compatible model execution.
-- Add native Android LiteRT/TFLite path.
+- Optimize native Android ONNX Runtime masking.
 - Add native iOS Vision/Core ML path.
 - Keep `SegmentationEngine` adapter stable so model replacement does not rewrite UI.
 
@@ -41,9 +38,9 @@
 
 ## Gaussian Splatting Optimizer
 
-- Keep exporting complete splatting jobs now.
-- Add native/external optimizer handoff.
-- Add preview support for `.ply`, `.ksplat`, or converted viewer assets.
+- Improve Android Gaussian Splat V1 quality and speed.
+- Add verified production `.ksplat` writer compatibility.
+- Add preview support for `.ksplat`.
 
 ## GLB/USDZ Export Generation
 

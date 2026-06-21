@@ -5,6 +5,15 @@ import {
 } from "../core/manifest";
 
 export type MaskingEngineMode = "native-ai" | "fallback-local" | "unavailable";
+export type MaskingModelStatus = "loaded" | "missing" | "load-failed" | "inference-failed";
+export type MaskingEngineStatus =
+  | "birefnet-model-missing"
+  | "birefnet-load-failed"
+  | "birefnet-running"
+  | "birefnet-complete"
+  | "temporary-deeplab-fallback"
+  | "fallback-local"
+  | "failed";
 
 export type MaskingStatus =
   | "not-started"
@@ -25,6 +34,11 @@ export interface MaskArtifact {
   refinedMaskPath: string;
   status: MaskArtifactStatus;
   engine: MaskingEngineMode;
+  engineName?: string;
+  modelName?: string;
+  modelLoaded?: boolean;
+  inferenceRan?: boolean;
+  maskPngWritten?: boolean;
   createdAt?: string;
   warnings: string[];
   errors: string[];
@@ -53,6 +67,12 @@ export interface MaskingProjectResult {
   engineName: string;
   engineVersion?: string;
   modelName?: string;
+  modelExists?: boolean;
+  modelLoaded?: boolean;
+  inferenceRan?: boolean;
+  maskPngWritten?: boolean;
+  modelStatus?: MaskingModelStatus;
+  maskingEngineStatus?: MaskingEngineStatus;
   createdAt: string;
   totalFrames: number;
   successfulFrames: number;

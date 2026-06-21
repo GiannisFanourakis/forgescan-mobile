@@ -39,6 +39,14 @@ export async function runKsplatGeneration(
     return registerKsplatResult(manifest, {
       status: "requires-native-build",
       outputFilename: input.outputFilename,
+      optimizerName: "trainable-3dgs-android-v1",
+      qualityTier: "none",
+      ksplatEngineStatus: "production-3dgs-missing",
+      ksplatWriterStatus: "unsupported",
+      optimizerRuntimeStatus: "requires-native-build",
+      optimizerBlocker: "Native .ksplat optimizer requires a development/native build.",
+      production3dgs: false,
+      production3dgsStatus: "production-3dgs-missing",
       warnings: [
         availability.reason ??
           "Native .ksplat optimizer requires a development/native build."
@@ -74,6 +82,14 @@ export function createKsplatPlaceholderStatus(
   return {
     status: "requires-native-build",
     outputFilename: asset.filename,
+    optimizerName: "trainable-3dgs-android-v1",
+    qualityTier: "none",
+    ksplatEngineStatus: "production-3dgs-missing",
+    ksplatWriterStatus: "unsupported",
+    optimizerRuntimeStatus: "requires-native-build",
+    optimizerBlocker: "Native .ksplat optimizer requires a development/native build.",
+    production3dgs: false,
+    production3dgsStatus: "production-3dgs-missing",
     warnings: ["Native processing is required to generate .ksplat."],
     errors: []
   };
