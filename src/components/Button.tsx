@@ -49,7 +49,12 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
+    paddingVertical: spacing.sm,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 2
   },
   primary: {
     backgroundColor: colors.accent,
@@ -68,7 +73,9 @@ const styles = StyleSheet.create({
   },
   disabled: {
     backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border
+    borderColor: colors.border,
+    shadowOpacity: 0,
+    elevation: 0
   },
   label: {
     fontSize: 16,

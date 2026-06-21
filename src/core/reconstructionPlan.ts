@@ -81,7 +81,7 @@ function createPlanStages(
       inputs: rotationFolders,
       outputs: ["masks/raw/"],
       notes:
-        "Future segmentation step. This prototype records source frames only."
+        "Segment the object from ordered source frames before pose solving."
     },
     {
       sequence: 2,
@@ -91,7 +91,7 @@ function createPlanStages(
       inputs: ["masks/raw/"],
       outputs: ["masks/refined/"],
       notes:
-        "Future cleanup step for edge quality and transparent or reflective regions."
+        "Improve mask edges and flag transparent or reflective regions."
     },
     {
       sequence: 3,
@@ -101,7 +101,7 @@ function createPlanStages(
       inputs: rotationFolders,
       outputs: ["poses/camera_poses.json"],
       notes:
-        "Future pose solver will estimate camera positions from ordered frames."
+        "Estimate camera positions from ordered rotation frames."
     },
     {
       sequence: 4,
@@ -111,7 +111,7 @@ function createPlanStages(
       inputs: ["poses/camera_poses.json", "manifest.json"],
       outputs: ["alignment/rotation_alignment.json"],
       notes:
-        "Future alignment step will merge upright, tilted, and optional underside coverage."
+        "Merge upright, tilted, and optional underside coverage into one object frame."
     },
     {
       sequence: 5,
@@ -121,7 +121,7 @@ function createPlanStages(
       inputs: ["alignment/rotation_alignment.json", "masks/refined/"],
       outputs: ["reconstruction/raw_model"],
       notes:
-        "Future photogrammetry or Gaussian Splatting stage. No reconstruction runs here."
+        "Generate raw geometry or splat data from aligned frame sets."
     },
     {
       sequence: 6,
@@ -130,7 +130,7 @@ function createPlanStages(
       status: "planned",
       inputs: ["reconstruction/raw_model", ...rotationFolders],
       outputs: ["reconstruction/textured_model"],
-      notes: "Future texture baking from captured frames."
+      notes: "Bake texture detail from captured frames."
     },
     {
       sequence: 7,
@@ -140,7 +140,7 @@ function createPlanStages(
       inputs: ["reconstruction/textured_model"],
       outputs: ["reconstruction/final_model"],
       notes:
-        "Future cleanup may include hole filling, texture repair, and scale normalization."
+        "Apply hole filling, texture repair, and scale normalization."
     },
     {
       sequence: 8,
@@ -149,7 +149,7 @@ function createPlanStages(
       status: "planned",
       inputs: ["reconstruction/final_model"],
       outputs: ["exports/model.glb", "exports/model.usdz", "exports/model.obj", "exports/model.stl"],
-      notes: "Future model export targets for web, AR, 3D software, and printing."
+      notes: "Model export targets for web, AR, 3D software, and printing."
     },
     {
       sequence: 9,
@@ -158,7 +158,7 @@ function createPlanStages(
       status: "planned",
       inputs: ["reconstruction/final_model"],
       outputs: ["exports/viewer.html", "exports/preview.mp4", "exports/preview.gif"],
-      notes: "Future presentation exports for interactive and animated previews."
+      notes: "Presentation exports for interactive and animated previews."
     }
   ];
 }

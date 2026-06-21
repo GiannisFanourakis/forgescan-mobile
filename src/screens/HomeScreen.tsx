@@ -15,12 +15,16 @@ export function HomeScreen({ navigation }: Props): ReactElement {
 
   return (
     <Screen>
-      <Section>
-        <Text style={styles.title}>ForgeScan</Text>
-        <Text style={styles.subtitle}>
-          Controlled object capture for future AI/photogrammetry processing.
-        </Text>
-      </Section>
+      <View style={styles.hero}>
+        <View>
+          <Text style={styles.title}>ForgeScan</Text>
+          <Text style={styles.subtitle}>Guided object capture</Text>
+        </View>
+        <View style={styles.statBlock}>
+          <Text style={styles.statValue}>{projects.length}</Text>
+          <Text style={styles.statLabel}>Projects</Text>
+        </View>
+      </View>
 
       <Button
         label="New Scan"
@@ -51,7 +55,7 @@ export function HomeScreen({ navigation }: Props): ReactElement {
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No projects yet</Text>
             <Text style={styles.emptyText}>
-              New scans are saved to local device storage.
+              Create a scan to start a local capture package.
             </Text>
           </View>
         ) : (
@@ -72,7 +76,11 @@ export function HomeScreen({ navigation }: Props): ReactElement {
                   {project.capture.targetFrameCount} frames per rotation
                 </Text>
               </View>
-              <Text style={styles.projectMeta}>{project.capture.plan}</Text>
+              <View style={styles.planBadge}>
+                <Text style={styles.planBadgeText}>
+                  {project.capture.plan === "three-rotation" ? "3 rot" : "2 rot"}
+                </Text>
+              </View>
             </Pressable>
           ))
         )}
@@ -96,6 +104,39 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "800"
+  },
+  hero: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 2
+  },
+  statBlock: {
+    alignItems: "center",
+    backgroundColor: "#dfece8",
+    borderRadius: 8,
+    minWidth: 78,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  statValue: {
+    color: colors.accent,
+    fontSize: 24,
+    fontWeight: "800"
+  },
+  statLabel: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "700"
   },
   emptyState: {
     backgroundColor: colors.surface,
@@ -124,7 +165,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    padding: spacing.md
+    padding: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 1
   },
   projectRowText: {
     flex: 1,
@@ -138,5 +184,16 @@ const styles = StyleSheet.create({
   projectMeta: {
     color: colors.mutedText,
     fontSize: 13
+  },
+  planBadge: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  planBadgeText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800"
   }
 });

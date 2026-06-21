@@ -19,11 +19,18 @@ import {
   setRotationStatus
 } from "../core/manifest";
 import {
-  createStoredFrameUri,
+  copyCapturedFrameToProject,
+  deleteStoredFile,
   ensureProjectStorage,
   loadStoredProjectManifests,
   persistProjectManifest
 } from "../storage/projectStorage";
+
+interface CapturedPhotoInput {
+  uri: string;
+  width?: number;
+  height?: number;
+}
 
 interface ProjectContextValue {
   projects: ForgeScanProjectManifest[];
@@ -36,7 +43,11 @@ interface ProjectContextValue {
   ) => ForgeScanProjectManifest;
   getProject: (projectId: string) => ForgeScanProjectManifest | undefined;
   startRotation: (projectId: string, rotationId: RotationId) => void;
-  addSimulatedFrame: (projectId: string, rotationId: RotationId) => void;
+  addCapturedFrame: (
+    projectId: string,
+    rotationId: RotationId,
+    photo: CapturedPhotoInput
+  ) => Promise<void>;
   retakeLastFrame: (projectId: string, rotationId: RotationId) => void;
   completeRotation: (projectId: string, rotationId: RotationId) => void;
 }
@@ -133,37 +144,70 @@ export function ProjectProvider({
     [updateProject]
   );
 
-  const addSimulatedFrame = useCallback(
-    (projectId: string, rotationId: RotationId) => {
-      updateProject(projectId, (project) => {
-        const rotation = project.capture.rotations.find(
-          (candidate) => candidate.id === rotationId
-        );
-        const nextFrameIndex =
-          rotation && rotation.frames.length > 0
-            ? Math.max(...rotation.frames.map((frame) => frame.index)) + 1
-            : 1;
+  const addCapturedFrame = useCallback(
+    async (
+      projectId: string,
+      rotationId: RotationId,
+      photo: CapturedPhotoInput
+    ) => {
+      const currentProject = projects.find(
+        (project) => project.project.id === projectId
+      );
+      const rotation = currentProject?.capture.rotations.find(
+        (candidate) => candidate.id === rotationId
+      );
 
-        return addFrameToRotation(project, rotationId, {
-          uri: createStoredFrameUri(project, rotationId, nextFrameIndex),
-          width: 1600,
-          height: 1600,
-          qualityChecks: {
-            blur: "not-run",
-            exposure: "not-run",
-            centered: "not-run",
-            notes: ["Simulated capture frame."]
-          }
-        });
+      if (!currentProject || !rotation) {
+        return;
+      }
+
+      const nextFrameIndex =
+        rotation.frames.length > 0
+          ? Math.max(...rotation.frames.map((frame) => frame.index)) + 1
+          : 1;
+      const storedUri = await copyCapturedFrameToProject(
+        currentProject,
+        rotationId,
+        photo.uri,
+        nextFrameIndex
+      );
+      const updatedProject = addFrameToRotation(currentProject, rotationId, {
+        uri: storedUri,
+        qualityChecks: {
+          blur: "not-run",
+          exposure: "not-run",
+          centered: "not-run",
+          notes: []
+        },
+        ...(photo.width !== undefined ? { width: photo.width } : {}),
+        ...(photo.height !== undefined ? { height: photo.height } : {})
       });
+
+      persistProjectManifest(updatedProject);
+      setProjects((currentProjects) =>
+        currentProjects.map((project) =>
+          project.project.id === projectId ? updatedProject : project
+        )
+      );
     },
-    [updateProject]
+    [projects]
   );
 
   const retakeLastFrame = useCallback(
     (projectId: string, rotationId: RotationId) => {
       updateProject(projectId, (project) =>
-        removeLastFrameFromRotation(project, rotationId)
+        {
+          const rotation = project.capture.rotations.find(
+            (candidate) => candidate.id === rotationId
+          );
+          const lastFrame = rotation?.frames[rotation.frames.length - 1];
+
+          if (lastFrame) {
+            deleteStoredFile(lastFrame.uri);
+          }
+
+          return removeLastFrameFromRotation(project, rotationId);
+        }
       );
     },
     [updateProject]
@@ -186,7 +230,7 @@ export function ProjectProvider({
       createProject,
       getProject,
       startRotation,
-      addSimulatedFrame,
+      addCapturedFrame,
       retakeLastFrame,
       completeRotation
     }),
@@ -197,7 +241,7 @@ export function ProjectProvider({
       createProject,
       getProject,
       startRotation,
-      addSimulatedFrame,
+      addCapturedFrame,
       retakeLastFrame,
       completeRotation
     ]

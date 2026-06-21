@@ -8,7 +8,7 @@ export type CapabilityStatus =
   | "unsupported";
 export type EngineImplementationStatus =
   | "shared-capture-ready"
-  | "native-planned"
+  | "native-track"
   | "native-prototype"
   | "production-ready";
 

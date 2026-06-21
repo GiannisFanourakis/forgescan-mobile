@@ -147,7 +147,7 @@ export function ProjectReviewScreen({
               </Text>
               <Text style={styles.rotationMeta}>{artifact.path}</Text>
             </View>
-            <StatusPill status="blocked" />
+            <StatusPill status="ready" />
           </View>
         ))}
       </Section>

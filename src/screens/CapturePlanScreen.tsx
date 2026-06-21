@@ -49,6 +49,21 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
             <View style={styles.rotationText}>
               <Text style={styles.rotationTitle}>{rotation.label}</Text>
               <Text style={styles.rotationHint}>{rotation.angleHint}</Text>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        (rotation.frames.length /
+                          project.capture.targetFrameCount) *
+                          100
+                      )}%`
+                    }
+                  ]}
+                />
+              </View>
               <Text style={styles.frameCount}>
                 {rotation.frames.length}/{project.capture.targetFrameCount} frames
               </Text>
@@ -93,7 +108,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    padding: spacing.md
+    padding: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 1
   },
   rotationText: {
     flex: 1,
@@ -113,6 +133,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: "700"
+  },
+  progressTrack: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    height: 7,
+    overflow: "hidden"
+  },
+  progressFill: {
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    height: 7
   },
   statusColumn: {
     alignItems: "flex-end",

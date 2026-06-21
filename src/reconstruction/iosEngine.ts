@@ -8,7 +8,7 @@ export const iosReconstructionEngine: PlatformReconstructionEngine = {
   platform: "ios",
   displayName: "iOS local reconstruction",
   nativeModuleName: "ForgeScanIOSReconstruction",
-  implementationStatus: "native-planned",
+  implementationStatus: "native-track",
   summary:
     "iOS will use the shared capture workflow, then add Swift, ARKit/RealityKit, Vision or Core ML, Metal acceleration, and USDZ-first export support.",
   capabilities: [

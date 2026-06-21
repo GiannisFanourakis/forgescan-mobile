@@ -14,7 +14,7 @@ const frameCounts = [24, 36, 72, 120] as const;
 
 export function NewProjectScreen({ navigation }: Props): ReactElement {
   const { createProject } = useProjects();
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState("Object scan");
   const [targetFrameCount, setTargetFrameCount] = useState<number>(36);
   const [includeUnderside, setIncludeUnderside] = useState(false);
 
@@ -29,8 +29,6 @@ export function NewProjectScreen({ navigation }: Props): ReactElement {
         <Text style={styles.label}>Project title</Text>
         <TextInput
           onChangeText={setTitle}
-          placeholder="Object scan"
-          placeholderTextColor={colors.mutedText}
           style={styles.input}
           value={title}
         />
@@ -110,7 +108,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     minHeight: 48,
-    paddingHorizontal: spacing.md
+    paddingHorizontal: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 1
   },
   optionGrid: {
     flexDirection: "row",
@@ -128,7 +131,12 @@ const styles = StyleSheet.create({
     minHeight: 46,
     justifyContent: "center",
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
+    paddingVertical: spacing.sm,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 1
   },
   choiceSelected: {
     backgroundColor: "#dfece8",

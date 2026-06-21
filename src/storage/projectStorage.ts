@@ -75,7 +75,10 @@ export function persistProjectManifest(
   manifest: ForgeScanProjectManifest
 ): ProjectStoragePaths {
   const paths = ensureProjectStorage(manifest);
-  const manifestFile = new File(getProjectDirectory(manifest.project.id), "manifest.json");
+  const manifestFile = new File(
+    getProjectDirectory(manifest.project.id),
+    "manifest.json"
+  );
 
   if (!manifestFile.exists) {
     manifestFile.create({ intermediates: true, overwrite: true });
@@ -90,7 +93,10 @@ export function writeProjectManifestJson(
   manifestJson: string
 ): string {
   ensureProjectStorage(manifest);
-  const manifestFile = new File(getProjectDirectory(manifest.project.id), "manifest.json");
+  const manifestFile = new File(
+    getProjectDirectory(manifest.project.id),
+    "manifest.json"
+  );
 
   if (!manifestFile.exists) {
     manifestFile.create({ intermediates: true, overwrite: true });
@@ -169,4 +175,45 @@ export function createStoredFrameUri(
     rotationId
   );
   return new File(rotationDirectory, createFrameFilename(frameIndex)).uri;
+}
+
+export async function copyCapturedFrameToProject(
+  manifest: ForgeScanProjectManifest,
+  rotationId: RotationId,
+  sourceUri: string,
+  frameIndex: number
+): Promise<string> {
+  ensureProjectStorage(manifest);
+
+  const rotationDirectory = new Directory(
+    getProjectDirectory(manifest.project.id),
+    "rotations",
+    rotationId
+  );
+  rotationDirectory.create({ intermediates: true, idempotent: true });
+
+  const destinationFile = new File(
+    rotationDirectory,
+    createFrameFilename(frameIndex)
+  );
+  const sourceFile = new File(sourceUri);
+
+  if (destinationFile.exists) {
+    destinationFile.delete();
+  }
+
+  await sourceFile.copy(destinationFile);
+  return destinationFile.uri;
+}
+
+export function deleteStoredFile(uri: string): void {
+  try {
+    const file = new File(uri);
+
+    if (file.exists) {
+      file.delete();
+    }
+  } catch {
+    // Older manifests may contain non-file URIs from earlier capture builds.
+  }
 }

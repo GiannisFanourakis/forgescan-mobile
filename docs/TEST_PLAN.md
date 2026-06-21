@@ -1,12 +1,12 @@
 # ForgeScan Test Phase Plan
 
-This plan covers the first phone-ready prototype phase. The app should be tested on Android and iOS with simulated capture before native camera and reconstruction modules are added.
+This plan covers the first phone-ready test phase. The app should be tested on Android and iOS with real camera capture.
 
 ## Entry Criteria
 
 - App starts from a clean install.
 - Projects persist after app restart.
-- Simulated frame capture writes stable manifest metadata.
+- Camera capture writes stable image files and manifest metadata.
 - Project review shows validation results and local package paths.
 - Manifest, export target plan, and reconstruction plan can be saved locally.
 - Android and iOS support screen describes the native reconstruction paths.
@@ -18,7 +18,7 @@ This plan covers the first phone-ready prototype phase. The app should be tested
 3. Confirm Android local reconstruction is listed with ARCore, NDK, OpenCV, segmentation, reconstruction, and export stages.
 4. Return home and create a new scan.
 5. Choose `36` frames and `3 rotations`.
-6. Capture at least two simulated frames for each rotation.
+6. Capture at least two frames for each rotation.
 7. Complete each rotation.
 8. Open Project Review.
 9. Confirm validation reports missing frame-count errors until the target frame count is met.
@@ -36,7 +36,7 @@ This plan covers the first phone-ready prototype phase. The app should be tested
 3. Confirm iOS local reconstruction is listed with ARKit, Swift, Vision/Core ML, Metal, Object Capture path, and export stages.
 4. Return home and create a new scan.
 5. Choose `24` frames and `2 rotations`.
-6. Capture at least two simulated frames for upright and tilted.
+6. Capture at least two frames for upright and tilted.
 7. Leave underside pending.
 8. Open Project Review.
 9. Confirm underside is optional and validation warnings/errors are understandable.
@@ -66,8 +66,6 @@ ForgeScan/projects/{projectId}/
 
 ## Known Expected Failures
 
-- Real camera capture is not implemented yet.
-- Real image files are not created by simulated capture.
-- Background removal is not implemented yet.
-- Native Android/iOS reconstruction modules are not implemented yet.
+- Background removal is not active in this build.
+- Native Android/iOS reconstruction engines are not active in this build.
 - GLB, USDZ, OBJ, STL, HTML, MP4, and GIF binaries are not generated yet.

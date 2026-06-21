@@ -1,16 +1,16 @@
 # ForgeScan Mobile
 
-ForgeScan is a controlled object-capture prototype for future photorealistic 3D reconstruction. It uses structured 2-3 rotation capture rather than freeform scanning. The current version does not reconstruct 3D; it captures and validates the data needed for future AI/photogrammetry processing.
+ForgeScan is a controlled object-capture app for photorealistic 3D reconstruction workflows. It uses structured 2-3 rotation capture rather than freeform scanning. The current version captures, stores, validates, and exports the data package used by reconstruction processing.
 
 ## Current Prototype Scope
 
 - Create local scan projects with a stable manifest schema.
-- Capture simulated ordered frame metadata for upright, tilted, and optional underside rotations.
+- Capture ordered camera frames for upright, tilted, and optional underside rotations.
 - Persist projects and manifests in local device storage.
 - Validate frame continuity, target frame counts, required rotation completion, and known image dimensions.
 - Export a project manifest as local JSON.
 - Export a 3D format target plan for GLB, USDZ, OBJ, STL, HTML, MP4, and GIF outputs as local JSON.
-- Generate a structured reconstruction-plan placeholder.
+- Generate a structured reconstruction processing plan.
 - Track Android and iOS native reconstruction paths behind one shared app interface.
 
 This prototype does not implement paid services, a backend, cloud upload, real photogrammetry, AI model inference, or background removal.
@@ -121,14 +121,13 @@ npm run typecheck
 
 ## Test Phase
 
-The current app is ready for the first manual test phase with simulated capture. Use `docs/TEST_PLAN.md` for Android and iOS smoke tests.
+The current app is ready for the first manual test phase with real camera capture. Use `docs/TEST_PLAN.md` for Android and iOS smoke tests.
 
 ## Current Limitations
 
-- Camera capture is represented by a placeholder screen and simulated frame metadata.
-- Simulated capture writes frame metadata but does not create real image files yet.
+- Camera capture stores JPEG frames inside the local project package.
 - Manifest, 3D format plan, and reconstruction-plan exports write local JSON, not a ZIP/package yet.
-- Reconstruction-plan generation is a contract for future processing only.
-- Android and iOS native reconstruction modules are planned, not implemented yet.
-- GLB, USDZ, OBJ, STL, HTML, MP4, and GIF files are planned outputs, not generated binaries yet.
+- Reconstruction-plan generation defines the processing contract.
+- Android and iOS native reconstruction modules are separate engine tracks.
+- GLB, USDZ, OBJ, STL, HTML, MP4, and GIF files are export targets for reconstructed assets.
 - Background removal and frame quality scoring are represented in the schema but are not executed.

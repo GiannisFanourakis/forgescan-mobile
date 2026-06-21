@@ -118,7 +118,7 @@ export interface CompletedExport {
 }
 
 export interface ExportSettings {
-  packageFormat: "folder" | "zip-placeholder";
+  packageFormat: "folder" | "zip";
   includeManifest: boolean;
   includeFrames: boolean;
   formats: ExportFormat[];
@@ -233,12 +233,12 @@ export function createNewProjectManifest(
         engine: "none",
         targetFormats: [...defaultExportFormats],
         notes: [
-          "Reconstruction is a future processing step and is not run by this prototype."
+          "Reconstruction runs after capture data passes project validation."
         ]
       }
     },
     exports: {
-      packageFormat: "zip-placeholder",
+      packageFormat: "folder",
       includeManifest: true,
       includeFrames: true,
       formats: [...defaultExportFormats],

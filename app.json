@@ -15,6 +15,14 @@
       "adaptiveIcon": {
         "backgroundColor": "#f7f7f4"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ForgeScan uses the camera to capture ordered object frames for local 3D reconstruction projects."
+        }
+      ]
+    ]
   }
 }

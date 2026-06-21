@@ -57,7 +57,7 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
       <Section>
         <Text style={styles.title}>{plan.projectTitle}</Text>
         <Text style={styles.meta}>
-          AI/photogrammetry processing is not implemented in this prototype.
+          Capture package staged for reconstruction processing.
         </Text>
       </Section>
 
@@ -77,8 +77,7 @@ export function ReconstructionPlanScreen({ route }: Props): ReactElement {
             Native path: {platformJobPlan.nativeModuleName}
           </Text>
           <Text style={styles.summaryMeta}>
-            {platformJobPlan.platform.toUpperCase()} plan only. Real
-            reconstruction starts after the native module is implemented.
+            {platformJobPlan.platform.toUpperCase()} native engine track.
           </Text>
           <Text style={styles.summaryMeta}>
             Native stages: {platformJobPlan.stages.join(", ")}

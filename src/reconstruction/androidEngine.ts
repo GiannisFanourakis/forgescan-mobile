@@ -8,7 +8,7 @@ export const androidReconstructionEngine: PlatformReconstructionEngine = {
   platform: "android",
   displayName: "Android local reconstruction",
   nativeModuleName: "ForgeScanAndroidReconstruction",
-  implementationStatus: "native-planned",
+  implementationStatus: "native-track",
   summary:
     "Android will use the shared capture workflow, then add ARCore, Kotlin/C++ NDK, OpenCV, MediaPipe or LiteRT, and GPU acceleration for local reconstruction.",
   capabilities: [
