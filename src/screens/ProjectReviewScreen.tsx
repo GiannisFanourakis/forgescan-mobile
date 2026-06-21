@@ -12,6 +12,11 @@ import {
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { exportProjectManifestJson } from "../core/projectPackage";
 import { RootStackParamList } from "../navigation/types";
+import {
+  formatModelRuntime,
+  formatModelStatus,
+  getSelectedReconstructionModel
+} from "../reconstruction/modelRegistry";
 import { useProjects } from "../state/ProjectContext";
 import {
   getProjectStoragePaths,
@@ -44,8 +49,18 @@ export function ProjectReviewScreen({
     () => (project ? getProjectStoragePaths(project) : undefined),
     [project]
   );
+  const reconstructionModel = useMemo(
+    () => (project ? getSelectedReconstructionModel(project) : undefined),
+    [project]
+  );
 
-  if (!project || !validation || !exportTargetPlan || !storagePaths) {
+  if (
+    !project ||
+    !validation ||
+    !exportTargetPlan ||
+    !storagePaths ||
+    !reconstructionModel
+  ) {
     return (
       <Screen>
         <Text style={styles.title}>Project not found</Text>
@@ -132,6 +147,27 @@ export function ProjectReviewScreen({
         <Text style={styles.message}>
           Exports folder: {storagePaths.exportsUri}
         </Text>
+      </Section>
+
+      <Section>
+        <Text style={styles.sectionTitle}>AI reconstruction model</Text>
+        <View style={styles.modelSummary}>
+          <View style={styles.rotationText}>
+            <Text style={styles.rotationTitle}>
+              {reconstructionModel.label}
+            </Text>
+            <Text style={styles.rotationMeta}>
+              {formatModelRuntime(reconstructionModel.runtime)} /{" "}
+              {reconstructionModel.engine}
+            </Text>
+          </View>
+          <View style={styles.modelBadge}>
+            <Text style={styles.modelBadgeText}>
+              {formatModelStatus(reconstructionModel.status)}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.message}>{reconstructionModel.summary}</Text>
       </Section>
 
       <Section>
@@ -248,6 +284,32 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     justifyContent: "space-between",
     padding: spacing.md
+  },
+  modelSummary: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  modelBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#efe5d2",
+    borderRadius: 999,
+    maxWidth: 128,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4
+  },
+  modelBadgeText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+    textTransform: "capitalize"
   },
   rotationText: {
     flex: 1,

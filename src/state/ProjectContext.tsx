@@ -12,6 +12,7 @@ import {
 
 import {
   ForgeScanProjectManifest,
+  ReconstructionModelId,
   RotationId,
   addFrameToRotation,
   addVideoToRotation,
@@ -19,8 +20,13 @@ import {
   markRotationComplete,
   removeLastFrameFromRotation,
   removeLastVideoFromRotation,
+  setReconstructionModel,
   setRotationStatus
 } from "../core/manifest";
+import {
+  createReconstructionModelSelection,
+  getReconstructionModel
+} from "../reconstruction/modelRegistry";
 import {
   copyCapturedFrameToProject,
   copyCapturedVideoToProject,
@@ -67,6 +73,10 @@ interface ProjectContextValue {
   retakeLastFrame: (projectId: string, rotationId: RotationId) => void;
   deleteLastVideo: (projectId: string, rotationId: RotationId) => void;
   completeRotation: (projectId: string, rotationId: RotationId) => void;
+  selectReconstructionModel: (
+    projectId: string,
+    modelId: ReconstructionModelId
+  ) => void;
 }
 
 const ProjectContext = createContext<ProjectContextValue | undefined>(
@@ -331,6 +341,21 @@ export function ProjectProvider({
     [updateProject]
   );
 
+  const selectReconstructionModel = useCallback(
+    (projectId: string, modelId: ReconstructionModelId) => {
+      const model = getReconstructionModel(modelId);
+      updateProject(projectId, (project) =>
+        setReconstructionModel(project, {
+          engine: model.engine,
+          model: createReconstructionModelSelection(model),
+          targetFormats: model.targetFormats,
+          note: `${model.label} selected for reconstruction planning.`
+        })
+      );
+    },
+    [updateProject]
+  );
+
   const value = useMemo(
     () => ({
       projects,
@@ -344,7 +369,8 @@ export function ProjectProvider({
       addCapturedVideo,
       retakeLastFrame,
       deleteLastVideo,
-      completeRotation
+      completeRotation,
+      selectReconstructionModel
     }),
     [
       projects,
@@ -358,7 +384,8 @@ export function ProjectProvider({
       addCapturedVideo,
       retakeLastFrame,
       deleteLastVideo,
-      completeRotation
+      completeRotation,
+      selectReconstructionModel
     ]
   );
 

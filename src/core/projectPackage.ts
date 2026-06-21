@@ -21,6 +21,7 @@ export interface ProjectPackageFile {
   role:
     | "manifest"
     | "frame"
+    | "video"
     | "thumbnail"
     | "export-folder"
     | "export-target";
@@ -63,6 +64,7 @@ export function createProjectPackagePlaceholder(
         role: "manifest"
       },
       ...manifest.capture.rotations.flatMap(createFrameFileEntries),
+      ...manifest.capture.rotations.flatMap(createVideoFileEntries),
       {
         path: "thumbnails/",
         role: "thumbnail"
@@ -115,6 +117,20 @@ function createFrameFileEntries(
   }));
 }
 
+function createVideoFileEntries(
+  rotation: CaptureRotation
+): ProjectPackageFile[] {
+  return (rotation.videos ?? []).map((video) => ({
+    path: createRotationVideoPath(rotation.id, video.filename),
+    role: "video",
+    sourceUri: video.uri
+  }));
+}
+
 function createRotationFramePath(rotationId: RotationId, filename: string): string {
+  return `rotations/${rotationId}/${filename}`;
+}
+
+function createRotationVideoPath(rotationId: RotationId, filename: string): string {
   return `rotations/${rotationId}/${filename}`;
 }

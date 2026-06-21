@@ -1,4 +1,10 @@
-import { ExportFormat, ForgeScanProjectManifest } from "../core/manifest";
+import {
+  ExportFormat,
+  ForgeScanProjectManifest,
+  ReconstructionModelId,
+  ReconstructionModelRuntime,
+  ReconstructionModelStatus
+} from "../core/manifest";
 
 export type MobilePlatform = "android" | "ios";
 export type CapabilityStatus =
@@ -31,6 +37,13 @@ export interface PlatformReconstructionJobPlan {
   projectTitle: string;
   status: "plan-only";
   nativeModuleName: string;
+  aiModel: {
+    id: ReconstructionModelId;
+    label: string;
+    version: string;
+    runtime: ReconstructionModelRuntime;
+    status: ReconstructionModelStatus;
+  };
   requiredInputs: string[];
   targetFormats: ExportFormat[];
   stages: string[];

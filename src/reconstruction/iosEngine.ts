@@ -1,4 +1,5 @@
 import { ForgeScanProjectManifest } from "../core/manifest";
+import { getSelectedReconstructionModel } from "./modelRegistry";
 import {
   PlatformReconstructionEngine,
   PlatformReconstructionJobPlan
@@ -87,21 +88,32 @@ export const iosReconstructionEngine: PlatformReconstructionEngine = {
 function createIOSJobPlan(
   manifest: ForgeScanProjectManifest
 ): PlatformReconstructionJobPlan {
+  const model = getSelectedReconstructionModel(manifest);
+
   return {
     platform: "ios",
     projectId: manifest.project.id,
     projectTitle: manifest.project.title,
     status: "plan-only",
     nativeModuleName: "ForgeScanIOSReconstruction",
+    aiModel: {
+      id: model.id,
+      label: model.label,
+      version: model.version,
+      runtime: model.runtime,
+      status: model.status
+    },
     requiredInputs: [
       "manifest.json",
       "rotations/upright/",
       "rotations/tilted/",
-      "rotations/underside/"
+      "rotations/underside/",
+      "rotation video clips when present"
     ],
-    targetFormats: [...manifest.exports.formats],
+    targetFormats: [...manifest.processing.reconstruction.targetFormats],
     stages: [
       "ARKit capability check",
+      `${model.label} model readiness check`,
       "Vision or Core ML segmentation",
       "Camera pose estimation",
       "Multi-rotation alignment",

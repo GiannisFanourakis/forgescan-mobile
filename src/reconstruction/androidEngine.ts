@@ -1,4 +1,5 @@
 import { ForgeScanProjectManifest } from "../core/manifest";
+import { getSelectedReconstructionModel } from "./modelRegistry";
 import {
   PlatformReconstructionEngine,
   PlatformReconstructionJobPlan
@@ -87,21 +88,32 @@ export const androidReconstructionEngine: PlatformReconstructionEngine = {
 function createAndroidJobPlan(
   manifest: ForgeScanProjectManifest
 ): PlatformReconstructionJobPlan {
+  const model = getSelectedReconstructionModel(manifest);
+
   return {
     platform: "android",
     projectId: manifest.project.id,
     projectTitle: manifest.project.title,
     status: "plan-only",
     nativeModuleName: "ForgeScanAndroidReconstruction",
+    aiModel: {
+      id: model.id,
+      label: model.label,
+      version: model.version,
+      runtime: model.runtime,
+      status: model.status
+    },
     requiredInputs: [
       "manifest.json",
       "rotations/upright/",
       "rotations/tilted/",
-      "rotations/underside/"
+      "rotations/underside/",
+      "rotation video clips when present"
     ],
-    targetFormats: [...manifest.exports.formats],
+    targetFormats: [...manifest.processing.reconstruction.targetFormats],
     stages: [
       "ARCore capability check",
+      `${model.label} model readiness check`,
       "MediaPipe or LiteRT segmentation",
       "OpenCV feature matching",
       "ARCore pose and optional depth fusion",

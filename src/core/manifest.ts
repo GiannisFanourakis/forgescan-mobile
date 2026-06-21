@@ -13,6 +13,16 @@ export type ReconstructionEngine =
   | "photogrammetry"
   | "gaussian-splatting"
   | "external";
+export type ReconstructionModelId =
+  | "forgescan-ai-mobile-v1"
+  | "forgescan-ai-splat-preview-v1"
+  | "external-ai-reconstruction";
+export type ReconstructionModelRuntime = "on-device" | "external";
+export type ReconstructionModelStatus =
+  | "capture-ready"
+  | "requires-native-build"
+  | "planned"
+  | "external-ready";
 export type ReconstructionStatus =
   | "not-started"
   | "planned"
@@ -29,6 +39,10 @@ export type ExportFormat =
   | "mp4"
   | "gif";
 export type QualityCheckState = "not-run" | "pass" | "warning" | "fail";
+
+export const DEFAULT_RECONSTRUCTION_MODEL_ID: ReconstructionModelId =
+  "forgescan-ai-mobile-v1";
+export const DEFAULT_RECONSTRUCTION_MODEL_VERSION = "0.1-plan";
 
 export interface AppMetadata {
   name: typeof APP_NAME;
@@ -108,9 +122,17 @@ export interface BackgroundRemovalSettings {
   engine: BackgroundRemovalEngine;
 }
 
+export interface ReconstructionModelSelection {
+  id: ReconstructionModelId;
+  version: string;
+  runtime: ReconstructionModelRuntime;
+  status: ReconstructionModelStatus;
+}
+
 export interface ReconstructionSettings {
   status: ReconstructionStatus;
   engine: ReconstructionEngine;
+  model?: ReconstructionModelSelection;
   targetFormats: ExportFormat[];
   notes: string[];
 }
@@ -166,6 +188,13 @@ export interface AddVideoInput {
   uri: string;
   durationMs?: number;
   capturedAt?: string;
+}
+
+export interface SetReconstructionModelInput {
+  engine: ReconstructionEngine;
+  model: ReconstructionModelSelection;
+  targetFormats?: ExportFormat[];
+  note?: string;
 }
 
 const rotationTemplates: Record<
@@ -245,9 +274,16 @@ export function createNewProjectManifest(
       },
       reconstruction: {
         status: "not-started",
-        engine: "none",
+        engine: "photogrammetry",
+        model: {
+          id: DEFAULT_RECONSTRUCTION_MODEL_ID,
+          version: DEFAULT_RECONSTRUCTION_MODEL_VERSION,
+          runtime: "on-device",
+          status: "requires-native-build"
+        },
         targetFormats: [...defaultExportFormats],
         notes: [
+          "ForgeScan AI Mobile v1 is selected for on-device reconstruction planning.",
           "Reconstruction runs after capture data passes project validation."
         ]
       }
@@ -402,6 +438,41 @@ export function removeLastVideoFromRotation(
     capture: {
       ...manifest.capture,
       rotations: updatedRotations
+    }
+  });
+}
+
+export function setReconstructionModel(
+  manifest: ForgeScanProjectManifest,
+  input: SetReconstructionModelInput
+): ForgeScanProjectManifest {
+  const nextNotes = input.note
+    ? [
+        input.note,
+        ...manifest.processing.reconstruction.notes.filter(
+          (note) => note !== input.note
+        )
+      ]
+    : manifest.processing.reconstruction.notes;
+
+  return updateProjectTimestamp({
+    ...manifest,
+    processing: {
+      ...manifest.processing,
+      reconstruction: {
+        ...manifest.processing.reconstruction,
+        engine: input.engine,
+        model: input.model,
+        status:
+          manifest.processing.reconstruction.status === "not-started"
+            ? "planned"
+            : manifest.processing.reconstruction.status,
+        targetFormats: [
+          ...(input.targetFormats ??
+            manifest.processing.reconstruction.targetFormats)
+        ],
+        notes: nextNotes
+      }
     }
   });
 }

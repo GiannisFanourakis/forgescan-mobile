@@ -1,4 +1,14 @@
-import { ExportFormat, ForgeScanProjectManifest } from "./manifest";
+import {
+  ExportFormat,
+  ForgeScanProjectManifest,
+  ReconstructionModelId,
+  ReconstructionModelRuntime,
+  ReconstructionModelStatus
+} from "./manifest";
+import {
+  ReconstructionModelInputType,
+  getSelectedReconstructionModel
+} from "../reconstruction/modelRegistry";
 
 export type ReconstructionStageStatus = "planned" | "blocked" | "complete";
 
@@ -32,6 +42,18 @@ export interface ReconstructionPlan {
     completedRotations: number;
     totalRotations: number;
     totalFrames: number;
+    totalVideos: number;
+  };
+  aiModel: {
+    id: ReconstructionModelId;
+    label: string;
+    version: string;
+    runtime: ReconstructionModelRuntime;
+    status: ReconstructionModelStatus;
+    inputTypes: ReconstructionModelInputType[];
+    minFrames: number;
+    recommendedFrames: number;
+    summary: string;
   };
   targetFormats: ExportFormat[];
   stages: ReconstructionPlanStage[];
@@ -47,6 +69,11 @@ export function createReconstructionPlan(
     (sum, rotation) => sum + rotation.frames.length,
     0
   );
+  const totalVideos = manifest.capture.rotations.reduce(
+    (sum, rotation) => sum + (rotation.videos ?? []).length,
+    0
+  );
+  const aiModel = getSelectedReconstructionModel(manifest);
 
   return {
     projectId: manifest.project.id,
@@ -58,15 +85,28 @@ export function createReconstructionPlan(
       targetFrameCount: manifest.capture.targetFrameCount,
       completedRotations: completedRotations.length,
       totalRotations: manifest.capture.rotations.length,
-      totalFrames
+      totalFrames,
+      totalVideos
+    },
+    aiModel: {
+      id: aiModel.id,
+      label: aiModel.label,
+      version: aiModel.version,
+      runtime: aiModel.runtime,
+      status: aiModel.status,
+      inputTypes: [...aiModel.inputTypes],
+      minFrames: aiModel.minFrames,
+      recommendedFrames: aiModel.recommendedFrames,
+      summary: aiModel.summary
     },
     targetFormats: [...manifest.processing.reconstruction.targetFormats],
-    stages: createPlanStages(manifest)
+    stages: createPlanStages(manifest, aiModel.label)
   };
 }
 
 function createPlanStages(
-  manifest: ForgeScanProjectManifest
+  manifest: ForgeScanProjectManifest,
+  aiModelLabel: string
 ): ReconstructionPlanStage[] {
   const rotationFolders = manifest.capture.rotations.map(
     (rotation) => `rotations/${rotation.id}/`
@@ -81,7 +121,7 @@ function createPlanStages(
       inputs: rotationFolders,
       outputs: ["masks/raw/"],
       notes:
-        "Segment the object from ordered source frames before pose solving."
+        "Use the selected AI model to segment the object from ordered source frames before pose solving."
     },
     {
       sequence: 2,
@@ -101,7 +141,7 @@ function createPlanStages(
       inputs: rotationFolders,
       outputs: ["poses/camera_poses.json"],
       notes:
-        "Estimate camera positions from ordered rotation frames."
+        "Estimate camera positions from ordered rotation frames and compatible capture video."
     },
     {
       sequence: 4,
@@ -120,8 +160,7 @@ function createPlanStages(
       status: "planned",
       inputs: ["alignment/rotation_alignment.json", "masks/refined/"],
       outputs: ["reconstruction/raw_model"],
-      notes:
-        "Generate raw geometry or splat data from aligned frame sets."
+      notes: `${aiModelLabel} generates raw geometry or splat data from aligned frame sets.`
     },
     {
       sequence: 6,
