@@ -102,8 +102,9 @@ ForgeScan/projects/{projectId}/exports/full-run-report.json
 
 ## Expected Warnings
 
-- Fallback segmentation is expected until a native AI model is integrated.
-- Rough proxy reconstruction is expected until native photogrammetry or Gaussian optimization is integrated.
+- Fallback segmentation currently runs; AI model integration is the next replacement step.
+- Rough reconstruction/proxy export currently runs; production photogrammetry is the next replacement step.
+- Gaussian Splatting job package is exported for future optimizer integration.
 - Optional underside missing is a warning only.
 - Fewer than 24 frames is a warning only.
 - More than the recommended frame count is allowed and must not block processing.

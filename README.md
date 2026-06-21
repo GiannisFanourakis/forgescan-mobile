@@ -117,6 +117,8 @@ exports/full-run-report.json
 
 ## Segmentation
 
+Fallback segmentation currently runs; AI model integration is the next replacement step.
+
 The current segmentation engine is `fallback-local`. It does not run a neural AI model in Expo Go. It writes deterministic PNG mask artifacts and JSON metadata for every captured frame so the app can test the pipeline end to end.
 
 The adapter lives in:
@@ -128,6 +130,8 @@ src/segmentation/
 A stronger native or on-device AI segmenter can replace `LocalSegmentationEngine` later.
 
 ## Reconstruction
+
+Rough reconstruction/proxy export currently runs; production photogrammetry is the next replacement step.
 
 The current reconstruction engine is `local-rough-proxy`. It creates:
 
@@ -143,6 +147,8 @@ The current reconstruction engine is `local-rough-proxy`. It creates:
 This is not true photogrammetry. It is a rough proxy output that proves storage, inputs, UI flow, and export paths.
 
 ## Gaussian Splatting
+
+Gaussian Splatting job package is exported for future optimizer integration.
 
 On-device splat optimization is not implemented in Expo Go. The app creates a complete job package with frames, masks, frame order, camera assumptions, optimizer settings, and expected output paths:
 

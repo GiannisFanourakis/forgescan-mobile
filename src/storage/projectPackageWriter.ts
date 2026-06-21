@@ -59,8 +59,7 @@ export function writeManifestJson(
   manifest: ForgeScanProjectManifest
 ): string {
   void projectId;
-  persistProjectManifest(manifest);
-  return `${getProjectRootUri(manifest.project.id)}/manifest.json`;
+  return persistProjectManifest(manifest).manifestUri;
 }
 
 export function writeExportTargetPlan(
