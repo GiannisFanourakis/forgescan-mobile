@@ -73,6 +73,10 @@ public class ForgeScanCameraXView extends FrameLayout {
   private String lastCameraError;
   private Lifecycle lifecycle;
   private LifecycleEventObserver lifecycleObserver;
+  private boolean viewAttached = false;
+  private boolean cameraStartInFlight = false;
+  private boolean pendingCameraStart = false;
+  private int cameraSessionId = 0;
 
   public ForgeScanCameraXView(ReactContext context) {
     super(context);
@@ -93,6 +97,7 @@ public class ForgeScanCameraXView extends FrameLayout {
   @Override
   protected void onAttachedToWindow() {
     super.onAttachedToWindow();
+    viewAttached = true;
     activeView = new WeakReference<>(this);
     registerLifecycleObserver();
     post(this::startCamera);
@@ -104,6 +109,7 @@ public class ForgeScanCameraXView extends FrameLayout {
       activeView = new WeakReference<>(null);
     }
     unregisterLifecycleObserver();
+    viewAttached = false;
     stopCamera();
     super.onDetachedFromWindow();
   }
@@ -141,7 +147,7 @@ public class ForgeScanCameraXView extends FrameLayout {
     }
 
     videoQuality = quality;
-    startCamera();
+    restartCamera();
   }
 
   public void setManualControlsEnabled(boolean enabled) {
@@ -150,7 +156,7 @@ public class ForgeScanCameraXView extends FrameLayout {
     }
 
     manualControlsEnabled = enabled;
-    startCamera();
+    restartCamera();
   }
 
   public void setManualIso(int iso) {
@@ -161,7 +167,7 @@ public class ForgeScanCameraXView extends FrameLayout {
 
     manualIso = nextIso;
     if (manualControlsEnabled) {
-      startCamera();
+      restartCamera();
     }
   }
 
@@ -176,7 +182,7 @@ public class ForgeScanCameraXView extends FrameLayout {
 
     manualShutterNs = nextShutterNs;
     if (manualControlsEnabled) {
-      startCamera();
+      restartCamera();
     }
   }
 
@@ -188,7 +194,7 @@ public class ForgeScanCameraXView extends FrameLayout {
 
     manualFocusDistance = nextFocusDistance;
     if (manualControlsEnabled) {
-      startCamera();
+      restartCamera();
     }
   }
 
@@ -237,6 +243,16 @@ public class ForgeScanCameraXView extends FrameLayout {
   }
 
   public void startVideoRecording(File output, Promise promise) {
+    if (videoCapture == null && !prepareVideoCapture()) {
+      promise.reject(
+        "camera_video_not_ready",
+        lastCameraError == null
+          ? "Native CameraX video capture is not ready."
+          : lastCameraError
+      );
+      return;
+    }
+
     if (videoCapture == null) {
       promise.reject(
         "camera_not_ready",
@@ -306,28 +322,43 @@ public class ForgeScanCameraXView extends FrameLayout {
 
   private void startCamera() {
     Activity activity = reactContext.getCurrentActivity();
-    if (
-      activity == null ||
-      !(activity instanceof LifecycleOwner) ||
-      !activity.hasWindowFocus() ||
-      getWindowVisibility() != View.VISIBLE ||
-      ActivityCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) !=
-        PackageManager.PERMISSION_GRANTED
-    ) {
+    if (!canStartCamera(activity)) {
       return;
     }
 
+    if (cameraProvider != null && camera != null && imageCapture != null) {
+      return;
+    }
+
+    if (cameraStartInFlight) {
+      pendingCameraStart = true;
+      return;
+    }
+
+    cameraStartInFlight = true;
+    pendingCameraStart = false;
+    final int sessionId = cameraSessionId;
     ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
       ProcessCameraProvider.getInstance(reactContext);
     cameraProviderFuture.addListener(
       () -> {
         try {
+          if (sessionId != cameraSessionId || !canStartCamera(activity)) {
+            return;
+          }
+
           refreshCamera2Ranges();
           cameraProvider = cameraProviderFuture.get();
           bindUseCases((LifecycleOwner) activity);
         } catch (Exception error) {
           lastCameraError = "CameraX start failed: " + safeMessage(error);
           Log.w(TAG, lastCameraError, error);
+        } finally {
+          cameraStartInFlight = false;
+          if (pendingCameraStart) {
+            pendingCameraStart = false;
+            post(this::startCamera);
+          }
         }
       },
       ContextCompat.getMainExecutor(reactContext)
@@ -343,26 +374,21 @@ public class ForgeScanCameraXView extends FrameLayout {
     lastCameraError = null;
     cameraProvider.unbindAll();
     try {
-      bindPreviewImageAndVideo(lifecycleOwner, qualityFromString(videoQuality));
+      bindPreviewAndImageOnly(lifecycleOwner);
+      Log.d(TAG, "CameraX preview/photo bound");
       return;
     } catch (Exception firstError) {
-      lastCameraError = "CameraX video quality failed: " + safeMessage(firstError);
+      lastCameraError = "CameraX preview/photo failed: " + safeMessage(firstError);
       Log.w(TAG, lastCameraError, firstError);
     }
 
     try {
-      bindPreviewImageAndVideo(lifecycleOwner, Quality.FHD);
+      bindPreviewOnly(lifecycleOwner);
+      Log.d(TAG, "CameraX preview-only bound");
       return;
     } catch (Exception secondError) {
-      lastCameraError = "CameraX FHD video fallback failed: " + safeMessage(secondError);
+      lastCameraError = "CameraX preview-only failed: " + safeMessage(secondError);
       Log.w(TAG, lastCameraError, secondError);
-    }
-
-    try {
-      bindPreviewAndImageOnly(lifecycleOwner);
-    } catch (Exception thirdError) {
-      lastCameraError = "CameraX preview failed: " + safeMessage(thirdError);
-      Log.w(TAG, lastCameraError, thirdError);
       imageCapture = null;
       videoCapture = null;
       preview = null;
@@ -420,6 +446,23 @@ public class ForgeScanCameraXView extends FrameLayout {
       CameraSelector.DEFAULT_BACK_CAMERA,
       preview,
       imageCapture
+    );
+    camera.getCameraControl().setLinearZoom(zoom);
+  }
+
+  @OptIn(markerClass = ExperimentalCamera2Interop.class)
+  private void bindPreviewOnly(LifecycleOwner lifecycleOwner) {
+    Preview.Builder previewBuilder = new Preview.Builder();
+    applyManualCamera2Options(previewBuilder);
+    preview = previewBuilder.build();
+    imageCapture = null;
+    videoCapture = null;
+
+    preview.setSurfaceProvider(previewView.getSurfaceProvider());
+    camera = cameraProvider.bindToLifecycle(
+      lifecycleOwner,
+      CameraSelector.DEFAULT_BACK_CAMERA,
+      preview
     );
     camera.getCameraControl().setLinearZoom(zoom);
   }
@@ -538,11 +581,74 @@ public class ForgeScanCameraXView extends FrameLayout {
   }
 
   private void stopCamera() {
+    cameraSessionId += 1;
+    pendingCameraStart = false;
     stopVideoRecording();
     if (cameraProvider != null) {
       cameraProvider.unbindAll();
       cameraProvider = null;
     }
+    preview = null;
+    imageCapture = null;
+    videoCapture = null;
+    camera = null;
+  }
+
+  private void restartCamera() {
+    if (!viewAttached) {
+      return;
+    }
+
+    stopCamera();
+    post(this::startCamera);
+  }
+
+  private boolean prepareVideoCapture() {
+    Activity activity = reactContext.getCurrentActivity();
+    if (cameraProvider == null || !canStartCamera(activity)) {
+      return false;
+    }
+
+    try {
+      cameraProvider.unbindAll();
+      bindPreviewImageAndVideo((LifecycleOwner) activity, qualityFromString(videoQuality));
+      Log.d(TAG, "CameraX preview/photo/video bound");
+      lastCameraError = null;
+      return true;
+    } catch (Exception firstError) {
+      lastCameraError = "CameraX video quality failed: " + safeMessage(firstError);
+      Log.w(TAG, lastCameraError, firstError);
+    }
+
+    try {
+      cameraProvider.unbindAll();
+      bindPreviewImageAndVideo((LifecycleOwner) activity, Quality.FHD);
+      Log.d(TAG, "CameraX preview/photo/video FHD bound");
+      lastCameraError = null;
+      return true;
+    } catch (Exception secondError) {
+      lastCameraError = "CameraX FHD video fallback failed: " + safeMessage(secondError);
+      Log.w(TAG, lastCameraError, secondError);
+    }
+
+    try {
+      cameraProvider.unbindAll();
+      bindPreviewAndImageOnly((LifecycleOwner) activity);
+    } catch (Exception restoreError) {
+      Log.w(TAG, "CameraX preview restore failed after video bind failure", restoreError);
+    }
+    videoCapture = null;
+    return false;
+  }
+
+  private boolean canStartCamera(Activity activity) {
+    return viewAttached &&
+      activity != null &&
+      activity instanceof LifecycleOwner &&
+      activity.hasWindowFocus() &&
+      getWindowVisibility() == View.VISIBLE &&
+      ActivityCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
+        PackageManager.PERMISSION_GRANTED;
   }
 
   private String safeMessage(Throwable error) {
