@@ -60,7 +60,7 @@ export default function App(): ReactElement {
           <Stack.Screen
             name="CaptureRotation"
             component={CaptureRotationScreen}
-            options={{ title: "Capture Rotation" }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="ProjectReview"

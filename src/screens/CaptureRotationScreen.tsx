@@ -1,12 +1,12 @@
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { CameraCapturedPicture, CameraView, useCameraPermissions } from "expo-camera";
+import { StatusBar } from "expo-status-bar";
 import type { ReactElement } from "react";
 import { useRef, useState } from "react";
 import {
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View
@@ -16,8 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import { Screen } from "../components/Screen";
 import {
-  RECOMMENDED_HIGH_QUALITY_FRAMES,
-  RECOMMENDED_MINIMUM_FRAMES,
   getCoverageLabel,
   getCoverageWarning
 } from "../core/coverage";
@@ -87,7 +85,7 @@ export function CaptureRotationScreen({
   if (!project || !rotation) {
     return (
       <Screen>
-        <Text style={styles.title}>Rotation not found</Text>
+        <Text style={styles.missingTitle}>Rotation not found</Text>
       </Screen>
     );
   }
@@ -281,138 +279,226 @@ export function CaptureRotationScreen({
     !canUseCamera ||
     (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
     (cameraMode !== "burst" && isBurstRunning);
+  const shutterDisabled = permission?.granted ? primaryActionDisabled : false;
 
   return (
-    <SafeAreaView style={styles.screenRoot}>
-      <View style={styles.topBar}>
-        <View style={styles.titleGroup}>
-          <Text style={styles.eyebrow}>{project.project.title}</Text>
-          <Text style={styles.title}>{rotation.label}</Text>
-        </View>
-        <View style={styles.frameBadge}>
-          <Text style={styles.frameBadgeValue}>{frameCount}</Text>
-          <Text style={styles.frameBadgeLabel}>Frames</Text>
-        </View>
-      </View>
+    <View style={styles.cameraRoot}>
+      <StatusBar style="light" translucent />
+      {permission?.granted && isFocused ? (
+        <CameraView
+          ref={cameraRef}
+          active={isFocused}
+          animateShutter
+          facing="back"
+          mode={cameraMode === "video" ? "video" : "picture"}
+          mute
+          onCameraReady={() => setIsCameraReady(true)}
+          onMountError={(event) => setCaptureError(event.message)}
+          style={styles.cameraView}
+        />
+      ) : (
+        <View style={styles.cameraFallback} />
+      )}
 
-      <View style={styles.previewShell}>
-        {permission?.granted && isFocused ? (
-          <CameraView
-            ref={cameraRef}
-            active={isFocused}
-            animateShutter
-            facing="back"
-            mode={cameraMode === "video" ? "video" : "picture"}
-            mute
-            onCameraReady={() => setIsCameraReady(true)}
-            onMountError={(event) => setCaptureError(event.message)}
-            style={styles.cameraView}
-          />
-        ) : null}
-        <View pointerEvents="none" style={styles.previewOverlay}>
-          {!permission?.granted ? (
-            <View style={styles.emptyPreviewState}>
-              <Text style={styles.emptyPreviewTitle}>Camera ready</Text>
-              <Text style={styles.emptyPreviewText}>
-                Grant access to open the ForgeScan camera.
-              </Text>
-            </View>
-          ) : !isCameraReady ? (
-            <View style={styles.emptyPreviewState}>
-              <Text style={styles.emptyPreviewTitle}>Standby</Text>
-              <Text style={styles.emptyPreviewText}>Preparing preview</Text>
-            </View>
-          ) : null}
-          <View style={styles.previewGuide} />
-          <View style={styles.previewLineHorizontal} />
-          <View style={styles.previewLineVertical} />
-          <View style={styles.previewStatusBar}>
-            <Text style={styles.previewStatusLabel}>
-              {captureStatus ?? `Frame ${nextFrameNumber}`}
-            </Text>
-            <Text style={styles.previewStatusValue}>
-              {frameCount} captured
+      <View pointerEvents="none" style={styles.previewOverlay}>
+        {!permission?.granted ? (
+          <View style={styles.emptyPreviewState}>
+            <Text style={styles.emptyPreviewTitle}>Camera access</Text>
+            <Text style={styles.emptyPreviewText}>
+              Tap the shutter to grant access.
             </Text>
           </View>
-        </View>
+        ) : !isCameraReady ? (
+          <View style={styles.emptyPreviewState}>
+            <Text style={styles.emptyPreviewTitle}>Standby</Text>
+            <Text style={styles.emptyPreviewText}>Preparing preview</Text>
+          </View>
+        ) : null}
+        <View style={styles.previewGuide} />
+        <View style={styles.previewLineHorizontal} />
+        <View style={styles.previewLineVertical} />
       </View>
 
-      <View style={styles.modeStrip}>
-        {cameraModes.map((mode) => (
+      <SafeAreaView pointerEvents="box-none" style={styles.overlaySafe}>
+        <View style={styles.topBar}>
           <Pressable
             accessibilityRole="button"
-            disabled={isRecording || isBurstRunning}
-            key={mode.value}
-            onPress={() => setCameraMode(mode.value)}
+            onPress={() => navigation.navigate("CapturePlan", { projectId })}
             style={({ pressed }) => [
-              styles.modeItem,
-              cameraMode === mode.value ? styles.modeItemActive : undefined,
-              pressed && !isRecording && !isBurstRunning ? styles.pressed : undefined
-            ]}
-          >
-            <Text
-              style={[
-                styles.modeText,
-                cameraMode === mode.value ? styles.modeTextActive : undefined
-              ]}
-            >
-              {mode.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.toolbar}>
-        {toolbarMenus.map((menu) => (
-          <Pressable
-            accessibilityRole="button"
-            key={menu.value}
-            onPress={() => setActiveMenu(menu.value)}
-            style={({ pressed }) => [
-              styles.toolbarItem,
-              activeMenu === menu.value ? styles.toolbarItemActive : undefined,
+              styles.backButton,
               pressed ? styles.pressed : undefined
             ]}
           >
-            <Text
-              style={[
-                styles.toolbarText,
-                activeMenu === menu.value ? styles.toolbarTextActive : undefined
-              ]}
-            >
-              {menu.label}
-            </Text>
+            <Text style={styles.backButtonText}>Back</Text>
           </Pressable>
-        ))}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>{rotation.angleHint}</Text>
-            <Text style={styles.progressMeta}>
-              {getCoverageLabel(frameCount)}
-            </Text>
+          <View style={styles.titleGroup}>
+            <Text style={styles.eyebrow}>{project.project.title}</Text>
+            <Text style={styles.title}>{rotation.label}</Text>
           </View>
+          <View style={styles.frameBadge}>
+            <Text style={styles.frameBadgeValue}>{frameCount}</Text>
+            <Text style={styles.frameBadgeLabel}>Frames</Text>
+          </View>
+        </View>
+
+        {captureError ? (
+          <Text style={styles.errorMessage}>{captureError}</Text>
+        ) : null}
+
+        <View style={styles.captureSpacer} />
+
+        <View style={styles.bottomDock}>
+          <View style={styles.captureReadout}>
+            <View style={styles.readoutText}>
+              <Text style={styles.previewStatusLabel}>
+                {captureStatus ?? `Frame ${nextFrameNumber}`}
+              </Text>
+              <Text style={styles.previewStatusValue}>{rotation.angleHint}</Text>
+            </View>
+            <View style={styles.coverageBadge}>
+              <Text style={styles.coverageValue}>{getCoverageLabel(frameCount)}</Text>
+              <Text style={styles.coverageLabel}>{frameCount} captured</Text>
+            </View>
+          </View>
+
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
           </View>
-          <Text style={styles.guidanceText}>
-            {frameCount} frames captured. Recommended minimum{" "}
-            {RECOMMENDED_MINIMUM_FRAMES}; high quality{" "}
-            {RECOMMENDED_HIGH_QUALITY_FRAMES}+; preset guidance{" "}
-            {recommendedFrameCount}. You can keep capturing until you manually
-            complete the rotation.
-          </Text>
+
           {frameCount >= 180 ? (
             <Text style={styles.warningText}>
-              Large project warning: very high frame counts create larger local
-              files and slower exports.
+              Large project: very high frame counts make larger local files.
             </Text>
           ) : coverageWarning ? (
             <Text style={styles.warningText}>{coverageWarning}</Text>
           ) : null}
-        </View>
+
+          <View style={styles.modeStrip}>
+            {cameraModes.map((mode) => (
+              <Pressable
+                accessibilityRole="button"
+                disabled={isRecording || isBurstRunning}
+                key={mode.value}
+                onPress={() => setCameraMode(mode.value)}
+                style={({ pressed }) => [
+                  styles.modeItem,
+                  cameraMode === mode.value ? styles.modeItemActive : undefined,
+                  pressed && !isRecording && !isBurstRunning
+                    ? styles.pressed
+                    : undefined
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modeText,
+                    cameraMode === mode.value ? styles.modeTextActive : undefined
+                  ]}
+                >
+                  {mode.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.shutterRow}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isRecording || isBurstRunning}
+              onPress={() =>
+                setActiveMenu(activeMenu === "frames" ? "camera" : "frames")
+              }
+              style={({ pressed }) => [
+                styles.sideControl,
+                activeMenu === "frames" ? styles.sideControlActive : undefined,
+                pressed && !isRecording && !isBurstRunning
+                  ? styles.pressed
+                  : undefined
+              ]}
+            >
+              <Text style={styles.sideControlText}>Frames</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={shutterDisabled}
+              onPress={() => {
+                if (!permission?.granted) {
+                  void requestPermission();
+                  return;
+                }
+
+                if (isBurstRunning) {
+                  stopBurstCapture();
+                  return;
+                }
+
+                void handlePrimaryCapture();
+              }}
+              style={({ pressed }) => [
+                styles.shutterButton,
+                isRecording || isBurstRunning ? styles.shutterButtonStop : undefined,
+                shutterDisabled ? styles.shutterButtonDisabled : undefined,
+                pressed && !shutterDisabled ? styles.pressed : undefined
+              ]}
+            >
+              <View
+                style={[
+                  styles.shutterButtonInner,
+                  isRecording || isBurstRunning
+                    ? styles.shutterButtonInnerStop
+                    : undefined
+                ]}
+              />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={frameCount === 0 || isRecording || isBurstRunning}
+              onPress={handleCompleteRotation}
+              style={({ pressed }) => [
+                styles.sideControl,
+                styles.doneControl,
+                pressed && frameCount > 0 && !isRecording && !isBurstRunning
+                  ? styles.pressed
+                  : undefined,
+                frameCount === 0 || isRecording || isBurstRunning
+                  ? styles.sideControlDisabled
+                  : undefined
+              ]}
+            >
+              <Text style={styles.sideControlText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.shutterLabel}>
+            {permission?.granted ? getPrimaryButtonLabel() : "Grant Camera Access"}
+          </Text>
+
+          <View style={styles.toolbar}>
+            {toolbarMenus.map((menu) => (
+              <Pressable
+                accessibilityRole="button"
+                key={menu.value}
+                onPress={() => setActiveMenu(menu.value)}
+                style={({ pressed }) => [
+                  styles.toolbarItem,
+                  activeMenu === menu.value ? styles.toolbarItemActive : undefined,
+                  pressed ? styles.pressed : undefined
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.toolbarText,
+                    activeMenu === menu.value
+                      ? styles.toolbarTextActive
+                      : undefined
+                  ]}
+                >
+                  {menu.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
         {activeMenu === "camera" ? (
           <View style={styles.menuPanel}>
@@ -541,72 +627,28 @@ export function CaptureRotationScreen({
             />
           </View>
         ) : null}
-
-        {captureError ? (
-          <Text style={styles.errorMessage}>{captureError}</Text>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screenRoot: {
-    backgroundColor: colors.background,
-    flex: 1
-  },
-  topBar: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between",
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md
-  },
-  titleGroup: {
-    flex: 1,
-    gap: 2
-  },
-  eyebrow: {
-    color: colors.mutedText,
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase"
-  },
-  title: {
+  missingTitle: {
     color: colors.text,
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: "900"
   },
-  frameBadge: {
-    alignItems: "center",
-    backgroundColor: colors.text,
-    borderRadius: 8,
-    minWidth: 70,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  frameBadgeValue: {
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "900"
-  },
-  frameBadgeLabel: {
-    color: "#dfece8",
-    fontSize: 11,
-    fontWeight: "800",
-    textTransform: "uppercase"
-  },
-  previewShell: {
-    backgroundColor: "#101817",
-    borderRadius: 8,
-    height: 270,
-    marginHorizontal: spacing.md,
-    overflow: "hidden"
+  cameraRoot: {
+    backgroundColor: "#050706",
+    flex: 1
   },
   cameraView: {
-    flex: 1
+    ...StyleSheet.absoluteFillObject
+  },
+  cameraFallback: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#101817"
   },
   previewOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -615,8 +657,10 @@ const styles = StyleSheet.create({
   },
   emptyPreviewState: {
     alignItems: "center",
-    backgroundColor: "rgba(16, 24, 23, 0.86)",
+    backgroundColor: "rgba(16, 24, 23, 0.88)",
+    borderColor: "rgba(255, 255, 255, 0.16)",
     borderRadius: 8,
+    borderWidth: 1,
     gap: spacing.xs,
     padding: spacing.md,
     position: "absolute",
@@ -633,34 +677,110 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   previewGuide: {
-    borderColor: "rgba(255, 255, 255, 0.38)",
+    borderColor: "rgba(255, 255, 255, 0.42)",
     borderRadius: 999,
     borderWidth: 2,
-    height: "58%",
-    width: "72%"
+    height: "42%",
+    width: "78%"
   },
   previewLineHorizontal: {
     backgroundColor: "rgba(255, 255, 255, 0.18)",
     height: 1,
     position: "absolute",
-    width: "78%"
+    width: "84%"
   },
   previewLineVertical: {
     backgroundColor: "rgba(255, 255, 255, 0.18)",
-    height: "65%",
+    height: "50%",
     position: "absolute",
     width: 1
   },
-  previewStatusBar: {
+  overlaySafe: {
+    flex: 1,
+    paddingHorizontal: spacing.md
+  },
+  topBar: {
     alignItems: "center",
-    backgroundColor: "rgba(16, 24, 23, 0.76)",
-    bottom: 0,
     flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "space-between",
-    left: 0,
-    padding: spacing.md,
-    position: "absolute",
-    right: 0
+    paddingTop: spacing.sm
+  },
+  backButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(5, 7, 6, 0.66)",
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: spacing.sm
+  },
+  backButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  titleGroup: {
+    flex: 1,
+    gap: 2
+  },
+  eyebrow: {
+    color: "rgba(255, 255, 255, 0.78)",
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 25,
+    fontWeight: "900",
+    textShadowColor: "rgba(0, 0, 0, 0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4
+  },
+  frameBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(5, 7, 6, 0.66)",
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 70,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  frameBadgeValue: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "900"
+  },
+  frameBadgeLabel: {
+    color: "#dfece8",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  captureSpacer: {
+    flex: 1
+  },
+  bottomDock: {
+    backgroundColor: "rgba(5, 7, 6, 0.76)",
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: spacing.sm
+  },
+  captureReadout: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  readoutText: {
+    flex: 1,
+    gap: 2
   },
   previewStatusLabel: {
     color: "#ffffff",
@@ -669,44 +789,137 @@ const styles = StyleSheet.create({
   },
   previewStatusValue: {
     color: "#dfece8",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  coverageBadge: {
+    alignItems: "flex-end",
+    gap: 2
+  },
+  coverageValue: {
+    color: "#ffffff",
     fontSize: 13,
-    fontWeight: "800"
+    fontWeight: "900"
+  },
+  coverageLabel: {
+    color: "#dfece8",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  progressTrack: {
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 999,
+    height: 5,
+    overflow: "hidden"
+  },
+  progressFill: {
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    height: 5
+  },
+  warningText: {
+    color: "#ffd28a",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16
   },
   modeStrip: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.md
+    gap: spacing.sm
   },
   modeItem: {
     alignItems: "center",
-    borderColor: colors.border,
+    borderColor: "rgba(255, 255, 255, 0.18)",
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 42
+    minHeight: 38
   },
   modeItemActive: {
-    backgroundColor: colors.text,
-    borderColor: colors.text
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff"
   },
   modeText: {
-    color: colors.text,
+    color: "#dfece8",
     fontSize: 13,
     fontWeight: "900"
   },
   modeTextActive: {
-    color: "#ffffff"
+    color: "#101817"
+  },
+  shutterRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  sideControl: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 46,
+    minWidth: 82,
+    paddingHorizontal: spacing.sm
+  },
+  sideControlActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.22)"
+  },
+  doneControl: {
+    backgroundColor: "rgba(17, 100, 102, 0.78)"
+  },
+  sideControlDisabled: {
+    opacity: 0.42
+  },
+  sideControlText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  shutterButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    borderColor: "#ffffff",
+    borderRadius: 999,
+    borderWidth: 4,
+    height: 82,
+    justifyContent: "center",
+    width: 82
+  },
+  shutterButtonStop: {
+    borderColor: "#ffddd9"
+  },
+  shutterButtonDisabled: {
+    opacity: 0.42
+  },
+  shutterButtonInner: {
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    height: 58,
+    width: 58
+  },
+  shutterButtonInnerStop: {
+    backgroundColor: "#d14c40",
+    borderRadius: 8,
+    height: 38,
+    width: 38
+  },
+  shutterLabel: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center"
   },
   toolbar: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.16)",
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
     padding: 4
   },
   toolbarItem: {
@@ -714,83 +927,26 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     flex: 1,
     justifyContent: "center",
-    minHeight: 40
+    minHeight: 36
   },
   toolbarItemActive: {
-    backgroundColor: colors.text
+    backgroundColor: "#ffffff"
   },
   toolbarText: {
-    color: colors.mutedText,
+    color: "#dfece8",
     fontSize: 13,
     fontWeight: "900"
   },
   toolbarTextActive: {
-    color: "#ffffff"
+    color: "#101817"
   },
-  content: {
-    gap: spacing.md,
-    padding: spacing.md,
-    paddingBottom: spacing.xl
-  },
-  progressCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+  menuPanel: {
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.sm,
-    padding: spacing.md
-  },
-  progressHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between"
-  },
-  progressTitle: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  progressMeta: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "900"
-  },
-  progressTrack: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 999,
-    height: 8,
-    overflow: "hidden"
-  },
-  progressFill: {
-    backgroundColor: colors.accent,
-    borderRadius: 999,
-    height: 8
-  },
-  guidanceText: {
-    color: colors.mutedText,
-    fontSize: 13,
-    lineHeight: 18
-  },
-  warningText: {
-    color: colors.warning,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18
-  },
-  menuPanel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 2
+    padding: spacing.sm
   },
   menuHeader: {
     alignItems: "center",
@@ -799,7 +955,7 @@ const styles = StyleSheet.create({
   },
   menuTitle: {
     color: colors.text,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900"
   },
   menuMeta: {
@@ -840,7 +996,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 72
+    minHeight: 58
   },
   emptyFrameText: {
     color: colors.mutedText,
@@ -856,17 +1012,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderRadius: 8,
     overflow: "hidden",
-    width: 70
+    width: 62
   },
   frameTileImage: {
-    height: 64,
-    width: 70
+    height: 56,
+    width: 62
   },
   frameTileLabel: {
     color: colors.text,
     fontSize: 12,
     fontWeight: "900",
-    padding: 6,
+    padding: 5,
     textAlign: "center"
   },
   videoRow: {
@@ -877,16 +1033,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: spacing.md
+    padding: spacing.sm
   },
   videoTitle: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "900"
   },
   videoMeta: {
     color: colors.mutedText,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700"
   },
   videoBadge: {
@@ -898,11 +1054,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   errorMessage: {
-    backgroundColor: "#f0d8d5",
+    backgroundColor: "rgba(240, 216, 213, 0.94)",
     borderRadius: 8,
     color: colors.danger,
     fontSize: 14,
     lineHeight: 20,
+    marginTop: spacing.sm,
     padding: spacing.md
   },
   pressed: {
