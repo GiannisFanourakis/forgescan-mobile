@@ -1,3 +1,8 @@
+import {
+  TrackedCaptureReadiness,
+  getFramePoseReadiness,
+  validateTrackedCaptureForSplat
+} from "../capture/trackedCaptureReadiness";
 import { ForgeScanProjectManifest } from "../core/manifest";
 import {
   getExpectedKsplatPath,
@@ -18,6 +23,7 @@ export interface KsplatOptimizerInput {
   orderedFrames: OrderedFrameInput[];
   objectMasks: ObjectMaskInput[];
   cameraData: KsplatCameraData;
+  trackedCaptureReadiness: TrackedCaptureReadiness;
   rotationMetadata: RotationOptimizerMetadata[];
   outputFilename: string;
   outputDirectory: string;
@@ -36,9 +42,11 @@ export function createKsplatOptimizerInput(
   masks: MaskArtifact[] = []
 ): KsplatOptimizerInput {
   let order = 0;
+  const trackedCaptureReadiness = validateTrackedCaptureForSplat(manifest);
   const orderedFrames = manifest.capture.rotations.flatMap((rotation) =>
     rotation.frames.map((frame) => {
       order += 1;
+      const readiness = getFramePoseReadiness(frame);
       return {
         rotationId: rotation.id,
         frameIndex: frame.index,
@@ -55,6 +63,14 @@ export function createKsplatOptimizerInput(
           ? { cameraExtrinsics: frame.cameraExtrinsics }
           : {}),
         ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
+        poseSynchronization: readiness.poseSynchronization,
+        hasIntrinsics: readiness.hasIntrinsics,
+        hasExtrinsics: readiness.hasExtrinsics,
+        hasValidPoseMatrix: readiness.hasValidPoseMatrix,
+        usableForSplat: readiness.usableForSplat,
+        ...(readiness.unusableReason !== undefined
+          ? { unusableReason: readiness.unusableReason }
+          : {}),
         ...(frame.exposureMetadata !== undefined
           ? { exposureMetadata: frame.exposureMetadata }
           : {}),
@@ -62,7 +78,7 @@ export function createKsplatOptimizerInput(
       };
     })
   );
-  const cameraData = createCameraData(manifest);
+  const cameraData = createCameraData(manifest, trackedCaptureReadiness);
 
   return {
     projectId: manifest.project.id,
@@ -82,6 +98,7 @@ export function createKsplatOptimizerInput(
       return objectMask;
     }),
     cameraData,
+    trackedCaptureReadiness,
     rotationMetadata: manifest.capture.rotations.map((rotation) => ({
       rotationId: rotation.id,
       label: rotation.label,
@@ -114,13 +131,16 @@ export function createKsplatOptimizerInput(
     notes: [
       "Native .ksplat optimizer input package for controlled object splatting.",
       "Expo Go writes this package internally but does not generate a fake .ksplat.",
+      `Tracked capture readiness: ${trackedCaptureReadiness.status}.`,
+      ...trackedCaptureReadiness.warnings,
       ...cameraData.warnings
     ]
   };
 }
 
 function createCameraData(
-  manifest: ForgeScanProjectManifest
+  manifest: ForgeScanProjectManifest,
+  trackedCaptureReadiness: TrackedCaptureReadiness
 ): KsplatCameraData {
   const allFrames = manifest.capture.rotations.flatMap((rotation) =>
     rotation.frames.map((frame, index) => ({
@@ -130,24 +150,24 @@ function createCameraData(
     }))
   );
   const trackedFrames = allFrames.filter(
-    ({ frame }) =>
-      frame.captureSource === "arcore-shared-camera" &&
-      frame.cameraIntrinsics !== undefined &&
-      frame.cameraExtrinsics?.transform?.length === 16 &&
-      frame.trackingState === "TRACKING"
+    ({ frame }) => getFramePoseReadiness(frame).usableForSplat
   );
   const hasTrackedPose = trackedFrames.length > 0;
   const untrackedFrameCount = allFrames.length - trackedFrames.length;
-  const warnings = hasTrackedPose
-    ? untrackedFrameCount > 0
+  const warnings = [
+    ...trackedCaptureReadiness.warnings,
+    ...(hasTrackedPose && untrackedFrameCount > 0
       ? [
           "Some frames are missing ARCore pose metadata and may be ignored or use turntable assumptions."
         ]
-      : []
-    : [
-        "Camera pose metadata missing. Using turntable assumptions.",
-        "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
-      ];
+      : []),
+    ...(!hasTrackedPose
+      ? [
+          "Camera pose metadata missing. Using turntable assumptions.",
+          "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+        ]
+      : [])
+  ];
 
   return {
     cameraModel: "unknown-mobile-camera",
@@ -156,8 +176,11 @@ function createCameraData(
     fallbackTurntablePoseUsed: !hasTrackedPose,
     trackedFrameCount: trackedFrames.length,
     untrackedFrameCount,
-    warnings,
-    frames: allFrames.map(({ frame, rotation, index }) => ({
+    warnings: [...new Set(warnings)],
+    frames: allFrames.map(({ frame, rotation, index }) => {
+      const readiness = getFramePoseReadiness(frame);
+
+      return {
         rotationId: rotation.id,
         frameIndex: frame.index,
         frameUri: frame.uri,
@@ -171,6 +194,14 @@ function createCameraData(
           ? { cameraExtrinsics: frame.cameraExtrinsics }
           : {}),
         ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
+        poseSynchronization: readiness.poseSynchronization,
+        hasIntrinsics: readiness.hasIntrinsics,
+        hasExtrinsics: readiness.hasExtrinsics,
+        hasValidPoseMatrix: readiness.hasValidPoseMatrix,
+        usableForSplat: readiness.usableForSplat,
+        ...(readiness.unusableReason !== undefined
+          ? { unusableReason: readiness.unusableReason }
+          : {}),
         ...(frame.timestamp !== undefined ? { timestamp: frame.timestamp } : {}),
         assumedPose: {
           yawDegrees:
@@ -184,6 +215,7 @@ function createCameraData(
                 ? 45
               : 160
         }
-      }))
+      };
+    })
   };
 }

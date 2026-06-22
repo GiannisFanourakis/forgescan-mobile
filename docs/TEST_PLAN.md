@@ -72,28 +72,63 @@ Phone flow:
 11. Pinch on the preview and confirm zoom changes.
 12. Tap `Start Tracked` from the Camera menu.
 13. Capture one keyframe.
-14. Confirm pose status says `Pose captured`, or if ARCore cannot track, it says the frame is untracked.
-15. Capture 40-60 upright keyframes with photo/timed burst.
-16. Capture 40-60 tilted keyframes.
-17. Optional: capture underside rotation.
-18. Complete the rotations manually.
-19. Tap `Create .ksplat Preview`.
-20. Confirm Project Review shows:
+14. Confirm pose status says `Frame and pose associated, not fully synchronized.` or `Tracked frame saved with pose.` If ARCore cannot track, confirm it says `Frame saved, but pose missing.`
+15. Confirm the capture screen shows:
+   - Capture path
+   - Last frame source
+   - Pose synchronization
+   - Intrinsics yes/no
+   - Extrinsics yes/no
+   - Pose matrix valid/invalid/missing
+   - Tracking state
+   - Rotation tracked frame count
+   - Rotation usable-for-splat count
+16. Capture 40-60 upright keyframes with photo/timed burst.
+17. Capture 40-60 tilted keyframes.
+18. Optional: capture underside rotation.
+19. Complete the rotations manually.
+20. Tap `Create .ksplat Preview`.
+21. Confirm Project Review shows:
    - `1 Capture`
    - `2 Process`
    - `3 Preview & Export`
-21. Confirm processing starts automatically, or tap `Process Scan`.
-22. Confirm object/background removal runs through ML Kit Subject Segmentation.
-23. Confirm mask PNG files are written and size is greater than 0.
-24. Confirm optimizer input includes camera matrices when tracked keyframes were captured.
-25. Confirm the Android splat optimizer runs.
-26. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
-27. Confirm Preview & Export shows only:
+22. Confirm `Tracked Capture Readiness` appears with status, total frames, usable tracked frames, and per-rotation usable frame counts.
+23. Confirm pose synchronization is `camera-photo-associated` or `shared-camera-synchronized`.
+24. Confirm processing starts automatically, or tap `Process Scan`.
+25. Confirm object/background removal runs through ML Kit Subject Segmentation.
+26. Confirm mask PNG files are written and size is greater than 0.
+27. Confirm optimizer input includes `trackedCaptureReadiness` and camera matrices when tracked keyframes were captured.
+28. Confirm the Android splat optimizer runs.
+29. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
+30. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
     - `preview.mp4`
     - `preview.gif`
-28. Confirm preview MP4/GIF status is `Requires native preview rendering`.
-29. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
+31. Confirm preview MP4/GIF status is `Requires native preview rendering`.
+32. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
+
+## Android Small Tracked-Capture Metadata Test
+
+Use this quick test before a full scan:
+
+1. Create a project in the Android dev build.
+2. Open the upright rotation with `Tracked` selected.
+3. Capture 5 upright tracked frames.
+4. Complete the upright rotation.
+5. Open the tilted rotation with `Tracked` selected.
+6. Capture 5 tilted tracked frames.
+7. Complete the tilted rotation.
+8. Open Project Review.
+9. Confirm `Tracked Capture Readiness` appears.
+10. Confirm frames have intrinsics/extrinsics counts.
+11. Confirm pose synchronization is `camera-photo-associated` or `shared-camera-synchronized`.
+12. Open `Native Engine Diagnostics`.
+13. Tap `Validate Current Tracked Capture`.
+14. Confirm usable frame count, missing intrinsics count, missing extrinsics count, invalid pose matrix count, tracking-not-TRACKING count, associated-not-synchronized count, and required rotation readiness are shown.
+15. Tap `Export Keyframe Metadata Summary`.
+16. Confirm `advanced/camera/keyframe-summary.json` is written.
+17. Tap `Show Last Pose Matrix`.
+18. Confirm a 16-value pose matrix is shown when tracking is available.
 
 If Basic capture is used instead of Tracked capture, the app must warn:
 
@@ -113,6 +148,9 @@ Diagnostics buttons:
 - `Start ARCore Session Test`
 - `Capture One Tracked Keyframe`
 - `Run Timed Keyframe Capture Test`
+- `Validate Current Tracked Capture`
+- `Export Keyframe Metadata Summary`
+- `Show Last Pose Matrix`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
 - `Test Gaussian Splat Optimizer`
@@ -141,6 +179,8 @@ Diagnostics pass only when:
 - Camera2 diagnostics report at least one back camera and list manual/RAW/OIS/multi-camera support honestly.
 - ARCore diagnostics report SharedCamera support honestly.
 - One tracked keyframe writes a real image path plus intrinsics/extrinsics when ARCore tracking is available.
+- Current Android tracked capture reports `camera-photo-associated` until a true synchronized Camera2 SharedCamera stream is implemented.
+- Project Review shows `Tracked Capture Readiness` before processing.
 - CameraX native fallback capture reports implemented in Android dev build.
 - Manual ISO/shutter/focus controls stay enabled only when Camera2 `MANUAL_SENSOR` is available.
 - Masking writes at least one non-empty mask.

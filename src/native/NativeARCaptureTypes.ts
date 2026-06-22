@@ -4,6 +4,7 @@ import {
   CameraIntrinsics,
   CameraLensMetadata,
   CaptureSource,
+  PoseSynchronization,
   PreferredLens,
   RotationId
 } from "../core/manifest";
@@ -70,6 +71,7 @@ export interface NativeARCaptureAvailability {
   keyframesUri?: string;
   keyframesBytes?: number;
   lastKeyframePath?: string;
+  lastPoseSynchronization?: PoseSynchronization;
   lastPoseMatrix?: number[];
   lastNativeError?: string;
   warnings: string[];
@@ -111,6 +113,7 @@ export interface NativeARCaptureKeyframe {
   frameIndex: number;
   rotationId: RotationId;
   captureSource: CaptureSource;
+  poseSynchronization: PoseSynchronization;
   trackingState?: string;
   cameraTransformConvention?: string;
   cameraIntrinsics?: CameraIntrinsics;
@@ -125,6 +128,7 @@ export interface NativeARCaptureResult extends NativeARCaptureAvailability {
   frameUri?: string;
   framePath?: string;
   captureSource?: CaptureSource;
+  poseSynchronization?: PoseSynchronization;
   keyframe?: NativeARCaptureKeyframe;
   sourceFrameCount?: number;
 }

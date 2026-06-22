@@ -5,6 +5,11 @@ import { StyleSheet, Text, View } from "react-native";
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { StatusPill } from "../components/StatusPill";
+import {
+  TrackedCaptureReadiness,
+  TrackedCaptureStatus,
+  validateTrackedCaptureForSplat
+} from "../capture/trackedCaptureReadiness";
 import { getCoverageLabel } from "../core/coverage";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { ForgeScanProjectManifest } from "../core/manifest";
@@ -45,6 +50,10 @@ export function ProjectReviewScreen({
     () => (project ? validateProjectForReconstruction(project) : undefined),
     [project]
   );
+  const trackedReadiness = useMemo(
+    () => (project ? validateTrackedCaptureForSplat(project) : undefined),
+    [project]
+  );
 
   useEffect(() => {
     if (
@@ -62,7 +71,7 @@ export function ProjectReviewScreen({
     void runScanProcessing(project);
   }, [isRunning, project, route.params.autoProcess, scanResult, validation?.validForReconstruction]);
 
-  if (!project || !validation) {
+  if (!project || !validation || !trackedReadiness) {
     return (
       <Screen>
         <Text style={styles.title}>Project not found</Text>
@@ -149,6 +158,8 @@ export function ProjectReviewScreen({
         ))}
       </View>
 
+      <TrackedCaptureReadinessCard readiness={trackedReadiness} />
+
       <View style={styles.primaryCard}>
         <Text style={styles.sectionTitle}>{stepLabels[activeStep]}</Text>
         <Text style={styles.messageText}>
@@ -213,7 +224,89 @@ export function ProjectReviewScreen({
         )}
         {normalExports.length > 0 ? <NormalExports outputs={normalExports} /> : null}
       </Section>
+
+      {scanResult?.advancedDetails.length ? (
+        <Section>
+          <Text style={styles.sectionTitle}>Advanced Details</Text>
+          {scanResult.advancedDetails.map((detail, index) => (
+            <View key={`${detail.label}-${index}`} style={styles.outputCard}>
+              <Text style={styles.simpleRowTitle}>{detail.label}</Text>
+              <Text style={styles.simpleRowMeta}>{detail.value}</Text>
+            </View>
+          ))}
+        </Section>
+      ) : null}
     </Screen>
+  );
+}
+
+interface TrackedCaptureReadinessCardProps {
+  readiness: TrackedCaptureReadiness;
+}
+
+function TrackedCaptureReadinessCard({
+  readiness
+}: TrackedCaptureReadinessCardProps): ReactElement {
+  const statusWarning = getReadinessStatusWarning(readiness.status);
+
+  return (
+    <View style={styles.readinessCard}>
+      <Text style={styles.sectionTitle}>Tracked Capture Readiness</Text>
+      <View style={styles.readinessGrid}>
+        <ReadinessMetric
+          label="Status"
+          value={formatReadinessStatus(readiness.status)}
+        />
+        <ReadinessMetric
+          label="Total frames"
+          value={`${readiness.frameStats.totalFrames}`}
+        />
+        <ReadinessMetric
+          label="Usable tracked"
+          value={`${readiness.frameStats.usableForSplat}`}
+        />
+        <ReadinessMetric
+          label="Associated poses"
+          value={`${readiness.frameStats.framesWithCameraPhotoAssociatedPose}`}
+        />
+      </View>
+      {readiness.perRotation.map((rotation) => (
+        <View key={rotation.rotationId} style={styles.readinessRotationRow}>
+          <View style={styles.rowText}>
+            <Text style={styles.simpleRowTitle}>{rotation.label}</Text>
+            <Text style={styles.simpleRowMeta}>
+              {rotation.usableForSplat} usable / {rotation.totalFrames} total
+            </Text>
+          </View>
+          <Text style={styles.readinessStatusText}>
+            {formatReadinessStatus(rotation.status)}
+          </Text>
+        </View>
+      ))}
+      {statusWarning ? (
+        <Text style={[styles.message, styles.warning]}>{statusWarning}</Text>
+      ) : null}
+      {readiness.warnings.map((warning) => (
+        <Text key={warning} style={[styles.message, styles.warning]}>
+          {warning}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function ReadinessMetric({
+  label,
+  value
+}: {
+  label: string;
+  value: string;
+}): ReactElement {
+  return (
+    <View style={styles.readinessMetric}>
+      <Text style={styles.readinessMetricLabel}>{label}</Text>
+      <Text style={styles.readinessMetricValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -261,6 +354,28 @@ function NormalExports({ outputs }: NormalExportsProps): ReactElement {
       ))}
     </>
   );
+}
+
+function formatReadinessStatus(status: TrackedCaptureStatus): string {
+  return status.replace(/-/g, " ");
+}
+
+function getReadinessStatusWarning(
+  status: TrackedCaptureStatus
+): string | null {
+  if (status === "associated-not-synchronized") {
+    return "Current build pairs CameraX frames with ARCore poses. This is usable for testing but not final SharedCamera synchronization.";
+  }
+
+  if (status === "fallback-turntable") {
+    return "Camera pose metadata missing. Optimizer will use turntable assumptions.";
+  }
+
+  if (status === "missing" || status === "insufficient-tracking") {
+    return "Capture more tracked frames before running splat optimization.";
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -317,6 +432,53 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.md
+  },
+  readinessCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  readinessGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  readinessMetric: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    gap: 2,
+    minWidth: "47%",
+    padding: spacing.sm
+  },
+  readinessMetricLabel: {
+    color: colors.mutedText,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  readinessMetricValue: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  readinessRotationRow: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    paddingTop: spacing.sm
+  },
+  readinessStatusText: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "right",
+    textTransform: "capitalize"
   },
   sectionTitle: {
     color: colors.text,

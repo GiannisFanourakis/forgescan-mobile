@@ -268,6 +268,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
     boolean tracked = "TRACKING".equals(trackingState) &&
       pose.has("cameraIntrinsics") &&
       pose.has("cameraExtrinsics");
+    String poseSynchronization = tracked ? "camera-photo-associated" : "missing";
 
     JSONObject keyframe = new JSONObject();
     keyframe.put("frameUri", ForgeScanNativeFiles.fileUri(output));
@@ -276,6 +277,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
     keyframe.put("frameIndex", frameIndex);
     keyframe.put("rotationId", rotationId);
     keyframe.put("captureSource", tracked ? "arcore-shared-camera" : "camera");
+    keyframe.put("poseSynchronization", poseSynchronization);
     keyframe.put("trackingState", trackingState);
     keyframe.put("cameraTransformConvention", "ARCore camera pose matrix, column-major, camera-to-world transform.");
     keyframe.put("sourceFrameUri", sourceUri);
@@ -299,6 +301,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
     result.put("keyframeCount", keyframes.length());
     result.put("keyframesPath", KEYFRAME_PATH);
     result.put("captureSource", keyframe.getString("captureSource"));
+    result.put("poseSynchronization", poseSynchronization);
     result.put("trackingState", trackingState);
     result.put("cameraIntrinsicsCaptured", pose.has("cameraIntrinsics"));
     result.put("cameraExtrinsicsCaptured", pose.has("cameraExtrinsics"));
@@ -427,6 +430,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
     result.put("cameraExtrinsicsCaptured", lastKeyframe != null && lastKeyframe.has("cameraExtrinsics"));
     result.put("keyframeCount", keyframes.length());
     result.put("lastKeyframePath", lastKeyframe == null ? JSONObject.NULL : lastKeyframe.optString("framePath"));
+    result.put("lastPoseSynchronization", lastKeyframe == null ? JSONObject.NULL : lastKeyframe.optString("poseSynchronization", "missing"));
     result.put("lastPoseMatrix", lastKeyframe == null || !lastKeyframe.has("cameraExtrinsics")
       ? JSONObject.NULL
       : lastKeyframe.getJSONObject("cameraExtrinsics").optJSONArray("transform"));
@@ -591,6 +595,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
     metadata.put("moduleName", NAME);
     metadata.put("engineVersion", ENGINE_VERSION);
     metadata.put("captureSource", "arcore-shared-camera");
+    metadata.put("poseSynchronizationMode", "camera-photo-associated");
     metadata.put("cameraTransformConvention", "ARCore camera pose matrix, column-major, camera-to-world transform.");
     metadata.put("keyframeCount", keyframes.length());
     metadata.put("keyframes", keyframes);
@@ -694,6 +699,7 @@ public class ForgeScanARCaptureModule extends ReactContextBaseJavaModule {
       result.put("sharedCameraSupported", false);
       result.put("camera2Available", false);
       result.put("trackingState", "failed");
+      result.put("poseSynchronization", "missing");
       result.put("fallbackTurntablePoseUsed", false);
       result.put("cameraIntrinsicsCaptured", false);
       result.put("cameraExtrinsicsCaptured", false);

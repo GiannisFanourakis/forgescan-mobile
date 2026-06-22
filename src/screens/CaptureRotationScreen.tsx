@@ -17,9 +17,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Screen } from "../components/Screen";
 import {
+  getFramePoseReadiness,
+  getPoseCompletenessForRotation
+} from "../capture/trackedCaptureReadiness";
+import {
   getCoverageLabel,
   getCoverageWarning
 } from "../core/coverage";
+import { PoseSynchronization } from "../core/manifest";
 import { RootStackParamList } from "../navigation/types";
 import {
   captureNativeCameraXPhoto,
@@ -197,6 +202,23 @@ export function CaptureRotationScreen({
   const recommendedFrameCount = project.capture.targetFrameCount;
   const lastFrame = rotation.frames[frameCount - 1];
   const lastVideo = rotation.videos?.[videoCount - 1];
+  const lastFramePose = lastFrame ? getFramePoseReadiness(lastFrame) : null;
+  const rotationPoseCompleteness = getPoseCompletenessForRotation(
+    project,
+    rotation.id
+  );
+  const poseMatrixStatus =
+    !lastFrame || !lastFramePose
+      ? "missing"
+      : lastFramePose.hasValidPoseMatrix
+        ? "valid"
+        : lastFramePose.hasExtrinsics
+          ? "invalid"
+          : "missing";
+  const lastCaptureSource = lastFrame?.captureSource ?? "unknown";
+  const lastPoseSynchronization =
+    lastFramePose?.poseSynchronization ?? "missing";
+  const lastTrackingState = lastFramePose?.trackingState ?? "unknown";
   const coverageWarning = getCoverageWarning(frameCount);
   const progressPercent =
     recommendedFrameCount > 0
@@ -292,6 +314,11 @@ export function CaptureRotationScreen({
         keyframe?.captureSource === "arcore-shared-camera" &&
         keyframe.cameraIntrinsics !== undefined &&
         keyframe.cameraExtrinsics !== undefined;
+      const poseSynchronization: PoseSynchronization = tracked
+        ? (keyframe?.poseSynchronization ?? "camera-photo-associated")
+        : capturePath === "basic-untracked"
+          ? "turntable-assumed"
+          : "missing";
 
       await addCapturedFrame(projectId, rotationId, {
         uri: photo.uri,
@@ -299,6 +326,7 @@ export function CaptureRotationScreen({
         ...(photo.height && photo.height > 0 ? { height: photo.height } : {}),
         captureSource: tracked ? "arcore-shared-camera" : "camera",
         timestamp: keyframe?.timestamp ?? new Date().toISOString(),
+        poseSynchronization,
         ...(keyframe?.cameraIntrinsics !== undefined
           ? { cameraIntrinsics: keyframe.cameraIntrinsics }
           : {}),
@@ -318,13 +346,7 @@ export function CaptureRotationScreen({
           ? { cameraTransformConvention: keyframe.cameraTransformConvention }
           : {})
       });
-      setPoseStatus(
-        tracked
-          ? "Pose captured"
-          : capturePath === "arcore-tracked"
-            ? "Untracked frame saved"
-            : "Basic untracked frame"
-      );
+      setPoseStatus(createCapturePoseStatus(poseSynchronization));
       return true;
     } catch (error: unknown) {
       setCaptureError(
@@ -732,6 +754,30 @@ export function CaptureRotationScreen({
             ))}
           </View>
           <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
+
+          <View style={styles.poseGrid}>
+            <PoseStat label="Capture path" value={capturePath === "arcore-tracked" ? "Tracked" : "Basic"} />
+            <PoseStat label="Last source" value={lastCaptureSource} />
+            <PoseStat label="Pose sync" value={lastPoseSynchronization} />
+            <PoseStat
+              label="Intrinsics"
+              value={lastFramePose?.hasIntrinsics ? "yes" : "no"}
+            />
+            <PoseStat
+              label="Extrinsics"
+              value={lastFramePose?.hasExtrinsics ? "yes" : "no"}
+            />
+            <PoseStat label="Pose matrix" value={poseMatrixStatus} />
+            <PoseStat label="Tracking" value={lastTrackingState} />
+            <PoseStat
+              label="Tracked frames"
+              value={`${rotationPoseCompleteness.trackedFrames}`}
+            />
+            <PoseStat
+              label="Usable splat"
+              value={`${rotationPoseCompleteness.usableForSplat}`}
+            />
+          </View>
 
           <View style={styles.zoomRow}>
             <Pressable
@@ -1280,6 +1326,37 @@ function formatShutterSpeed(shutterNs: number): string {
   return `1/${Math.round(1 / seconds)}`;
 }
 
+function createCapturePoseStatus(
+  poseSynchronization: PoseSynchronization
+): string {
+  if (poseSynchronization === "shared-camera-synchronized") {
+    return "Tracked frame saved with pose.";
+  }
+
+  if (poseSynchronization === "camera-photo-associated") {
+    return "Frame and pose associated, not fully synchronized.";
+  }
+
+  return "Frame saved, but pose missing.";
+}
+
+function PoseStat({
+  label,
+  value
+}: {
+  label: string;
+  value: string;
+}): ReactElement {
+  return (
+    <View style={styles.poseStat}>
+      <Text style={styles.poseStatLabel}>{label}</Text>
+      <Text style={styles.poseStatValue} numberOfLines={2}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function getTouchDistance(event: GestureResponderEvent): number | null {
   const first = event.nativeEvent.touches[0];
   const second = event.nativeEvent.touches[1];
@@ -1516,6 +1593,33 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     lineHeight: 13
+  },
+  poseGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4
+  },
+  poseStat: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    borderRadius: 6,
+    borderWidth: 1,
+    minHeight: 38,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    width: "32%"
+  },
+  poseStatLabel: {
+    color: "rgba(255, 255, 255, 0.68)",
+    fontSize: 8,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  poseStatValue: {
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: "900",
+    lineHeight: 11
   },
   zoomRow: {
     alignItems: "center",

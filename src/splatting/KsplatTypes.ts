@@ -3,6 +3,7 @@ import {
   CameraIntrinsics,
   CaptureSource,
   CameraExposureMetadata,
+  PoseSynchronization,
   RotationId
 } from "../core/manifest";
 
@@ -51,6 +52,12 @@ export interface OrderedFrameInput {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  poseSynchronization?: PoseSynchronization;
+  hasIntrinsics?: boolean;
+  hasExtrinsics?: boolean;
+  hasValidPoseMatrix?: boolean;
+  usableForSplat?: boolean;
+  unusableReason?: string;
   exposureMetadata?: CameraExposureMetadata;
   lensMetadata?: {
     preferredLens?: string;
@@ -83,6 +90,12 @@ export interface CameraFrameData {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  poseSynchronization?: PoseSynchronization;
+  hasIntrinsics?: boolean;
+  hasExtrinsics?: boolean;
+  hasValidPoseMatrix?: boolean;
+  usableForSplat?: boolean;
+  unusableReason?: string;
   timestamp?: string;
   maskPath?: string;
   assumedPose: {

@@ -17,6 +17,7 @@ import {
   CameraLensMetadata,
   CaptureSource,
   ForgeScanProjectManifest,
+  PoseSynchronization,
   ReconstructionModelId,
   RotationId,
   addFrameToRotation,
@@ -52,6 +53,7 @@ interface CapturedPhotoInput {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  poseSynchronization?: PoseSynchronization;
   exposureMetadata?: CameraExposureMetadata;
   lensMetadata?: CameraLensMetadata;
   cameraTransformConvention?: string;
@@ -261,6 +263,9 @@ export function ProjectProvider({
         ...(photo.trackingState !== undefined
           ? { trackingState: photo.trackingState }
           : {}),
+        ...(photo.poseSynchronization !== undefined
+          ? { poseSynchronization: photo.poseSynchronization }
+          : {}),
         ...(photo.exposureMetadata !== undefined
           ? { exposureMetadata: photo.exposureMetadata }
           : {}),
@@ -334,6 +339,7 @@ export function ProjectProvider({
       updateProject(projectId, (project) =>
         addFrameToRotation(project, rotationId, {
           captureSource: "simulated",
+          poseSynchronization: "turntable-assumed",
           qualityChecks: {
             blur: "not-run",
             exposure: "not-run",

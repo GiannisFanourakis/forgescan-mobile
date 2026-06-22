@@ -22,6 +22,11 @@ export type PreferredLens =
   | "telephoto"
   | "macro";
 export type ImageResolutionPreset = "low" | "medium" | "high";
+export type PoseSynchronization =
+  | "shared-camera-synchronized"
+  | "camera-photo-associated"
+  | "turntable-assumed"
+  | "missing";
 export type BackgroundRemovalEngine = "none" | "external" | "future-ai";
 export type ReconstructionEngine =
   | "none"
@@ -133,6 +138,7 @@ export interface CapturedFrame {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  poseSynchronization?: PoseSynchronization;
   exposureMetadata?: CameraExposureMetadata;
   lensMetadata?: CameraLensMetadata;
   cameraTransformConvention?: string;
@@ -253,6 +259,7 @@ export interface AddFrameInput {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  poseSynchronization?: PoseSynchronization;
   exposureMetadata?: CameraExposureMetadata;
   lensMetadata?: CameraLensMetadata;
   cameraTransformConvention?: string;
@@ -430,6 +437,9 @@ export function addFrameToRotation(
         : {}),
       ...(frameInput.trackingState !== undefined
         ? { trackingState: frameInput.trackingState }
+        : {}),
+      ...(frameInput.poseSynchronization !== undefined
+        ? { poseSynchronization: frameInput.poseSynchronization }
         : {}),
       ...(frameInput.exposureMetadata !== undefined
         ? { exposureMetadata: frameInput.exposureMetadata }

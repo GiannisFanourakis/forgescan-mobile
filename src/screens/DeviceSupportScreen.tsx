@@ -5,6 +5,10 @@ import { NativeModules, Platform, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
+import {
+  getFramePoseReadiness,
+  validateTrackedCaptureForSplat
+} from "../capture/trackedCaptureReadiness";
 import { RootStackParamList } from "../navigation/types";
 import {
   captureNativeARKeyframe,
@@ -29,7 +33,11 @@ import {
 } from "../native/NativeMasking";
 import { NativeMaskingAvailability } from "../native/NativeMaskingTypes";
 import { validateProjectForReconstruction } from "../core/frameValidation";
-import { getProjectStoragePaths } from "../storage/projectStorage";
+import { ForgeScanProjectManifest } from "../core/manifest";
+import {
+  getProjectStoragePaths,
+  writeProjectFile
+} from "../storage/projectStorage";
 import { runMaskingForProject } from "../masking/MaskingEngine";
 import {
   getCurrentPlatformEngine,
@@ -239,6 +247,10 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
           <DiagnosticLine
             label="Last tracked keyframe"
             value={arAvailability?.lastKeyframePath ?? "not captured"}
+          />
+          <DiagnosticLine
+            label="Last pose synchronization"
+            value={arAvailability?.lastPoseSynchronization ?? "unknown"}
           />
           <DiagnosticLine label="ARCore keyframe smoke test" value={arSmokeStatus} />
           <DiagnosticLine
@@ -667,6 +679,16 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     label: "Pose source",
                     status: keyframe.captureSource === "arcore-shared-camera" ? "pass" : "warn",
                     detail: keyframe.captureSource ?? "unknown"
+                  },
+                  {
+                    label: "Pose synchronization",
+                    status:
+                      keyframe.poseSynchronization === "shared-camera-synchronized"
+                        ? "pass"
+                        : keyframe.poseSynchronization === "camera-photo-associated"
+                          ? "warn"
+                          : "fail",
+                    detail: keyframe.poseSynchronization ?? "missing"
                   }
                 ];
               });
@@ -732,6 +754,211 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     label: "Current keyframe count",
                     status: (status.keyframeCount ?? 0) > 0 ? "pass" : "warn",
                     detail: `${status.keyframeCount ?? 0}`
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Validate Current Tracked Capture"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("Tracked capture validation", async () => {
+                if (!latestProject) {
+                  return [
+                    {
+                      label: "Current project",
+                      status: "fail",
+                      detail: "Create or load a scan first."
+                    }
+                  ];
+                }
+
+                const readiness = validateTrackedCaptureForSplat(latestProject);
+                const invalidPoseMatrixCount =
+                  readiness.frameStats.framesWithExtrinsics -
+                  readiness.frameStats.framesWith16ValuePoseMatrix;
+                const trackingNotTrackingCount = latestProject.capture.rotations
+                  .flatMap((rotation) => rotation.frames)
+                  .filter((frame) => getFramePoseReadiness(frame).trackingState !== "TRACKING")
+                  .length;
+
+                return [
+                  {
+                    label: "Readiness status",
+                    status:
+                      readiness.status === "ready"
+                        ? "pass"
+                        : readiness.status === "associated-not-synchronized" ||
+                            readiness.status === "insufficient-tracking" ||
+                            readiness.status === "fallback-turntable"
+                          ? "warn"
+                          : "fail",
+                    detail: readiness.status
+                  },
+                  {
+                    label: "Required rotation readiness",
+                    status: readiness.perRotation
+                      .filter((rotation) => rotation.required)
+                      .every((rotation) => rotation.usableForSplat > 0)
+                      ? "pass"
+                      : "warn",
+                    detail: readiness.perRotation
+                      .filter((rotation) => rotation.required)
+                      .map(
+                        (rotation) =>
+                          `${rotation.label}: ${rotation.usableForSplat}/${rotation.totalFrames}`
+                      )
+                      .join(" | ")
+                  },
+                  {
+                    label: "Missing intrinsics count",
+                    status:
+                      readiness.frameStats.totalFrames -
+                        readiness.frameStats.framesWithIntrinsics ===
+                      0
+                        ? "pass"
+                        : "warn",
+                    detail: `${readiness.frameStats.totalFrames - readiness.frameStats.framesWithIntrinsics}`
+                  },
+                  {
+                    label: "Missing extrinsics count",
+                    status:
+                      readiness.frameStats.totalFrames -
+                        readiness.frameStats.framesWithExtrinsics ===
+                      0
+                        ? "pass"
+                        : "warn",
+                    detail: `${readiness.frameStats.totalFrames - readiness.frameStats.framesWithExtrinsics}`
+                  },
+                  {
+                    label: "Invalid pose matrix count",
+                    status: invalidPoseMatrixCount === 0 ? "pass" : "fail",
+                    detail: `${invalidPoseMatrixCount}`
+                  },
+                  {
+                    label: "Tracking not TRACKING count",
+                    status: trackingNotTrackingCount === 0 ? "pass" : "warn",
+                    detail: `${trackingNotTrackingCount}`
+                  },
+                  {
+                    label: "Associated-not-synchronized count",
+                    status:
+                      readiness.frameStats.framesWithCameraPhotoAssociatedPose > 0
+                        ? "warn"
+                        : "pass",
+                    detail: `${readiness.frameStats.framesWithCameraPhotoAssociatedPose}`
+                  },
+                  {
+                    label: "Usable frame count",
+                    status: readiness.frameStats.usableForSplat > 0 ? "pass" : "fail",
+                    detail: `${readiness.frameStats.usableForSplat}`
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Export Keyframe Metadata Summary"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("Keyframe metadata summary", async () => {
+                if (!latestProject) {
+                  return [
+                    {
+                      label: "Current project",
+                      status: "fail",
+                      detail: "Create or load a scan first."
+                    }
+                  ];
+                }
+
+                const summary = createKeyframeMetadataSummary(latestProject);
+                const summaryUri = writeProjectFile(
+                  latestProject,
+                  "advanced/camera/keyframe-summary.json",
+                  JSON.stringify(summary, null, 2)
+                );
+
+                return [
+                  {
+                    label: "Keyframe metadata summary",
+                    status: summary.frames.length > 0 ? "pass" : "warn",
+                    detail: summaryUri
+                  },
+                  {
+                    label: "Summary frame count",
+                    status: summary.frames.length > 0 ? "pass" : "fail",
+                    detail: `${summary.frames.length}`
+                  },
+                  {
+                    label: "Readiness in summary",
+                    status:
+                      summary.readiness.frameStats.usableForSplat > 0
+                        ? "pass"
+                        : "warn",
+                    detail: summary.readiness.status
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Show Last Pose Matrix"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("Last pose matrix", async () => {
+                if (!latestProject) {
+                  return [
+                    {
+                      label: "Current project",
+                      status: "fail",
+                      detail: "Create or load a scan first."
+                    }
+                  ];
+                }
+
+                const frames = latestProject.capture.rotations.flatMap((rotation) =>
+                  rotation.frames.map((frame) => ({ frame, rotation }))
+                );
+                const last = frames[frames.length - 1];
+
+                if (!last) {
+                  return [
+                    {
+                      label: "Last frame",
+                      status: "fail",
+                      detail: "No frames captured."
+                    }
+                  ];
+                }
+
+                const readiness = getFramePoseReadiness(last.frame);
+                const matrix = last.frame.cameraExtrinsics?.transform;
+
+                return [
+                  {
+                    label: "Last frame",
+                    status: "pass",
+                    detail: `${last.rotation.label} frame ${last.frame.index}`
+                  },
+                  {
+                    label: "Pose synchronization",
+                    status:
+                      readiness.poseSynchronization === "shared-camera-synchronized"
+                        ? "pass"
+                        : readiness.poseSynchronization === "camera-photo-associated"
+                          ? "warn"
+                          : "fail",
+                    detail: readiness.poseSynchronization
+                  },
+                  {
+                    label: "Pose matrix",
+                    status: readiness.hasValidPoseMatrix ? "pass" : "fail",
+                    detail: matrix?.join(", ") ?? "missing"
                   }
                 ];
               });
@@ -1202,6 +1429,61 @@ interface LastKsplatStatus {
   path: string;
   size: number;
   qualityTier: string;
+}
+
+function createKeyframeMetadataSummary(manifest: ForgeScanProjectManifest): {
+  createdAt: string;
+  projectId: string;
+  projectName: string;
+  readiness: ReturnType<typeof validateTrackedCaptureForSplat>;
+  frames: {
+    imageUri: string;
+    captureSource: string;
+    timestamp: string;
+    rotationId: string;
+    frameIndex: number;
+    poseSynchronization: string;
+    trackingState: string;
+    intrinsicsPresent: boolean;
+    extrinsicsPresent: boolean;
+    poseMatrixValid: boolean;
+    poseMatrix: number[] | null;
+    usableForSplat: boolean;
+    unusableReason?: string;
+  }[];
+} {
+  const readiness = validateTrackedCaptureForSplat(manifest);
+  const frames = manifest.capture.rotations.flatMap((rotation) =>
+    rotation.frames.map((frame) => {
+      const frameReadiness = getFramePoseReadiness(frame);
+
+      return {
+        imageUri: frame.uri,
+        captureSource: frame.captureSource ?? "unknown",
+        timestamp: frame.timestamp ?? frame.capturedAt,
+        rotationId: rotation.id,
+        frameIndex: frame.index,
+        poseSynchronization: frameReadiness.poseSynchronization,
+        trackingState: frameReadiness.trackingState,
+        intrinsicsPresent: frameReadiness.hasIntrinsics,
+        extrinsicsPresent: frameReadiness.hasExtrinsics,
+        poseMatrixValid: frameReadiness.hasValidPoseMatrix,
+        poseMatrix: frame.cameraExtrinsics?.transform ?? null,
+        usableForSplat: frameReadiness.usableForSplat,
+        ...(frameReadiness.unusableReason !== undefined
+          ? { unusableReason: frameReadiness.unusableReason }
+          : {})
+      };
+    })
+  );
+
+  return {
+    createdAt: new Date().toISOString(),
+    projectId: manifest.project.id,
+    projectName: manifest.project.title,
+    readiness,
+    frames
+  };
 }
 
 function formatPresence(value: boolean | undefined): string {

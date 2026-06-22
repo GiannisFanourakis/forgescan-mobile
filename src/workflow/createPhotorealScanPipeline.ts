@@ -2,6 +2,7 @@ import { createExportTargetPlan } from "../core/exportTargets";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { ForgeScanProjectManifest } from "../core/manifest";
 import { createReconstructionPlan } from "../core/reconstructionPlan";
+import { validateTrackedCaptureForSplat } from "../capture/trackedCaptureReadiness";
 import { getNativeMaskingAvailability } from "../native/NativeMasking";
 import { getNativeKsplatOptimizerAvailability } from "../native/NativeKsplatOptimizer";
 import { runReconstructionJob } from "../reconstruction/ReconstructionJobRunner";
@@ -61,6 +62,8 @@ export async function createPhotorealScan(
     "Finished"
   ];
   const validation = validateProjectForReconstruction(manifest);
+  const trackedReadiness = validateTrackedCaptureForSplat(manifest);
+  const trackedFrameCount = trackedReadiness.frameStats.usableForSplat;
   const nativeMaskingAvailability = await getNativeMaskingAvailability();
   const nativeOptimizerAvailability =
     await getNativeKsplatOptimizerAvailability();
@@ -119,6 +122,7 @@ export async function createPhotorealScan(
 
   warnings.push(
     ...validation.warnings,
+    ...trackedReadiness.warnings,
     ...masking.warnings,
     ...maskCoverage.warnings,
     ...optimizerResult.warnings
@@ -136,18 +140,6 @@ export async function createPhotorealScan(
     );
   }
 
-  const trackedFrameCount = manifest.capture.rotations.reduce(
-    (sum, rotation) =>
-      sum +
-      rotation.frames.filter(
-        (frame) =>
-          frame.captureSource === "arcore-shared-camera" &&
-          frame.cameraIntrinsics !== undefined &&
-          frame.cameraExtrinsics?.transform?.length === 16 &&
-          frame.trackingState === "TRACKING"
-      ).length,
-    0
-  );
   if (trackedFrameCount === 0) {
     warnings.push(
       "Camera pose metadata missing. Using turntable assumptions.",
@@ -199,6 +191,26 @@ export async function createPhotorealScan(
         ? "available"
         : (nativeOptimizerAvailability.reason ??
           "Native .ksplat optimizer requires a development/native build.")
+    },
+    { label: "Tracked capture readiness", value: trackedReadiness.status },
+    {
+      label: "Pose synchronization",
+      value:
+        trackedReadiness.frameStats.framesWithSharedCameraSynchronizedPose > 0
+          ? "shared-camera-synchronized"
+          : trackedReadiness.frameStats.framesWithCameraPhotoAssociatedPose > 0
+            ? "camera-photo-associated"
+            : trackedReadiness.frameStats.framesUsingTurntableAssumptions > 0
+              ? "turntable-assumed"
+              : "missing"
+    },
+    {
+      label: "Tracked readiness counts",
+      value: `${trackedReadiness.frameStats.usableForSplat} usable / ${trackedReadiness.frameStats.totalFrames} total`
+    },
+    {
+      label: "Pose matrix count",
+      value: `${trackedReadiness.frameStats.framesWith16ValuePoseMatrix}`
     },
     { label: "Primary .ksplat target", value: photorealAsset.path },
     { label: "Optimizer input package", value: "advanced/splatting/ksplat-optimizer-input.json" },

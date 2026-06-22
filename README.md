@@ -31,6 +31,8 @@ Everything else is internal project data.
 - Android dev build uses ARCore Tracked Capture as the recommended real scan path.
 - The real scan path does not launch the Android stock camera app. Stock camera intents/plain MP4 are unsuitable for Gaussian Splat training because they do not provide synchronized camera pose matrices.
 - ARCore Tracked Capture starts a native ARCore SharedCamera-capable session, saves real image frames, and writes camera intrinsics/extrinsics to `advanced/camera/keyframes.json` when ARCore tracking is available.
+- The current verified Android keyframe path pairs CameraX still frames with ARCore pose metadata and marks those frames as `camera-photo-associated`.
+- `shared-camera-synchronized` is reserved for a future verified Camera2/SharedCamera image stream. The app records `poseSynchronization` so diagnostics and optimizer input never confuse the two modes.
 - Basic Camera Capture remains fallback/debug capture only and is labeled untracked.
 - Android dev build uses a native CameraX full-screen preview for ForgeScan controls, pinch/toolbar zoom, timed keyframes, photo fallback, and video fallback.
 - Video mode requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
@@ -74,6 +76,7 @@ Internal camera and optimizer data are written to:
 
 ```text
 advanced/camera/keyframes.json
+advanced/camera/keyframe-summary.json
 advanced/splatting/ksplat-optimizer-input.json
 ```
 
@@ -89,6 +92,9 @@ Buttons:
 - `Start ARCore Session Test`
 - `Capture One Tracked Keyframe`
 - `Run Timed Keyframe Capture Test`
+- `Validate Current Tracked Capture`
+- `Export Keyframe Metadata Summary`
+- `Show Last Pose Matrix`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
 - `Test Gaussian Splat Optimizer`
@@ -96,7 +102,7 @@ Buttons:
 - `Run Tiny .ksplat Writer Test`
 - `Run Full Android Scan Test`
 
-Diagnostics show Android camera hardware support, ARCore/SharedCamera status, Camera2 session availability, intrinsics/extrinsics capture, lock support, ML Kit status, mask threshold, optimizer pose source, `.ksplat` writer status, last output paths/sizes, and native errors.
+Diagnostics show Android camera hardware support, ARCore/SharedCamera status, Camera2 session availability, intrinsics/extrinsics capture, pose synchronization mode, lock support, ML Kit status, mask threshold, optimizer pose source, `.ksplat` writer status, last output paths/sizes, and native errors.
 
 ## Commands
 
@@ -127,7 +133,8 @@ $env:Path="$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME
 ## Known Limitations
 
 - ARCore SharedCamera session/keyframe APIs are implemented for Android dev builds, but device runtime may still return untracked frames when ARCore cannot acquire tracking.
-- The current tracked keyframe flow pairs the native CameraX still frame with ARCore pose metadata. A deeper Camera2 shared image stream is still an upgrade path.
+- The current tracked keyframe flow pairs the native CameraX still frame with ARCore pose metadata and is marked `camera-photo-associated`, not `shared-camera-synchronized`.
+- A deeper Camera2 SharedCamera synchronized image stream is still future hardening.
 - Manual ISO/shutter/focus depends on the device exposing Camera2 `MANUAL_SENSOR`; otherwise the capture menu keeps auto mode.
 - Android Gaussian Splat V1 is a small phone-safe optimizer, not production 3DGS.
 - GPU/Vulkan compute is prepared only; CPU/local V1 is the working path.
