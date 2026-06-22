@@ -54,7 +54,11 @@ export function createKsplatOptimizerInput(
         ...(frame.cameraExtrinsics !== undefined
           ? { cameraExtrinsics: frame.cameraExtrinsics }
           : {}),
-        ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {})
+        ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
+        ...(frame.exposureMetadata !== undefined
+          ? { exposureMetadata: frame.exposureMetadata }
+          : {}),
+        ...(frame.lensMetadata !== undefined ? { lensMetadata: frame.lensMetadata } : {})
       };
     })
   );
@@ -99,7 +103,8 @@ export function createKsplatOptimizerInput(
       nativePreferred: true,
       objectTurntableMode: true,
       objectMaskThreshold: 0.85,
-      poseSource: cameraData.poseSource
+      poseSource: cameraData.poseSource,
+      useCameraPoses: cameraData.poseSource === "arcore-shared-camera"
     },
     frameSampling: {
       targetKeyframeIntervalSeconds: 0.5,
@@ -108,7 +113,8 @@ export function createKsplatOptimizerInput(
     createdAt: new Date().toISOString(),
     notes: [
       "Native .ksplat optimizer input package for controlled object splatting.",
-      "Expo Go writes this package internally but does not generate a fake .ksplat."
+      "Expo Go writes this package internally but does not generate a fake .ksplat.",
+      ...cameraData.warnings
     ]
   };
 }
@@ -116,17 +122,42 @@ export function createKsplatOptimizerInput(
 function createCameraData(
   manifest: ForgeScanProjectManifest
 ): KsplatCameraData {
-  const hasTrackedPose = manifest.capture.rotations.some((rotation) =>
-    rotation.frames.some((frame) => frame.cameraExtrinsics !== undefined)
+  const allFrames = manifest.capture.rotations.flatMap((rotation) =>
+    rotation.frames.map((frame, index) => ({
+      frame,
+      rotation,
+      index
+    }))
   );
+  const trackedFrames = allFrames.filter(
+    ({ frame }) =>
+      frame.captureSource === "arcore-shared-camera" &&
+      frame.cameraIntrinsics !== undefined &&
+      frame.cameraExtrinsics?.transform?.length === 16 &&
+      frame.trackingState === "TRACKING"
+  );
+  const hasTrackedPose = trackedFrames.length > 0;
+  const untrackedFrameCount = allFrames.length - trackedFrames.length;
+  const warnings = hasTrackedPose
+    ? untrackedFrameCount > 0
+      ? [
+          "Some frames are missing ARCore pose metadata and may be ignored or use turntable assumptions."
+        ]
+      : []
+    : [
+        "Camera pose metadata missing. Using turntable assumptions.",
+        "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+      ];
 
   return {
     cameraModel: "unknown-mobile-camera",
-    poseSource: hasTrackedPose ? "arcore" : "ordered-turntable-fallback",
+    poseSource: hasTrackedPose ? "arcore-shared-camera" : "ordered-turntable-fallback",
     motion: "controlled-object-turntable",
     fallbackTurntablePoseUsed: !hasTrackedPose,
-    frames: manifest.capture.rotations.flatMap((rotation) =>
-      rotation.frames.map((frame, index) => ({
+    trackedFrameCount: trackedFrames.length,
+    untrackedFrameCount,
+    warnings,
+    frames: allFrames.map(({ frame, rotation, index }) => ({
         rotationId: rotation.id,
         frameIndex: frame.index,
         frameUri: frame.uri,
@@ -140,6 +171,7 @@ function createCameraData(
           ? { cameraExtrinsics: frame.cameraExtrinsics }
           : {}),
         ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
+        ...(frame.timestamp !== undefined ? { timestamp: frame.timestamp } : {}),
         assumedPose: {
           yawDegrees:
             rotation.frames.length > 0
@@ -150,9 +182,8 @@ function createCameraData(
               ? 0
               : rotation.id === "tilted"
                 ? 45
-                : 160
+              : 160
         }
       }))
-    )
   };
 }

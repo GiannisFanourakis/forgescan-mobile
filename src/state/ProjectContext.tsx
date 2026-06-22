@@ -11,6 +11,11 @@ import {
 } from "react";
 
 import {
+  CameraExposureMetadata,
+  CameraExtrinsics,
+  CameraIntrinsics,
+  CameraLensMetadata,
+  CaptureSource,
   ForgeScanProjectManifest,
   ReconstructionModelId,
   RotationId,
@@ -41,6 +46,15 @@ interface CapturedPhotoInput {
   uri: string;
   width?: number;
   height?: number;
+  capturedAt?: string;
+  captureSource?: CaptureSource;
+  timestamp?: string;
+  cameraIntrinsics?: CameraIntrinsics;
+  cameraExtrinsics?: CameraExtrinsics;
+  trackingState?: string;
+  exposureMetadata?: CameraExposureMetadata;
+  lensMetadata?: CameraLensMetadata;
+  cameraTransformConvention?: string;
 }
 
 interface CapturedVideoInput {
@@ -232,7 +246,30 @@ export function ProjectProvider({
           notes: []
         },
         ...(photo.width !== undefined ? { width: photo.width } : {}),
-        ...(photo.height !== undefined ? { height: photo.height } : {})
+        ...(photo.height !== undefined ? { height: photo.height } : {}),
+        ...(photo.capturedAt !== undefined ? { capturedAt: photo.capturedAt } : {}),
+        ...(photo.captureSource !== undefined
+          ? { captureSource: photo.captureSource }
+          : {}),
+        ...(photo.timestamp !== undefined ? { timestamp: photo.timestamp } : {}),
+        ...(photo.cameraIntrinsics !== undefined
+          ? { cameraIntrinsics: photo.cameraIntrinsics }
+          : {}),
+        ...(photo.cameraExtrinsics !== undefined
+          ? { cameraExtrinsics: photo.cameraExtrinsics }
+          : {}),
+        ...(photo.trackingState !== undefined
+          ? { trackingState: photo.trackingState }
+          : {}),
+        ...(photo.exposureMetadata !== undefined
+          ? { exposureMetadata: photo.exposureMetadata }
+          : {}),
+        ...(photo.lensMetadata !== undefined
+          ? { lensMetadata: photo.lensMetadata }
+          : {}),
+        ...(photo.cameraTransformConvention !== undefined
+          ? { cameraTransformConvention: photo.cameraTransformConvention }
+          : {})
       });
 
       persistProjectManifest(updatedProject);
@@ -296,6 +333,7 @@ export function ProjectProvider({
     (projectId: string, rotationId: RotationId) => {
       updateProject(projectId, (project) =>
         addFrameToRotation(project, rotationId, {
+          captureSource: "simulated",
           qualityChecks: {
             blur: "not-run",
             exposure: "not-run",

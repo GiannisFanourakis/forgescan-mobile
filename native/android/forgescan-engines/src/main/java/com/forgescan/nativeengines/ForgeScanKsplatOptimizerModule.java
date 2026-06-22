@@ -104,6 +104,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       result.put("finalLoss", stats.finalLoss);
       result.put("optimizerRuntimeStatus", "trainable-loop-complete");
       result.put("optimizerBlocker", "none");
+      putPoseDiagnostics(input, result);
       result.put("warnings", new JSONArray()
         .put("Generated experimental .ksplat from trainable Android V1.")
         .put("This is Android V1 optimization, not final production 3DGS quality."));
@@ -247,6 +248,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     result.put("finalLoss", JSONObject.NULL);
     result.put("optimizerRuntimeStatus", validOutput ? "coarse-fallback-complete" : "failed");
     result.put("optimizerBlocker", "trainable-loop-failed: " + trainableError.getMessage());
+    putPoseDiagnostics(input, result);
     result.put("warnings", new JSONArray()
       .put("Coarse on-phone splat generated. Quality is limited.")
       .put("Trainable Android V1 failed before completion: " + trainableError.getMessage()));
@@ -325,6 +327,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
         image,
         mask,
         estimateYaw(frame, frames),
+        hasCameraPose(frame),
         frame.optString("rotationId"),
         frame.optInt("frameIndex")
       ));
@@ -487,6 +490,11 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   }
 
   private float estimateYaw(JSONObject frame, JSONArray frames) {
+    Float poseYaw = estimateYawFromPose(frame);
+    if (poseYaw != null) {
+      return poseYaw;
+    }
+
     String rotationId = frame.optString("rotationId");
     int frameIndex = frame.optInt("frameIndex");
     int sameRotationCount = 0;
@@ -506,11 +514,62 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     return sameRotationCount == 0 ? 0 : ((orderInRotation - 1) / (float) sameRotationCount) * 360.0f;
   }
 
+  private Float estimateYawFromPose(JSONObject frame) {
+    JSONObject extrinsics = frame.optJSONObject("cameraExtrinsics");
+    if (extrinsics == null) {
+      return null;
+    }
+
+    JSONArray transform = extrinsics.optJSONArray("transform");
+    if (transform == null || transform.length() < 16) {
+      return null;
+    }
+
+    double tx = transform.optDouble(12, 0.0);
+    double tz = transform.optDouble(14, 0.0);
+    if (Math.abs(tx) > 0.00001 || Math.abs(tz) > 0.00001) {
+      double yaw = Math.toDegrees(Math.atan2(tx, tz));
+      return (float) normalizeDegrees(yaw);
+    }
+
+    double forwardX = transform.optDouble(8, 0.0);
+    double forwardZ = transform.optDouble(10, 1.0);
+    return (float) normalizeDegrees(Math.toDegrees(Math.atan2(forwardX, forwardZ)));
+  }
+
+  private boolean hasCameraPose(JSONObject frame) {
+    JSONObject intrinsics = frame.optJSONObject("cameraIntrinsics");
+    JSONObject extrinsics = frame.optJSONObject("cameraExtrinsics");
+    JSONArray transform = extrinsics == null ? null : extrinsics.optJSONArray("transform");
+    return intrinsics != null &&
+      transform != null &&
+      transform.length() == 16 &&
+      "arcore-shared-camera".equals(frame.optString("captureSource"));
+  }
+
+  private double normalizeDegrees(double degrees) {
+    double normalized = degrees % 360.0;
+    return normalized < 0 ? normalized + 360.0 : normalized;
+  }
+
+  private void putPoseDiagnostics(JSONObject input, JSONObject result) throws Exception {
+    JSONObject cameraData = input.optJSONObject("cameraData");
+    JSONObject settings = input.optJSONObject("optimizerSettings");
+    String poseSource = cameraData == null
+      ? "ordered-turntable-fallback"
+      : cameraData.optString("poseSource", "ordered-turntable-fallback");
+    boolean useCameraPoses = settings != null && settings.optBoolean("useCameraPoses", false);
+    result.put("poseSource", poseSource);
+    result.put("useCameraPoses", useCameraPoses && "arcore-shared-camera".equals(poseSource));
+    result.put("trackedFrameCount", cameraData == null ? 0 : cameraData.optInt("trackedFrameCount", 0));
+    result.put("untrackedFrameCount", cameraData == null ? 0 : cameraData.optInt("untrackedFrameCount", 0));
+  }
+
   private List<TrainingSample> syntheticTrainingSamples() {
     List<TrainingSample> samples = new ArrayList<>();
-    samples.add(new TrainingSample(syntheticImage(0), syntheticMask(), 0.0f, "smoke", 1));
-    samples.add(new TrainingSample(syntheticImage(1), syntheticMask(), 90.0f, "smoke", 2));
-    samples.add(new TrainingSample(syntheticImage(2), syntheticMask(), 180.0f, "smoke", 3));
+    samples.add(new TrainingSample(syntheticImage(0), syntheticMask(), 0.0f, false, "smoke", 1));
+    samples.add(new TrainingSample(syntheticImage(1), syntheticMask(), 90.0f, false, "smoke", 2));
+    samples.add(new TrainingSample(syntheticImage(2), syntheticMask(), 180.0f, false, "smoke", 3));
     return samples;
   }
 
@@ -636,13 +695,15 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     final Bitmap image;
     final Bitmap mask;
     final float yawDegrees;
+    final boolean usesCameraPose;
     final String rotationId;
     final int frameIndex;
 
-    TrainingSample(Bitmap image, Bitmap mask, float yawDegrees, String rotationId, int frameIndex) {
+    TrainingSample(Bitmap image, Bitmap mask, float yawDegrees, boolean usesCameraPose, String rotationId, int frameIndex) {
       this.image = image;
       this.mask = mask;
       this.yawDegrees = yawDegrees;
+      this.usesCameraPose = usesCameraPose;
       this.rotationId = rotationId;
       this.frameIndex = frameIndex;
     }

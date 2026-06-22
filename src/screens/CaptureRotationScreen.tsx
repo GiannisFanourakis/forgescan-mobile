@@ -12,6 +12,7 @@ import {
   Text,
   View
 } from "react-native";
+import type { GestureResponderEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Screen } from "../components/Screen";
@@ -31,14 +32,27 @@ import type {
   NativeAdvancedCameraAvailability,
   NativeCameraXVideoQuality
 } from "../native/NativeAdvancedCameraTypes";
+import {
+  captureNativeARKeyframe,
+  endNativeARCaptureSession,
+  getNativeARCaptureAvailability,
+  getNativeARCaptureSessionStatus,
+  startNativeARCaptureSession
+} from "../native/NativeARCapture";
+import type {
+  NativeARCaptureResult,
+  NativeARCaptureStatus
+} from "../native/NativeARCaptureTypes";
 import { NativeCameraXView } from "../native/NativeCameraXView";
 import { useProjects } from "../state/ProjectContext";
+import { getProjectStoragePaths } from "../storage/projectStorage";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CaptureRotation">;
 type CameraMode = "photo" | "burst" | "video";
 type ToolbarMenu = "camera" | "frames" | "actions";
 type BurstIntervalMs = 500 | 1000 | 2000;
+type RealCapturePath = "arcore-tracked" | "basic-untracked";
 
 const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
   { label: "Camera", value: "camera" },
@@ -50,6 +64,11 @@ const cameraModes: { label: string; value: CameraMode }[] = [
   { label: "Photo", value: "photo" },
   { label: "Burst", value: "burst" },
   { label: "Video", value: "video" }
+];
+
+const realCapturePaths: { label: string; value: RealCapturePath }[] = [
+  { label: "Tracked", value: "arcore-tracked" },
+  { label: "Basic", value: "basic-untracked" }
 ];
 
 const burstIntervalOptions: { label: string; value: BurstIntervalMs }[] = [
@@ -97,6 +116,8 @@ export function CaptureRotationScreen({
   const burstDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const burstDelayResolveRef = useRef<(() => void) | null>(null);
   const videoStartedAtRef = useRef<number | null>(null);
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef(0);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [activeMenu, setActiveMenu] = useState<ToolbarMenu | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("photo");
@@ -111,6 +132,11 @@ export function CaptureRotationScreen({
   const [manualFocusDistance, setManualFocusDistance] = useState(0);
   const [burstIntervalMs, setBurstIntervalMs] =
     useState<BurstIntervalMs>(1000);
+  const [capturePath, setCapturePath] =
+    useState<RealCapturePath>("arcore-tracked");
+  const [arCaptureStatus, setArCaptureStatus] =
+    useState<NativeARCaptureStatus>("not-started");
+  const [poseStatus, setPoseStatus] = useState("Pose not started");
   const [isCapturing, setIsCapturing] = useState(false);
   const [isBurstRunning, setIsBurstRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -140,7 +166,23 @@ export function CaptureRotationScreen({
     void getNativeAdvancedCameraAvailability().then(
       setAdvancedCameraAvailability
     );
+    void getNativeARCaptureAvailability().then((availability) => {
+      setPoseStatus(
+        availability.arCoreAvailable
+          ? "ARCore ready"
+          : "ARCore unavailable"
+      );
+    });
   }, []);
+
+  useEffect(
+    () => () => {
+      if (Platform.OS === "android") {
+        void endNativeARCaptureSession();
+      }
+    },
+    []
+  );
 
   if (!project || !rotation) {
     return (
@@ -161,6 +203,7 @@ export function CaptureRotationScreen({
       ? Math.min(100, (frameCount / recommendedFrameCount) * 100)
       : 0;
   const projectId = project.project.id;
+  const projectTitle = project.project.title;
   const rotationId = rotation.id;
   const nextFrameNumber = frameCount + 1;
   const nativeCameraAvailable =
@@ -178,6 +221,11 @@ export function CaptureRotationScreen({
   const shutterRangeNs =
     bestBackCamera?.exposureTimeRangeNs ?? DEFAULT_SHUTTER_RANGE_NS;
   const maxFocusDistance = bestBackCamera?.minimumFocusDistance ?? 0;
+  const projectDirectoryUri = getProjectStoragePaths(project).projectUri;
+  const captureModeCopy =
+    capturePath === "arcore-tracked"
+      ? "ARCore Tracked Capture saves frames + camera poses for Gaussian Splatting."
+      : "Untracked capture - not suitable for real Gaussian Splat optimization.";
 
   async function requestCameraPermission(): Promise<void> {
     if (Platform.OS !== "android") {
@@ -225,6 +273,8 @@ export function CaptureRotationScreen({
     setCaptureError(null);
 
     try {
+      const trackingReady =
+        capturePath === "arcore-tracked" ? await ensureTrackedCaptureSession() : false;
       const photo = await captureNativeCameraXPhoto({
         projectId,
         rotationId,
@@ -232,11 +282,49 @@ export function CaptureRotationScreen({
         videoQuality
       });
 
+      const trackedKeyframe =
+        capturePath === "arcore-tracked" && trackingReady
+          ? await captureTrackedKeyframe(photo)
+          : null;
+      const keyframe = trackedKeyframe?.keyframe;
+      const tracked =
+        trackedKeyframe?.status === "tracked" &&
+        keyframe?.captureSource === "arcore-shared-camera" &&
+        keyframe.cameraIntrinsics !== undefined &&
+        keyframe.cameraExtrinsics !== undefined;
+
       await addCapturedFrame(projectId, rotationId, {
         uri: photo.uri,
         ...(photo.width && photo.width > 0 ? { width: photo.width } : {}),
-        ...(photo.height && photo.height > 0 ? { height: photo.height } : {})
+        ...(photo.height && photo.height > 0 ? { height: photo.height } : {}),
+        captureSource: tracked ? "arcore-shared-camera" : "camera",
+        timestamp: keyframe?.timestamp ?? new Date().toISOString(),
+        ...(keyframe?.cameraIntrinsics !== undefined
+          ? { cameraIntrinsics: keyframe.cameraIntrinsics }
+          : {}),
+        ...(keyframe?.cameraExtrinsics !== undefined
+          ? { cameraExtrinsics: keyframe.cameraExtrinsics }
+          : {}),
+        ...(keyframe?.trackingState !== undefined
+          ? { trackingState: keyframe.trackingState }
+          : {}),
+        ...(keyframe?.exposureMetadata !== undefined
+          ? { exposureMetadata: keyframe.exposureMetadata }
+          : {}),
+        ...(keyframe?.lensMetadata !== undefined
+          ? { lensMetadata: keyframe.lensMetadata }
+          : {}),
+        ...(keyframe?.cameraTransformConvention !== undefined
+          ? { cameraTransformConvention: keyframe.cameraTransformConvention }
+          : {})
       });
+      setPoseStatus(
+        tracked
+          ? "Pose captured"
+          : capturePath === "arcore-tracked"
+            ? "Untracked frame saved"
+            : "Basic untracked frame"
+      );
       return true;
     } catch (error: unknown) {
       setCaptureError(
@@ -289,6 +377,12 @@ export function CaptureRotationScreen({
     }
 
     setCaptureError(null);
+    if (capturePath === "arcore-tracked") {
+      setCaptureError(
+        "Plain video is Basic untracked capture here. Real Gaussian Splat scans need tracked keyframes."
+      );
+      return;
+    }
     setIsRecording(true);
     setCaptureStatus("Recording video");
     videoStartedAtRef.current = Date.now();
@@ -327,6 +421,86 @@ export function CaptureRotationScreen({
 
   function setZoomLevel(value: number): void {
     setCameraZoom(Math.max(0, Math.min(1, value)));
+  }
+
+  async function ensureTrackedCaptureSession(): Promise<boolean> {
+    if (Platform.OS !== "android") {
+      setPoseStatus("Android dev build required");
+      return false;
+    }
+
+    if (arCaptureStatus === "ready" || arCaptureStatus === "tracked") {
+      const status = await getNativeARCaptureSessionStatus();
+      if (status.sessionRunning) {
+        return true;
+      }
+    }
+
+    setPoseStatus("Starting ARCore");
+    const result = await startNativeARCaptureSession({
+      projectId,
+      projectName: projectTitle,
+      projectDirectoryUri,
+      outputDirectory: "advanced/camera",
+      lockExposure: true,
+      lockWhiteBalance: true,
+      lockFocus: true,
+      preferredLens: "default",
+      keyframeIntervalMs: 500,
+      maxKeyframes: 60,
+      minKeyframes: 40,
+      imageResolutionPreset: "high",
+      objectScanMode: true,
+      manualIso,
+      manualShutterNs
+    });
+    setArCaptureStatus(result.status);
+    setPoseStatus(result.sharedCameraSessionStarted ? "ARCore tracking" : "ARCore unavailable");
+    if (result.status === "failed") {
+      setCaptureError(
+        result.errors?.[0] ??
+          "ARCore SharedCamera session failed. Basic capture remains available."
+      );
+      return false;
+    }
+    return result.status === "ready";
+  }
+
+  async function captureTrackedKeyframe(photo: {
+    uri: string;
+    width?: number;
+    height?: number;
+  }): Promise<NativeARCaptureResult | null> {
+    const result = await captureNativeARKeyframe({
+      projectId,
+      projectDirectoryUri,
+      rotationId,
+      frameIndex: nextFrameNumber,
+      sourceFrameUri: photo.uri,
+      ...(photo.width && photo.width > 0 ? { width: photo.width } : {}),
+      ...(photo.height && photo.height > 0 ? { height: photo.height } : {}),
+      timestamp: new Date().toISOString(),
+      outputDirectory: "advanced/camera",
+      lockExposure: true,
+      lockWhiteBalance: true,
+      lockFocus: true,
+      preferredLens: "default",
+      keyframeIntervalMs: 500,
+      maxKeyframes: 60,
+      minKeyframes: 40,
+      imageResolutionPreset: "high",
+      objectScanMode: true,
+      manualIso,
+      manualShutterNs
+    });
+    setArCaptureStatus(result.status);
+    if (result.status !== "tracked") {
+      setCaptureError(
+        result.warnings?.[0] ??
+          "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+      );
+    }
+    return result;
   }
 
   function setManualIsoLevel(value: number): void {
@@ -380,6 +554,30 @@ export function CaptureRotationScreen({
     resolveDelay?.();
   }
 
+  function shouldStartPinchResponder(event: GestureResponderEvent): boolean {
+    return event.nativeEvent.touches.length >= 2;
+  }
+
+  function handlePinchGrant(event: GestureResponderEvent): void {
+    pinchStartDistanceRef.current = getTouchDistance(event);
+    pinchStartZoomRef.current = cameraZoom;
+  }
+
+  function handlePinchMove(event: GestureResponderEvent): void {
+    const startDistance = pinchStartDistanceRef.current;
+    const currentDistance = getTouchDistance(event);
+    if (!startDistance || !currentDistance) {
+      return;
+    }
+
+    const delta = (currentDistance - startDistance) / 280;
+    setZoomLevel(pinchStartZoomRef.current + delta);
+  }
+
+  function handlePinchRelease(): void {
+    pinchStartDistanceRef.current = null;
+  }
+
   function handleCompleteRotation(): void {
     completeRotation(projectId, rotationId);
     navigation.navigate("CapturePlan", { projectId });
@@ -404,7 +602,15 @@ export function CaptureRotationScreen({
   const shutterDisabled = hasCameraPermission ? primaryActionDisabled : false;
 
   return (
-    <View style={styles.cameraRoot}>
+    <View
+      onMoveShouldSetResponderCapture={shouldStartPinchResponder}
+      onResponderGrant={handlePinchGrant}
+      onResponderMove={handlePinchMove}
+      onResponderRelease={handlePinchRelease}
+      onResponderTerminate={handlePinchRelease}
+      onStartShouldSetResponderCapture={shouldStartPinchResponder}
+      style={styles.cameraRoot}
+    >
       <StatusBar style="light" translucent />
       {hasCameraPermission && isFocused && NativeCameraXView ? (
         <NativeCameraXView
@@ -475,6 +681,7 @@ export function CaptureRotationScreen({
                 {captureStatus ?? `Frame ${nextFrameNumber}`}
               </Text>
               <Text style={styles.previewStatusValue}>{rotation.angleHint}</Text>
+              <Text style={styles.previewStatusValue}>{poseStatus}</Text>
             </View>
             <View style={styles.coverageBadge}>
               <Text style={styles.coverageValue}>{getCoverageLabel(frameCount)}</Text>
@@ -493,6 +700,38 @@ export function CaptureRotationScreen({
           ) : coverageWarning ? (
             <Text style={styles.warningText}>{coverageWarning}</Text>
           ) : null}
+
+          <View style={styles.capturePathStrip}>
+            {realCapturePaths.map((path) => (
+              <Pressable
+                accessibilityRole="button"
+                disabled={isRecording || isBurstRunning}
+                key={path.value}
+                onPress={() => setCapturePath(path.value)}
+                style={({ pressed }) => [
+                  styles.capturePathItem,
+                  capturePath === path.value
+                    ? styles.capturePathItemActive
+                    : undefined,
+                  pressed && !isRecording && !isBurstRunning
+                    ? styles.pressed
+                    : undefined
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.capturePathText,
+                    capturePath === path.value
+                      ? styles.capturePathTextActive
+                      : undefined
+                  ]}
+                >
+                  {path.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
 
           <View style={styles.zoomRow}>
             <Pressable
@@ -669,6 +908,36 @@ export function CaptureRotationScreen({
               <Text style={styles.menuTitle}>Camera</Text>
               <Text style={styles.menuMeta}>
                 CameraX / {manualControlsEnabled ? "manual" : cameraMode}
+              </Text>
+            </View>
+            <View style={styles.optionGroup}>
+              <Text style={styles.optionGroupTitle}>Real Scan</Text>
+              <View style={styles.optionRow}>
+                <CompactMenuButton
+                  disabled={
+                    capturePath !== "arcore-tracked" ||
+                    isRecording ||
+                    isBurstRunning
+                  }
+                  label="Start Tracked"
+                  tone="primary"
+                  onPress={() => {
+                    void ensureTrackedCaptureSession();
+                  }}
+                />
+                <CompactMenuButton
+                  disabled={capturePath !== "arcore-tracked"}
+                  label="AR Status"
+                  onPress={() => {
+                    void getNativeARCaptureSessionStatus().then((result) => {
+                      setArCaptureStatus(result.status);
+                      setPoseStatus(result.trackingState ?? "unknown");
+                    });
+                  }}
+                />
+              </View>
+              <Text style={styles.warningText}>
+                Locking camera settings improves scan consistency.
               </Text>
             </View>
             <View style={styles.optionGroup}>
@@ -1011,6 +1280,19 @@ function formatShutterSpeed(shutterNs: number): string {
   return `1/${Math.round(1 / seconds)}`;
 }
 
+function getTouchDistance(event: GestureResponderEvent): number | null {
+  const first = event.nativeEvent.touches[0];
+  const second = event.nativeEvent.touches[1];
+
+  if (!first || !second) {
+    return null;
+  }
+
+  const x = first.pageX - second.pageX;
+  const y = first.pageY - second.pageY;
+  return Math.sqrt(x * x + y * y);
+}
+
 const styles = StyleSheet.create({
   missingTitle: {
     color: colors.text,
@@ -1202,6 +1484,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     lineHeight: 14
+  },
+  capturePathStrip: {
+    flexDirection: "row",
+    gap: spacing.xs
+  },
+  capturePathItem: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 28
+  },
+  capturePathItemActive: {
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff"
+  },
+  capturePathText: {
+    color: "#dfece8",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  capturePathTextActive: {
+    color: "#101817"
+  },
+  capturePathHelp: {
+    color: "#dfece8",
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 13
   },
   zoomRow: {
     alignItems: "center",

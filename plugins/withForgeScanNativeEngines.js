@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const {
+  AndroidConfig,
+  withAndroidManifest,
   withDangerousMod,
   withMainApplication
 } = require("@expo/config-plugins");
@@ -163,6 +165,46 @@ function addJavaPackage(contents) {
   return nextContents;
 }
 
+function ensureUsesFeature(androidManifest, featureName, required) {
+  const manifest = androidManifest.manifest;
+  manifest["uses-feature"] = manifest["uses-feature"] || [];
+  const features = manifest["uses-feature"];
+  const existing = features.find(
+    (feature) => feature.$?.["android:name"] === featureName
+  );
+
+  if (existing) {
+    existing.$["android:required"] = required ? "true" : "false";
+    return;
+  }
+
+  features.push({
+    $: {
+      "android:name": featureName,
+      "android:required": required ? "true" : "false"
+    }
+  });
+}
+
+function ensureApplicationMetaData(application, name, value) {
+  application["meta-data"] = application["meta-data"] || [];
+  const existing = application["meta-data"].find(
+    (entry) => entry.$?.["android:name"] === name
+  );
+
+  if (existing) {
+    existing.$["android:value"] = value;
+    return;
+  }
+
+  application["meta-data"].push({
+    $: {
+      "android:name": name,
+      "android:value": value
+    }
+  });
+}
+
 function withForgeScanNativeEngines(config) {
   config = withDangerousMod(config, [
     "android",
@@ -199,6 +241,19 @@ function withForgeScanNativeEngines(config) {
       return modConfig;
     }
   ]);
+
+  config = withAndroidManifest(config, (modConfig) => {
+    const androidManifest = modConfig.modResults;
+    const application = AndroidConfig.Manifest.getMainApplicationOrThrow(
+      androidManifest
+    );
+
+    ensureUsesFeature(androidManifest, "android.hardware.camera", false);
+    ensureUsesFeature(androidManifest, "android.hardware.camera.ar", false);
+    ensureApplicationMetaData(application, "com.google.ar.core", "optional");
+
+    return modConfig;
+  });
 
   return withMainApplication(config, (modConfig) => {
     const { modResults } = modConfig;

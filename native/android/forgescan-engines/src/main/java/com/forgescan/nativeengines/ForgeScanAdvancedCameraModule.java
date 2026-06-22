@@ -42,8 +42,8 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
       result.put("camera2Available", cameraManager != null);
       result.put("cameraXCaptureImplemented", true);
       result.put("camera2ManualCaptureImplemented", false);
-      result.put("arCoreSharedCameraImplemented", false);
-      result.put("recommendedNativePath", "CameraX preview/photo/video is the default Android capture path. Manual ISO/shutter/focus are applied through Camera2 interop when the device exposes MANUAL_SENSOR.");
+      result.put("arCoreSharedCameraImplemented", true);
+      result.put("recommendedNativePath", "ARCore tracked keyframes are the real scan path. Basic CameraX photo/video remains fallback-only because it does not carry camera pose matrices.");
 
       JSONArray cameras = new JSONArray();
       boolean hasBackCamera = false;
@@ -89,7 +89,8 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
       result.put(
         "warnings",
         new JSONArray()
-          .put("Native CameraX is the active Android capture path in development builds.")
+          .put("ARCore tracked keyframes are the recommended real scan path in development builds.")
+          .put("Basic CameraX photo/video capture is fallback-only and untracked.")
           .put("Manual ISO/shutter/focus locks are active through Camera2 interop on devices with MANUAL_SENSOR.")
           .put("4K and frame-rate availability are device/profile-specific and are selected through CameraX quality profiles.")
       );

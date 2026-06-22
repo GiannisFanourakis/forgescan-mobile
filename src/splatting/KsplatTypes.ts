@@ -2,6 +2,7 @@ import {
   CameraExtrinsics,
   CameraIntrinsics,
   CaptureSource,
+  CameraExposureMetadata,
   RotationId
 } from "../core/manifest";
 
@@ -50,6 +51,13 @@ export interface OrderedFrameInput {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  exposureMetadata?: CameraExposureMetadata;
+  lensMetadata?: {
+    preferredLens?: string;
+    cameraId?: string;
+    physicalCameraId?: string;
+    focalLengthMm?: number;
+  };
 }
 
 export interface ObjectMaskInput {
@@ -75,6 +83,8 @@ export interface CameraFrameData {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  timestamp?: string;
+  maskPath?: string;
   assumedPose: {
     yawDegrees: number;
     tiltDegrees: number;
@@ -83,9 +93,12 @@ export interface CameraFrameData {
 
 export interface KsplatCameraData {
   cameraModel: "unknown-mobile-camera";
-  poseSource: "arcore" | "ordered-turntable-fallback";
+  poseSource: "arcore-shared-camera" | "ordered-turntable-fallback";
   motion: "controlled-object-turntable";
   fallbackTurntablePoseUsed: boolean;
+  trackedFrameCount: number;
+  untrackedFrameCount: number;
+  warnings: string[];
   frames: CameraFrameData[];
 }
 
@@ -100,5 +113,6 @@ export interface KsplatOptimizerSettings {
   nativePreferred: boolean;
   objectTurntableMode: boolean;
   objectMaskThreshold: number;
-  poseSource: "arcore" | "ordered-turntable-fallback";
+  poseSource: "arcore-shared-camera" | "ordered-turntable-fallback";
+  useCameraPoses: boolean;
 }

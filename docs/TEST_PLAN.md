@@ -35,7 +35,7 @@ preview.gif
     - `preview.mp4`
     - `preview.gif`
 
-## Android Real V1 Test
+## Android Real Tracked Scan Test
 
 Requirements:
 
@@ -43,6 +43,7 @@ Requirements:
 - Android development/native build, not Expo Go.
 - Android SDK installed.
 - USB debugging enabled.
+- ARCore-capable phone.
 - Good lighting and static background.
 - Object on a turntable or stable surface.
 
@@ -53,37 +54,52 @@ npm install
 npm run typecheck
 npx expo prebuild
 npx expo run:android
+npm run start
 ```
 
 Phone flow:
 
 1. Open the Android dev build.
-2. Create a project.
-3. Open the first capture rotation.
-4. Confirm the camera preview covers the full screen and is powered by native CameraX.
-5. Use zoom controls and confirm preview zoom changes.
-6. Open the Camera menu and toggle Manual exposure if supported.
-7. Adjust ISO, shutter, and focus; confirm the preview stays live.
-8. Capture upright rotation with photo or timed burst.
-9. Switch to video, select 4K, record a short clip, and stop recording.
-10. Capture tilted rotation.
-11. Optional: capture underside rotation.
-12. Complete the rotations manually.
-13. Tap `Create .ksplat Preview`.
-14. Confirm Project Review shows:
+2. Open `Native Engine Diagnostics`.
+3. Tap `Test ARCore Availability`.
+4. Confirm ARCore available, SharedCamera supported, Camera2 available, and camera lock support is reported.
+5. Tap `Start ARCore Session Test`.
+6. Confirm the SharedCamera session starts or fails with a clear native error.
+7. Create a project.
+8. Open the first capture rotation.
+9. Confirm the camera preview covers the full screen.
+10. Confirm the capture mode is `Tracked`.
+11. Pinch on the preview and confirm zoom changes.
+12. Tap `Start Tracked` from the Camera menu.
+13. Capture one keyframe.
+14. Confirm pose status says `Pose captured`, or if ARCore cannot track, it says the frame is untracked.
+15. Capture 40-60 upright keyframes with photo/timed burst.
+16. Capture 40-60 tilted keyframes.
+17. Optional: capture underside rotation.
+18. Complete the rotations manually.
+19. Tap `Create .ksplat Preview`.
+20. Confirm Project Review shows:
    - `1 Capture`
    - `2 Process`
    - `3 Preview & Export`
-15. Confirm processing starts automatically, or tap `Process Scan`.
-16. Confirm object/background removal runs.
-17. Confirm splatting runs after masking.
-18. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
-19. Confirm Preview & Export shows only:
+21. Confirm processing starts automatically, or tap `Process Scan`.
+22. Confirm object/background removal runs through ML Kit Subject Segmentation.
+23. Confirm mask PNG files are written and size is greater than 0.
+24. Confirm optimizer input includes camera matrices when tracked keyframes were captured.
+25. Confirm the Android splat optimizer runs.
+26. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
+27. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
     - `preview.mp4`
     - `preview.gif`
-20. Confirm preview MP4/GIF status is `Requires native preview rendering`.
-21. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
+28. Confirm preview MP4/GIF status is `Requires native preview rendering`.
+29. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
+
+If Basic capture is used instead of Tracked capture, the app must warn:
+
+```text
+Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions.
+```
 
 ## Troubleshooting Diagnostics
 
@@ -93,9 +109,12 @@ It is a developer troubleshooting route, not a normal home-screen option.
 Diagnostics buttons:
 
 - `Test Android Camera Hardware`
+- `Test ARCore Availability`
+- `Start ARCore Session Test`
+- `Capture One Tracked Keyframe`
+- `Run Timed Keyframe Capture Test`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
-- `Start ARCore Keyframe Capture Test`
 - `Test Gaussian Splat Optimizer`
 - `Run Tiny Gaussian Training Test`
 - `Run Tiny .ksplat Writer Test`
@@ -105,6 +124,10 @@ Diagnostics must fail clearly for:
 
 - Android Camera2 hardware unavailable.
 - ARCore unavailable.
+- SharedCamera session failed.
+- Tracking lost.
+- No pose matrix.
+- Camera setting lock unsupported.
 - ML Kit unavailable.
 - Mask generation failed.
 - Splat optimizer failed.
@@ -116,7 +139,9 @@ Diagnostics must fail clearly for:
 Diagnostics pass only when:
 
 - Camera2 diagnostics report at least one back camera and list manual/RAW/OIS/multi-camera support honestly.
-- CameraX native capture reports implemented in Android dev build.
+- ARCore diagnostics report SharedCamera support honestly.
+- One tracked keyframe writes a real image path plus intrinsics/extrinsics when ARCore tracking is available.
+- CameraX native fallback capture reports implemented in Android dev build.
 - Manual ISO/shutter/focus controls stay enabled only when Camera2 `MANUAL_SENSOR` is available.
 - Masking writes at least one non-empty mask.
 - Trainable V1 or coarse fallback writes a non-empty `.ksplat`.

@@ -136,6 +136,25 @@ export async function createPhotorealScan(
     );
   }
 
+  const trackedFrameCount = manifest.capture.rotations.reduce(
+    (sum, rotation) =>
+      sum +
+      rotation.frames.filter(
+        (frame) =>
+          frame.captureSource === "arcore-shared-camera" &&
+          frame.cameraIntrinsics !== undefined &&
+          frame.cameraExtrinsics?.transform?.length === 16 &&
+          frame.trackingState === "TRACKING"
+      ).length,
+    0
+  );
+  if (trackedFrameCount === 0) {
+    warnings.push(
+      "Camera pose metadata missing. Using turntable assumptions.",
+      "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+    );
+  }
+
   if (optimizerResult.status === "generated") {
     if (optimizerResult.qualityTier === "trainable-v1") {
       warnings.push(
@@ -190,6 +209,8 @@ export async function createPhotorealScan(
     { label: "Optimizer runtime status", value: optimizerResult.optimizerRuntimeStatus ?? "unknown" },
     { label: "Optimizer blocker", value: optimizerResult.optimizerBlocker ?? "none" },
     { label: "Optimizer engine", value: optimizerResult.optimizerName ?? "unavailable" },
+    { label: "Optimizer pose source", value: optimizerResult.poseSource ?? (trackedFrameCount > 0 ? "arcore-shared-camera" : "ordered-turntable-fallback") },
+    { label: "Tracked camera frames", value: `${optimizerResult.trackedFrameCount ?? trackedFrameCount}` },
     {
       label: "Optimizer iterations",
       value: `${optimizerResult.iterationCount ?? 0}`

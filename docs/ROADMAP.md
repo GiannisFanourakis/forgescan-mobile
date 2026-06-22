@@ -3,6 +3,8 @@
 ## Current Executable Prototype
 
 - Real Android CameraX capture.
+- Android ARCore tracked keyframe capture path.
+- Internal camera intrinsics/extrinsics package for tracked keyframes.
 - Manual ISO/shutter/focus through Camera2 interop on supported Android hardware.
 - Unlimited frame capture with recommended presets.
 - Manual rotation completion.
@@ -33,7 +35,7 @@
 
 ## Native Photogrammetry
 
-- Android: ARCore pose/depth, OpenCV feature matching, Kotlin/C++ NDK reconstruction.
+- Android: improve ARCore pose/depth use, OpenCV feature matching, Kotlin/C++ NDK reconstruction.
 - iOS: ARKit pose tracking, Vision masks, RealityKit/Object Capture style evaluation, Metal acceleration.
 - Add native capability checks and device-tiered fallbacks.
 

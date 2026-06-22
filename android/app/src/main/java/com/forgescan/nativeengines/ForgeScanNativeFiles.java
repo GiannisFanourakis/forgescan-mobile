@@ -22,6 +22,11 @@ final class ForgeScanNativeFiles {
   }
 
   static File inferProjectRoot(Context context, JSONObject input) {
+    String projectDirectoryUri = input.optString("projectDirectoryUri", input.optString("projectRootUri", ""));
+    if (projectDirectoryUri != null && !projectDirectoryUri.isEmpty()) {
+      return fileFromUri(projectDirectoryUri);
+    }
+
     JSONArray frames = input.optJSONArray("orderedFrames");
     if (frames == null) {
       frames = input.optJSONArray("frames");

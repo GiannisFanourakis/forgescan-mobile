@@ -7,7 +7,21 @@ export type CaptureMode = "controlled-turntable";
 export type CapturePlan = "two-rotation" | "three-rotation";
 export type RotationId = "upright" | "tilted" | "underside";
 export type RotationStatus = "pending" | "capturing" | "complete";
-export type CaptureSource = "camera" | "simulated" | "imported" | "arcore";
+export type CaptureSource =
+  | "camera"
+  | "simulated"
+  | "imported"
+  | "arcore"
+  | "arcore-shared-camera"
+  | "unknown";
+export type RealScanCaptureMode = "arcore-tracked" | "basic-untracked";
+export type PreferredLens =
+  | "default"
+  | "wide"
+  | "ultrawide"
+  | "telephoto"
+  | "macro";
+export type ImageResolutionPreset = "low" | "medium" | "high";
 export type BackgroundRemovalEngine = "none" | "external" | "future-ai";
 export type ReconstructionEngine =
   | "none"
@@ -66,6 +80,26 @@ export interface CameraMetadata {
   iso?: number;
 }
 
+export interface CameraExposureMetadata {
+  lockExposure?: boolean;
+  lockWhiteBalance?: boolean;
+  lockFocus?: boolean;
+  manualIso?: number;
+  manualShutterNs?: number;
+  exposureTimeNs?: number;
+  iso?: number;
+  whiteBalanceMode?: string;
+  focusDistance?: number;
+}
+
+export interface CameraLensMetadata {
+  preferredLens?: PreferredLens;
+  cameraId?: string;
+  physicalCameraId?: string;
+  focalLengthMm?: number;
+  imageResolutionPreset?: ImageResolutionPreset;
+}
+
 export interface CameraIntrinsics {
   fx: number;
   fy: number;
@@ -99,6 +133,9 @@ export interface CapturedFrame {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  exposureMetadata?: CameraExposureMetadata;
+  lensMetadata?: CameraLensMetadata;
+  cameraTransformConvention?: string;
   qualityChecks: FrameQualityChecks;
 }
 
@@ -125,6 +162,16 @@ export interface CaptureSettings {
   plan: CapturePlan;
   targetFrameCount: number;
   rotations: CaptureRotation[];
+  realScanCaptureMode?: RealScanCaptureMode;
+  lockExposure?: boolean;
+  lockWhiteBalance?: boolean;
+  lockFocus?: boolean;
+  preferredLens?: PreferredLens;
+  keyframeIntervalMs?: number;
+  maxKeyframes?: number;
+  minKeyframes?: number;
+  imageResolutionPreset?: ImageResolutionPreset;
+  objectScanMode?: boolean;
 }
 
 export interface ProjectQualityChecks {
@@ -206,6 +253,9 @@ export interface AddFrameInput {
   cameraIntrinsics?: CameraIntrinsics;
   cameraExtrinsics?: CameraExtrinsics;
   trackingState?: string;
+  exposureMetadata?: CameraExposureMetadata;
+  lensMetadata?: CameraLensMetadata;
+  cameraTransformConvention?: string;
   qualityChecks?: Partial<FrameQualityChecks>;
 }
 
@@ -278,7 +328,17 @@ export function createNewProjectManifest(
       mode: "controlled-turntable",
       plan,
       targetFrameCount: input.targetFrameCount,
-      rotations: createDefaultRotations()
+      rotations: createDefaultRotations(),
+      realScanCaptureMode: "arcore-tracked",
+      lockExposure: true,
+      lockWhiteBalance: true,
+      lockFocus: true,
+      preferredLens: "default",
+      keyframeIntervalMs: 500,
+      maxKeyframes: 60,
+      minKeyframes: 40,
+      imageResolutionPreset: "high",
+      objectScanMode: true
     },
     quality: {
       frameContinuity: "not-run",
@@ -370,6 +430,15 @@ export function addFrameToRotation(
         : {}),
       ...(frameInput.trackingState !== undefined
         ? { trackingState: frameInput.trackingState }
+        : {}),
+      ...(frameInput.exposureMetadata !== undefined
+        ? { exposureMetadata: frameInput.exposureMetadata }
+        : {}),
+      ...(frameInput.lensMetadata !== undefined
+        ? { lensMetadata: frameInput.lensMetadata }
+        : {}),
+      ...(frameInput.cameraTransformConvention !== undefined
+        ? { cameraTransformConvention: frameInput.cameraTransformConvention }
         : {})
     };
 

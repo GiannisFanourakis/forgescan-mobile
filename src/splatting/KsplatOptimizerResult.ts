@@ -23,6 +23,10 @@ export interface KsplatOptimizerResult {
   gaussianCount?: number;
   finalLoss?: number;
   durationMs?: number;
+  poseSource?: "arcore-shared-camera" | "ordered-turntable-fallback";
+  useCameraPoses?: boolean;
+  trackedFrameCount?: number;
+  untrackedFrameCount?: number;
   warnings: string[];
   errors: string[];
 }

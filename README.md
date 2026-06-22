@@ -28,15 +28,19 @@ Everything else is internal project data.
 
 - Android dev build is the first real engine target.
 - Expo Go is UI-only for camera capture now; the capture screen reports that a native Android build is required.
-- Android dev build uses a native CameraX full-screen preview by default for ForgeScan controls, zoom, timed burst, photo, and video modes.
+- Android dev build uses ARCore Tracked Capture as the recommended real scan path.
+- The real scan path does not launch the Android stock camera app. Stock camera intents/plain MP4 are unsuitable for Gaussian Splat training because they do not provide synchronized camera pose matrices.
+- ARCore Tracked Capture starts a native ARCore SharedCamera-capable session, saves real image frames, and writes camera intrinsics/extrinsics to `advanced/camera/keyframes.json` when ARCore tracking is available.
+- Basic Camera Capture remains fallback/debug capture only and is labeled untracked.
+- Android dev build uses a native CameraX full-screen preview for ForgeScan controls, pinch/toolbar zoom, timed keyframes, photo fallback, and video fallback.
 - Video mode requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
 - Native Camera2 hardware diagnostics inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, native zoom, ISO range, shutter range, and focus distance.
 - Manual ISO/shutter/focus locks run through Camera2 interop on Android devices that expose `MANUAL_SENSOR`.
-- ARCore SharedCamera pose-linked capture remains a future extension. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
 - Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
-- Android masking is ML Kit-first.
-- ARCore availability is checked in the native module. If live ARCore tracking is unavailable, ForgeScan uses turntable pose assumptions.
+- Android masking is ML Kit-first with confidence threshold `0.85`.
+- If ARCore pose metadata is missing, ForgeScan warns and uses fallback turntable assumptions. It does not silently treat untracked frames as tracked.
 - Android Gaussian Splat V1 is local/on-phone and limited.
+- The Android local splat optimizer receives camera intrinsics/extrinsics when available and uses ARCore pose-derived angles instead of turntable assumptions.
 - The `.ksplat` writer status is `experimental-ksplat`; it writes a real non-empty file and validates existence/size, but broad viewer compatibility is not claimed.
 - `preview.mp4` and `preview.gif` require future native preview rendering.
 - React Native New Architecture is disabled to avoid Windows long-path native C++ build failures.
@@ -47,10 +51,10 @@ No fake `.ksplat` is created. `.ksplat` is marked Generated only when the file e
 
 ```text
 validate capture
--> prefer ARCore metadata when present
--> otherwise use turntable pose assumptions
+-> ARCore Tracked Capture frames + camera poses when available
+-> warn and use turntable pose assumptions when frames are untracked
 -> ML Kit Subject Segmentation masks at confidence >= 0.85
--> temporary DeepLab or fallback-local only if ML Kit is unavailable/fails
+-> fallback-local only if ML Kit is unavailable/fails
 -> verify mask file exists and size > 0
 -> trainable-3dgs-android-v1
 -> coarse-on-device-splat-v1 fallback if trainable V1 fails
@@ -66,9 +70,10 @@ advanced/masks/raw/{rotation}/frame_001.png
 advanced/masks/refined/{rotation}/frame_001.png
 ```
 
-Internal optimizer input is written to:
+Internal camera and optimizer data are written to:
 
 ```text
+advanced/camera/keyframes.json
 advanced/splatting/ksplat-optimizer-input.json
 ```
 
@@ -80,15 +85,18 @@ It is not shown in the normal home flow.
 Buttons:
 
 - `Test Android Camera Hardware`
+- `Test ARCore Availability`
+- `Start ARCore Session Test`
+- `Capture One Tracked Keyframe`
+- `Run Timed Keyframe Capture Test`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
-- `Start ARCore Keyframe Capture Test`
 - `Test Gaussian Splat Optimizer`
 - `Run Tiny Gaussian Training Test`
 - `Run Tiny .ksplat Writer Test`
 - `Run Full Android Scan Test`
 
-Diagnostics show Android camera hardware support, ML Kit status, mask threshold, ARCore availability, fallback pose status, optimizer status, `.ksplat` writer status, last output paths/sizes, and native errors.
+Diagnostics show Android camera hardware support, ARCore/SharedCamera status, Camera2 session availability, intrinsics/extrinsics capture, lock support, ML Kit status, mask threshold, optimizer pose source, `.ksplat` writer status, last output paths/sizes, and native errors.
 
 ## Commands
 
@@ -118,7 +126,8 @@ $env:Path="$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME
 
 ## Known Limitations
 
-- Live ARCore camera-session keyframe capture is prepared as a native module boundary; the current smoke test writes internal fallback keyframe metadata when live tracking is not active.
+- ARCore SharedCamera session/keyframe APIs are implemented for Android dev builds, but device runtime may still return untracked frames when ARCore cannot acquire tracking.
+- The current tracked keyframe flow pairs the native CameraX still frame with ARCore pose metadata. A deeper Camera2 shared image stream is still an upgrade path.
 - Manual ISO/shutter/focus depends on the device exposing Camera2 `MANUAL_SENSOR`; otherwise the capture menu keeps auto mode.
 - Android Gaussian Splat V1 is a small phone-safe optimizer, not production 3DGS.
 - GPU/Vulkan compute is prepared only; CPU/local V1 is the working path.

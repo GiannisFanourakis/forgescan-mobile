@@ -7,8 +7,12 @@ import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
 import {
+  captureNativeARKeyframe,
   getNativeARCaptureAvailability,
-  runNativeARCoreKeyframeSmokeTest
+  getNativeARCaptureSessionStatus,
+  runNativeARCoreKeyframeSmokeTest,
+  startNativeARCaptureSession,
+  startNativeARTimedKeyframeCapture
 } from "../native/NativeARCapture";
 import { NativeARCaptureAvailability } from "../native/NativeARCaptureTypes";
 import { getNativeAdvancedCameraAvailability } from "../native/NativeAdvancedCamera";
@@ -25,6 +29,7 @@ import {
 } from "../native/NativeMasking";
 import { NativeMaskingAvailability } from "../native/NativeMaskingTypes";
 import { validateProjectForReconstruction } from "../core/frameValidation";
+import { getProjectStoragePaths } from "../storage/projectStorage";
 import { runMaskingForProject } from "../masking/MaskingEngine";
 import {
   getCurrentPlatformEngine,
@@ -204,8 +209,36 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             value={formatPresence(arAvailability?.arCoreAvailable)}
           />
           <DiagnosticLine
+            label="SharedCamera supported"
+            value={formatPresence(arAvailability?.sharedCameraSupported)}
+          />
+          <DiagnosticLine
+            label="Camera2 session available"
+            value={formatPresence(arAvailability?.camera2Available)}
+          />
+          <DiagnosticLine
             label="ARCore tracking state"
             value={arAvailability?.trackingState ?? "unknown"}
+          />
+          <DiagnosticLine
+            label="Camera intrinsics captured"
+            value={formatPresence(arAvailability?.cameraIntrinsicsCaptured)}
+          />
+          <DiagnosticLine
+            label="Camera extrinsics captured"
+            value={formatPresence(arAvailability?.cameraExtrinsicsCaptured)}
+          />
+          <DiagnosticLine
+            label="Exposure/WB/focus lock"
+            value={`${formatPresence(arAvailability?.canLockExposure)} / ${formatPresence(arAvailability?.canLockWhiteBalance)} / ${formatPresence(arAvailability?.canLockFocus)}`}
+          />
+          <DiagnosticLine
+            label="Preferred lenses"
+            value={arAvailability?.supportedLensOptions?.join(", ") ?? "unknown"}
+          />
+          <DiagnosticLine
+            label="Last tracked keyframe"
+            value={arAvailability?.lastKeyframePath ?? "not captured"}
           />
           <DiagnosticLine label="ARCore keyframe smoke test" value={arSmokeStatus} />
           <DiagnosticLine
@@ -449,12 +482,91 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
           />
           <Button
             disabled={isRunning}
-            label="Start ARCore Keyframe Capture Test"
+            label="Test ARCore Availability"
             variant="secondary"
             onPress={() => {
-              void runDiagnostic("ARCore keyframe capture", async () => {
+              void runDiagnostic("ARCore availability", async () => {
                 const availability = await getNativeARCaptureAvailability();
                 setArAvailability(availability);
+                return [
+                  {
+                    label: "ARCore available",
+                    status: availability.arCoreAvailable ? "pass" : "fail",
+                    detail: availability.arCoreAvailability ?? "unknown"
+                  },
+                  {
+                    label: "SharedCamera supported",
+                    status: availability.sharedCameraSupported ? "pass" : "fail",
+                    detail: availability.sharedCameraSupported ? "yes" : "no"
+                  },
+                  {
+                    label: "Camera2 available",
+                    status: availability.camera2Available ? "pass" : "fail",
+                    detail: availability.camera2Available ? "yes" : "no"
+                  },
+                  {
+                    label: "Camera locks",
+                    status:
+                      availability.canLockExposure ||
+                      availability.canLockWhiteBalance ||
+                      availability.canLockFocus
+                        ? "pass"
+                        : "warn",
+                    detail: `exposure ${formatPresence(availability.canLockExposure)}, wb ${formatPresence(availability.canLockWhiteBalance)}, focus ${formatPresence(availability.canLockFocus)}`
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Start ARCore Session Test"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("ARCore session", async () => {
+                const result = await startNativeARCaptureSession({
+                  projectId: latestProject?.project.id ?? "arcore-session-smoke",
+                  ...(latestProject
+                    ? { projectDirectoryUri: getProjectStoragePaths(latestProject).projectUri }
+                    : {}),
+                  outputDirectory: "advanced/camera",
+                  lockExposure: true,
+                  lockWhiteBalance: true,
+                  lockFocus: true,
+                  preferredLens: "default",
+                  keyframeIntervalMs: 500,
+                  maxKeyframes: 60,
+                  minKeyframes: 40,
+                  imageResolutionPreset: "high",
+                  objectScanMode: true
+                });
+                setArAvailability(result);
+                return [
+                  {
+                    label: "ARCore session",
+                    status: result.status === "ready" ? "pass" : "fail",
+                    detail: result.message ?? result.errors.join(" ")
+                  },
+                  {
+                    label: "SharedCamera session",
+                    status: result.sharedCameraSessionStarted ? "pass" : "fail",
+                    detail: result.sharedCameraSessionStarted ? "started" : "not started"
+                  },
+                  {
+                    label: "Tracking state",
+                    status: result.trackingState === "TRACKING" ? "pass" : "warn",
+                    detail: result.trackingState ?? "unknown"
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Capture One Tracked Keyframe"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("ARCore tracked keyframe", async () => {
                 const frames =
                   latestProject?.capture.rotations.flatMap((rotation) =>
                     rotation.frames.map((frame) => ({
@@ -466,13 +578,58 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                       capturedAt: frame.capturedAt
                     }))
                   ) ?? [];
+                const firstFrame = frames[0];
+                if (!latestProject || !firstFrame) {
+                  setArSmokeStatus("failed");
+                  return [
+                    {
+                      label: "Source frame",
+                      status: "fail",
+                      detail: "Capture one real frame first."
+                    }
+                  ];
+                }
+
+                await startNativeARCaptureSession({
+                  projectId: latestProject.project.id,
+                  projectDirectoryUri: getProjectStoragePaths(latestProject).projectUri,
+                  outputDirectory: "advanced/camera",
+                  lockExposure: true,
+                  lockWhiteBalance: true,
+                  lockFocus: true,
+                  preferredLens: "default",
+                  keyframeIntervalMs: 500,
+                  maxKeyframes: 60,
+                  minKeyframes: 40,
+                  imageResolutionPreset: "high",
+                  objectScanMode: true
+                });
+                const keyframe = await captureNativeARKeyframe({
+                  projectId: latestProject.project.id,
+                  projectDirectoryUri: getProjectStoragePaths(latestProject).projectUri,
+                  rotationId: firstFrame.rotationId,
+                  frameIndex: firstFrame.frameIndex,
+                  sourceFrameUri: firstFrame.frameUri,
+                  ...(firstFrame.width !== undefined ? { width: firstFrame.width } : {}),
+                  ...(firstFrame.height !== undefined ? { height: firstFrame.height } : {}),
+                  outputDirectory: "advanced/camera",
+                  lockExposure: true,
+                  lockWhiteBalance: true,
+                  lockFocus: true,
+                  preferredLens: "default",
+                  keyframeIntervalMs: 500,
+                  maxKeyframes: 60,
+                  minKeyframes: 40,
+                  imageResolutionPreset: "high",
+                  objectScanMode: true
+                });
                 const result = await runNativeARCoreKeyframeSmokeTest({
                   projectId: latestProject?.project.id ?? "arcore-smoke",
                   frames,
                   outputDirectory: "advanced/camera"
                 });
                 setArSmokeStatus(
-                  result.status === "fallback-turntable" || result.status === "ready"
+                  keyframe.status === "tracked" || result.status === "tracked"
                     ? "passed"
                     : "failed"
                 );
@@ -484,20 +641,97 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                   },
                   {
                     label: "ARCore tracking",
-                    status: result.arCoreAvailable ? "pass" : "warn",
-                    detail: result.trackingState ?? "unknown"
+                    status: keyframe.status === "tracked" ? "pass" : "warn",
+                    detail: keyframe.trackingState ?? result.trackingState ?? "unknown"
                   },
                   {
-                    label: "Keyframe metadata",
-                    status: (result.keyframesBytes ?? 0) > 0 ? "pass" : "warn",
-                    detail: `${result.keyframesUri ?? "not written"} / ${result.keyframesBytes ?? 0} bytes`
+                    label: "Keyframe image",
+                    status: keyframe.frameUri ? "pass" : "fail",
+                    detail: keyframe.frameUri ?? "not written"
+                  },
+                  {
+                    label: "Camera intrinsics",
+                    status: keyframe.keyframe?.cameraIntrinsics ? "pass" : "fail",
+                    detail: keyframe.keyframe?.cameraIntrinsics
+                      ? "captured"
+                      : "missing"
+                  },
+                  {
+                    label: "Camera extrinsics",
+                    status: keyframe.keyframe?.cameraExtrinsics ? "pass" : "fail",
+                    detail: keyframe.keyframe?.cameraExtrinsics
+                      ? "4x4 pose matrix captured"
+                      : "missing"
                   },
                   {
                     label: "Pose source",
-                    status: result.fallbackTurntablePoseUsed ? "warn" : "pass",
-                    detail: result.fallbackTurntablePoseUsed
-                      ? "ARCore tracking unavailable. Using turntable pose assumptions."
-                      : "ARCore pose metadata captured."
+                    status: keyframe.captureSource === "arcore-shared-camera" ? "pass" : "warn",
+                    detail: keyframe.captureSource ?? "unknown"
+                  }
+                ];
+              });
+            }}
+          />
+          <Button
+            disabled={isRunning}
+            label="Run Timed Keyframe Capture Test"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("Timed ARCore keyframes", async () => {
+                const frames =
+                  latestProject?.capture.rotations.flatMap((rotation) =>
+                    rotation.frames.slice(0, 3).map((frame) => ({
+                      rotationId: rotation.id,
+                      frameIndex: frame.index,
+                      frameUri: frame.uri,
+                      ...(frame.width !== undefined ? { width: frame.width } : {}),
+                      ...(frame.height !== undefined ? { height: frame.height } : {}),
+                      capturedAt: frame.capturedAt
+                    }))
+                  ) ?? [];
+                if (!latestProject || frames.length === 0) {
+                  return [
+                    {
+                      label: "Timed source frames",
+                      status: "fail",
+                      detail: "Capture frames first."
+                    }
+                  ];
+                }
+
+                const result = await startNativeARTimedKeyframeCapture({
+                  projectId: latestProject.project.id,
+                  projectDirectoryUri: getProjectStoragePaths(latestProject).projectUri,
+                  sourceFrames: frames,
+                  outputDirectory: "advanced/camera",
+                  keyframeIntervalMs: 500,
+                  maxKeyframes: 3,
+                  minKeyframes: 1,
+                  lockExposure: true,
+                  lockWhiteBalance: true,
+                  lockFocus: true,
+                  preferredLens: "default",
+                  imageResolutionPreset: "high",
+                  objectScanMode: true
+                });
+                const status = await getNativeARCaptureSessionStatus();
+                setArAvailability(status);
+                return [
+                  {
+                    label: "Timed capture started",
+                    status:
+                      result.status === "timed-capture-running" ? "pass" : "fail",
+                    detail: result.message ?? result.errors.join(" ")
+                  },
+                  {
+                    label: "Timed source count",
+                    status: (result.sourceFrameCount ?? 0) > 0 ? "pass" : "fail",
+                    detail: `${result.sourceFrameCount ?? 0}`
+                  },
+                  {
+                    label: "Current keyframe count",
+                    status: (status.keyframeCount ?? 0) > 0 ? "pass" : "warn",
+                    detail: `${status.keyframeCount ?? 0}`
                   }
                 ];
               });
