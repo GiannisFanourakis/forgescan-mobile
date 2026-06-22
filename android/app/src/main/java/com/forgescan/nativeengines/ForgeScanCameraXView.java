@@ -9,6 +9,8 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
 import android.net.Uri;
 import android.util.Range;
+import android.util.Log;
+import android.view.View;
 import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
@@ -32,6 +34,8 @@ import androidx.camera.video.VideoRecordEvent;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
 import androidx.lifecycle.LifecycleOwner;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactContext;
@@ -41,6 +45,7 @@ import java.lang.ref.WeakReference;
 import org.json.JSONObject;
 
 public class ForgeScanCameraXView extends FrameLayout {
+  private static final String TAG = "ForgeScanCameraX";
   private static WeakReference<ForgeScanCameraXView> activeView =
     new WeakReference<>(null);
 
@@ -66,12 +71,14 @@ public class ForgeScanCameraXView extends FrameLayout {
   private long maxShutterNs = 1_000_000_000L;
   private float maxFocusDistance = 20f;
   private String lastCameraError;
+  private Lifecycle lifecycle;
+  private LifecycleEventObserver lifecycleObserver;
 
   public ForgeScanCameraXView(ReactContext context) {
     super(context);
     reactContext = context;
     previewView = new PreviewView(context);
-    previewView.setImplementationMode(PreviewView.ImplementationMode.PERFORMANCE);
+    previewView.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
     previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
     addView(
       previewView,
@@ -87,6 +94,7 @@ public class ForgeScanCameraXView extends FrameLayout {
   protected void onAttachedToWindow() {
     super.onAttachedToWindow();
     activeView = new WeakReference<>(this);
+    registerLifecycleObserver();
     post(this::startCamera);
   }
 
@@ -95,8 +103,29 @@ public class ForgeScanCameraXView extends FrameLayout {
     if (activeView.get() == this) {
       activeView = new WeakReference<>(null);
     }
+    unregisterLifecycleObserver();
     stopCamera();
     super.onDetachedFromWindow();
+  }
+
+  @Override
+  public void onWindowFocusChanged(boolean hasWindowFocus) {
+    super.onWindowFocusChanged(hasWindowFocus);
+    if (hasWindowFocus) {
+      post(this::startCamera);
+    } else {
+      stopCamera();
+    }
+  }
+
+  @Override
+  protected void onWindowVisibilityChanged(int visibility) {
+    super.onWindowVisibilityChanged(visibility);
+    if (visibility == View.VISIBLE) {
+      post(this::startCamera);
+    } else {
+      stopCamera();
+    }
   }
 
   public void setZoom(float nextZoom) {
@@ -280,6 +309,8 @@ public class ForgeScanCameraXView extends FrameLayout {
     if (
       activity == null ||
       !(activity instanceof LifecycleOwner) ||
+      !activity.hasWindowFocus() ||
+      getWindowVisibility() != View.VISIBLE ||
       ActivityCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) !=
         PackageManager.PERMISSION_GRANTED
     ) {
@@ -294,8 +325,9 @@ public class ForgeScanCameraXView extends FrameLayout {
           refreshCamera2Ranges();
           cameraProvider = cameraProviderFuture.get();
           bindUseCases((LifecycleOwner) activity);
-        } catch (Exception ignored) {
-          // Readiness is reported through JS fallback and diagnostics.
+        } catch (Exception error) {
+          lastCameraError = "CameraX start failed: " + safeMessage(error);
+          Log.w(TAG, lastCameraError, error);
         }
       },
       ContextCompat.getMainExecutor(reactContext)
@@ -315,6 +347,7 @@ public class ForgeScanCameraXView extends FrameLayout {
       return;
     } catch (Exception firstError) {
       lastCameraError = "CameraX video quality failed: " + safeMessage(firstError);
+      Log.w(TAG, lastCameraError, firstError);
     }
 
     try {
@@ -322,12 +355,14 @@ public class ForgeScanCameraXView extends FrameLayout {
       return;
     } catch (Exception secondError) {
       lastCameraError = "CameraX FHD video fallback failed: " + safeMessage(secondError);
+      Log.w(TAG, lastCameraError, secondError);
     }
 
     try {
       bindPreviewAndImageOnly(lifecycleOwner);
     } catch (Exception thirdError) {
       lastCameraError = "CameraX preview failed: " + safeMessage(thirdError);
+      Log.w(TAG, lastCameraError, thirdError);
       imageCapture = null;
       videoCapture = null;
       preview = null;
@@ -513,5 +548,33 @@ public class ForgeScanCameraXView extends FrameLayout {
   private String safeMessage(Throwable error) {
     String message = error.getMessage();
     return message == null || message.isEmpty() ? error.getClass().getSimpleName() : message;
+  }
+
+  private void registerLifecycleObserver() {
+    Activity activity = reactContext.getCurrentActivity();
+    if (!(activity instanceof LifecycleOwner) || lifecycleObserver != null) {
+      return;
+    }
+
+    lifecycle = ((LifecycleOwner) activity).getLifecycle();
+    lifecycleObserver =
+      (source, event) -> {
+        if (event == Lifecycle.Event.ON_RESUME) {
+          post(this::startCamera);
+        } else if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+          stopCamera();
+        } else if (event == Lifecycle.Event.ON_DESTROY) {
+          unregisterLifecycleObserver();
+        }
+      };
+    lifecycle.addObserver(lifecycleObserver);
+  }
+
+  private void unregisterLifecycleObserver() {
+    if (lifecycle != null && lifecycleObserver != null) {
+      lifecycle.removeObserver(lifecycleObserver);
+    }
+    lifecycle = null;
+    lifecycleObserver = null;
   }
 }
