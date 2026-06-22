@@ -275,7 +275,7 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     label: "Manual sensor control",
                     status: availability.manualSensorSupported ? "pass" : "warn",
                     detail: availability.manualSensorSupported
-                      ? "manual ISO/exposure/focus possible through Camera2 path"
+                      ? "manual ISO/shutter/focus active through Camera2 interop"
                       : "not exposed by Camera2 on this runtime"
                   },
                   {

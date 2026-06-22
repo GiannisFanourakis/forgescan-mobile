@@ -62,26 +62,28 @@ Phone flow:
 3. Open the first capture rotation.
 4. Confirm the camera preview covers the full screen and is powered by native CameraX.
 5. Use zoom controls and confirm preview zoom changes.
-6. Capture upright rotation with photo or timed burst.
-7. Switch to video, select 4K, record a short clip, and stop recording.
-8. Capture tilted rotation.
-9. Optional: capture underside rotation.
-10. Complete the rotations manually.
-11. Tap `Create .ksplat Preview`.
-12. Confirm Project Review shows:
+6. Open the Camera menu and toggle Manual exposure if supported.
+7. Adjust ISO, shutter, and focus; confirm the preview stays live.
+8. Capture upright rotation with photo or timed burst.
+9. Switch to video, select 4K, record a short clip, and stop recording.
+10. Capture tilted rotation.
+11. Optional: capture underside rotation.
+12. Complete the rotations manually.
+13. Tap `Create .ksplat Preview`.
+14. Confirm Project Review shows:
    - `1 Capture`
    - `2 Process`
    - `3 Preview & Export`
-13. Confirm processing starts automatically, or tap `Process Scan`.
-14. Confirm object/background removal runs.
-15. Confirm splatting runs after masking.
-16. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
-17. Confirm Preview & Export shows only:
+15. Confirm processing starts automatically, or tap `Process Scan`.
+16. Confirm object/background removal runs.
+17. Confirm splatting runs after masking.
+18. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
+19. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
     - `preview.mp4`
     - `preview.gif`
-18. Confirm preview MP4/GIF status is `Requires native preview rendering`.
-19. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
+20. Confirm preview MP4/GIF status is `Requires native preview rendering`.
+21. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
 
 ## Troubleshooting Diagnostics
 
@@ -115,6 +117,7 @@ Diagnostics pass only when:
 
 - Camera2 diagnostics report at least one back camera and list manual/RAW/OIS/multi-camera support honestly.
 - CameraX native capture reports implemented in Android dev build.
+- Manual ISO/shutter/focus controls stay enabled only when Camera2 `MANUAL_SENSOR` is available.
 - Masking writes at least one non-empty mask.
 - Trainable V1 or coarse fallback writes a non-empty `.ksplat`.
 - Quality tier is shown.

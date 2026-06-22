@@ -3,6 +3,7 @@
 ## Current Executable Prototype
 
 - Real Android CameraX capture.
+- Manual ISO/shutter/focus through Camera2 interop on supported Android hardware.
 - Unlimited frame capture with recommended presets.
 - Manual rotation completion.
 - Local project persistence.

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
+import android.util.Range;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -42,7 +43,7 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
       result.put("cameraXCaptureImplemented", true);
       result.put("camera2ManualCaptureImplemented", false);
       result.put("arCoreSharedCameraImplemented", false);
-      result.put("recommendedNativePath", "CameraX preview/photo/video is the default Android capture path. Camera2 manual controls and ARCore SharedCamera remain future extensions.");
+      result.put("recommendedNativePath", "CameraX preview/photo/video is the default Android capture path. Manual ISO/shutter/focus are applied through Camera2 interop when the device exposes MANUAL_SENSOR.");
 
       JSONArray cameras = new JSONArray();
       boolean hasBackCamera = false;
@@ -77,6 +78,7 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
 
       result.put("hasBackCamera", hasBackCamera);
       result.put("manualSensorSupported", hasManualSensor);
+      result.put("camera2ManualCaptureImplemented", hasManualSensor);
       result.put("rawCaptureSupported", hasRaw);
       result.put("logicalMultiCameraSupported", hasLogicalMultiCamera);
       result.put("physicalCameraIdsAvailable", hasPhysicalIds);
@@ -88,7 +90,7 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
         "warnings",
         new JSONArray()
           .put("Native CameraX is the active Android capture path in development builds.")
-          .put("Full locked ISO/shutter/focus still requires the future Camera2 manual capture path.")
+          .put("Manual ISO/shutter/focus locks are active through Camera2 interop on devices with MANUAL_SENSOR.")
           .put("4K and frame-rate availability are device/profile-specific and are selected through CameraX quality profiles.")
       );
       result.put("errors", new JSONArray());
@@ -159,6 +161,9 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
     camera.put("rawCapture", hasCapability(characteristics, CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW));
     camera.put("logicalMultiCamera", hasCapability(characteristics, CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA));
     camera.put("maxDigitalZoom", maxDigitalZoom(characteristics));
+    camera.put("isoRange", integerRange(characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)));
+    camera.put("exposureTimeRangeNs", longRange(characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)));
+    camera.put("minimumFocusDistance", minimumFocusDistance(characteristics));
     camera.put("focalLengths", floatArray(characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)));
     camera.put("opticalStabilization", hasMode(characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION), CameraCharacteristics.LENS_OPTICAL_STABILIZATION_MODE_ON));
     camera.put("videoStabilization", hasMode(characteristics.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES), CameraCharacteristics.CONTROL_VIDEO_STABILIZATION_MODE_ON));
@@ -212,6 +217,34 @@ public class ForgeScanAdvancedCameraModule extends ReactContextBaseJavaModule {
       output.put(value);
     }
     return output;
+  }
+
+  private JSONArray integerRange(Range<Integer> range) {
+    JSONArray output = new JSONArray();
+    if (range == null) {
+      return output;
+    }
+
+    output.put(range.getLower());
+    output.put(range.getUpper());
+    return output;
+  }
+
+  private JSONArray longRange(Range<Long> range) {
+    JSONArray output = new JSONArray();
+    if (range == null) {
+      return output;
+    }
+
+    output.put(range.getLower());
+    output.put(range.getUpper());
+    return output;
+  }
+
+  private double minimumFocusDistance(CameraCharacteristics characteristics) {
+    Float focusDistance =
+      characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+    return focusDistance == null ? 0.0 : focusDistance.doubleValue();
   }
 
   private JSONArray physicalCameraIds(CameraCharacteristics characteristics) {

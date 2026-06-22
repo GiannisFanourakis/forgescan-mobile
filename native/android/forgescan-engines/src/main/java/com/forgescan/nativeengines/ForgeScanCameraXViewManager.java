@@ -29,4 +29,24 @@ public class ForgeScanCameraXViewManager extends SimpleViewManager<ForgeScanCame
   public void setVideoQuality(ForgeScanCameraXView view, String videoQuality) {
     view.setVideoQuality(videoQuality);
   }
+
+  @ReactProp(name = "manualControlsEnabled", defaultBoolean = false)
+  public void setManualControlsEnabled(ForgeScanCameraXView view, boolean enabled) {
+    view.setManualControlsEnabled(enabled);
+  }
+
+  @ReactProp(name = "manualIso", defaultInt = 100)
+  public void setManualIso(ForgeScanCameraXView view, int iso) {
+    view.setManualIso(iso);
+  }
+
+  @ReactProp(name = "manualShutterNs", defaultDouble = 16666667)
+  public void setManualShutterNs(ForgeScanCameraXView view, double shutterNs) {
+    view.setManualShutterNs(shutterNs);
+  }
+
+  @ReactProp(name = "manualFocusDistance", defaultFloat = 0f)
+  public void setManualFocusDistance(ForgeScanCameraXView view, float focusDistance) {
+    view.setManualFocusDistance(focusDistance);
+  }
 }

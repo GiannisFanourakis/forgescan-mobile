@@ -22,11 +22,15 @@ import {
 import { RootStackParamList } from "../navigation/types";
 import {
   captureNativeCameraXPhoto,
+  getNativeAdvancedCameraAvailability,
   isNativeCameraXCaptureAvailable,
   startNativeCameraXVideo,
   stopNativeCameraXVideo
 } from "../native/NativeAdvancedCamera";
-import type { NativeCameraXVideoQuality } from "../native/NativeAdvancedCameraTypes";
+import type {
+  NativeAdvancedCameraAvailability,
+  NativeCameraXVideoQuality
+} from "../native/NativeAdvancedCameraTypes";
 import { NativeCameraXView } from "../native/NativeCameraXView";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
@@ -61,6 +65,18 @@ const videoQualityOptions: { label: string; value: NativeCameraXVideoQuality }[]
 ];
 
 const ZOOM_STEP = 0.08;
+const DEFAULT_ISO_RANGE: [number, number] = [50, 12_800];
+const DEFAULT_SHUTTER_RANGE_NS: [number, number] = [
+  1_000_000,
+  1_000_000_000
+];
+const shutterSpeedOptionsNs = [
+  1_000_000_000 / 30,
+  1_000_000_000 / 60,
+  1_000_000_000 / 120,
+  1_000_000_000 / 250,
+  1_000_000_000 / 500
+] as const;
 
 export function CaptureRotationScreen({
   navigation,
@@ -87,6 +103,12 @@ export function CaptureRotationScreen({
   const [cameraZoom, setCameraZoom] = useState(0);
   const [videoQuality, setVideoQuality] =
     useState<NativeCameraXVideoQuality>("2160p");
+  const [advancedCameraAvailability, setAdvancedCameraAvailability] =
+    useState<NativeAdvancedCameraAvailability | null>(null);
+  const [manualControlsEnabled, setManualControlsEnabled] = useState(false);
+  const [manualIso, setManualIso] = useState(200);
+  const [manualShutterNs, setManualShutterNs] = useState(1_000_000_000 / 60);
+  const [manualFocusDistance, setManualFocusDistance] = useState(0);
   const [burstIntervalMs, setBurstIntervalMs] =
     useState<BurstIntervalMs>(1000);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -107,6 +129,16 @@ export function CaptureRotationScreen({
 
     void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA).then(
       setHasCameraPermission
+    );
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    void getNativeAdvancedCameraAvailability().then(
+      setAdvancedCameraAvailability
     );
   }, []);
 
@@ -137,6 +169,15 @@ export function CaptureRotationScreen({
     isNativeCameraXCaptureAvailable();
   const canUseCamera =
     hasCameraPermission && nativeCameraAvailable && isFocused;
+  const bestBackCamera = advancedCameraAvailability?.cameras.find(
+    (camera) => camera.lensFacing === "back" && camera.manualSensor
+  );
+  const manualSupported =
+    advancedCameraAvailability?.manualSensorSupported ?? false;
+  const isoRange = bestBackCamera?.isoRange ?? DEFAULT_ISO_RANGE;
+  const shutterRangeNs =
+    bestBackCamera?.exposureTimeRangeNs ?? DEFAULT_SHUTTER_RANGE_NS;
+  const maxFocusDistance = bestBackCamera?.minimumFocusDistance ?? 0;
 
   async function requestCameraPermission(): Promise<void> {
     if (Platform.OS !== "android") {
@@ -288,6 +329,35 @@ export function CaptureRotationScreen({
     setCameraZoom(Math.max(0, Math.min(1, value)));
   }
 
+  function setManualIsoLevel(value: number): void {
+    setManualIso(Math.round(Math.max(isoRange[0], Math.min(isoRange[1], value))));
+  }
+
+  function stepManualShutter(direction: -1 | 1): void {
+    const currentIndex = shutterSpeedOptionsNs.reduce(
+      (nearestIndex, option, index) =>
+        Math.abs(option - manualShutterNs) <
+        Math.abs((shutterSpeedOptionsNs[nearestIndex] ?? option) - manualShutterNs)
+          ? index
+          : nearestIndex,
+      0
+    );
+    const nextIndex = Math.max(
+      0,
+      Math.min(shutterSpeedOptionsNs.length - 1, currentIndex + direction)
+    );
+    const nextShutter = shutterSpeedOptionsNs[nextIndex] ?? manualShutterNs;
+    setManualShutterNs(
+      Math.max(shutterRangeNs[0], Math.min(shutterRangeNs[1], nextShutter))
+    );
+  }
+
+  function setManualFocusLevel(value: number): void {
+    setManualFocusDistance(
+      Math.max(0, Math.min(maxFocusDistance || 0, Number(value.toFixed(1))))
+    );
+  }
+
   function waitForBurstInterval(durationMs: number): Promise<void> {
     return new Promise((resolve) => {
       burstDelayResolveRef.current = resolve;
@@ -338,6 +408,10 @@ export function CaptureRotationScreen({
       <StatusBar style="light" translucent />
       {hasCameraPermission && isFocused && NativeCameraXView ? (
         <NativeCameraXView
+          manualControlsEnabled={manualControlsEnabled}
+          manualFocusDistance={manualFocusDistance}
+          manualIso={manualIso}
+          manualShutterNs={manualShutterNs}
           style={styles.cameraView}
           videoQuality={videoQuality}
           zoom={cameraZoom}
@@ -592,7 +666,97 @@ export function CaptureRotationScreen({
           <View style={styles.menuPanel}>
             <View style={styles.menuHeader}>
               <Text style={styles.menuTitle}>Camera</Text>
-              <Text style={styles.menuMeta}>CameraX / {cameraMode}</Text>
+              <Text style={styles.menuMeta}>
+                CameraX / {manualControlsEnabled ? "manual" : cameraMode}
+              </Text>
+            </View>
+            <View style={styles.optionGroup}>
+              <Text style={styles.optionGroupTitle}>Exposure</Text>
+              <View style={styles.optionRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isRecording || isBurstRunning}
+                  onPress={() => setManualControlsEnabled(false)}
+                  style={({ pressed }) => [
+                    styles.optionChip,
+                    !manualControlsEnabled ? styles.optionChipActive : undefined,
+                    pressed && !isRecording && !isBurstRunning
+                      ? styles.pressed
+                      : undefined
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionChipText,
+                      !manualControlsEnabled
+                        ? styles.optionChipTextActive
+                        : undefined
+                    ]}
+                  >
+                    Auto
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!manualSupported || isRecording || isBurstRunning}
+                  onPress={() => setManualControlsEnabled(true)}
+                  style={({ pressed }) => [
+                    styles.optionChip,
+                    manualControlsEnabled ? styles.optionChipActive : undefined,
+                    !manualSupported ? styles.compactButtonDisabled : undefined,
+                    pressed && manualSupported && !isRecording && !isBurstRunning
+                      ? styles.pressed
+                      : undefined
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionChipText,
+                      manualControlsEnabled
+                        ? styles.optionChipTextActive
+                        : undefined,
+                      !manualSupported ? styles.compactButtonTextDisabled : undefined
+                    ]}
+                  >
+                    Manual
+                  </Text>
+                </Pressable>
+              </View>
+              {manualControlsEnabled ? (
+                <View style={styles.manualPanel}>
+                  <ManualControlRow
+                    disabled={isRecording || isBurstRunning}
+                    label="ISO"
+                    value={`${manualIso}`}
+                    onDecrease={() => setManualIsoLevel(manualIso - 100)}
+                    onIncrease={() => setManualIsoLevel(manualIso + 100)}
+                  />
+                  <ManualControlRow
+                    disabled={isRecording || isBurstRunning}
+                    label="Shutter"
+                    value={formatShutterSpeed(manualShutterNs)}
+                    onDecrease={() => stepManualShutter(-1)}
+                    onIncrease={() => stepManualShutter(1)}
+                  />
+                  <ManualControlRow
+                    disabled={
+                      isRecording || isBurstRunning || maxFocusDistance <= 0
+                    }
+                    label="Focus"
+                    value={
+                      maxFocusDistance > 0
+                        ? `${manualFocusDistance.toFixed(1)}D`
+                        : "Fixed"
+                    }
+                    onDecrease={() =>
+                      setManualFocusLevel(manualFocusDistance - 0.5)
+                    }
+                    onIncrease={() =>
+                      setManualFocusLevel(manualFocusDistance + 0.5)
+                    }
+                  />
+                </View>
+              ) : null}
             </View>
             {cameraMode === "burst" ? (
               <View style={styles.optionGroup}>
@@ -788,6 +952,62 @@ function CompactMenuButton({
       </Text>
     </Pressable>
   );
+}
+
+interface ManualControlRowProps {
+  disabled?: boolean;
+  label: string;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  value: string;
+}
+
+function ManualControlRow({
+  disabled = false,
+  label,
+  onDecrease,
+  onIncrease,
+  value
+}: ManualControlRowProps): ReactElement {
+  return (
+    <View style={styles.manualRow}>
+      <Text style={styles.manualLabel}>{label}</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onDecrease}
+        style={({ pressed }) => [
+          styles.manualStepButton,
+          disabled ? styles.sideControlDisabled : undefined,
+          pressed && !disabled ? styles.pressed : undefined
+        ]}
+      >
+        <Text style={styles.manualStepText}>-</Text>
+      </Pressable>
+      <Text style={styles.manualValue}>{value}</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onIncrease}
+        style={({ pressed }) => [
+          styles.manualStepButton,
+          disabled ? styles.sideControlDisabled : undefined,
+          pressed && !disabled ? styles.pressed : undefined
+        ]}
+      >
+        <Text style={styles.manualStepText}>+</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function formatShutterSpeed(shutterNs: number): string {
+  const seconds = shutterNs / 1_000_000_000;
+  if (seconds >= 1) {
+    return `${seconds.toFixed(1)}s`;
+  }
+
+  return `1/${Math.round(1 / seconds)}`;
 }
 
 const styles = StyleSheet.create({
@@ -1197,6 +1417,50 @@ const styles = StyleSheet.create({
   },
   optionChipTextActive: {
     color: colors.accent
+  },
+  manualPanel: {
+    gap: 4
+  },
+  manualRow: {
+    alignItems: "center",
+    backgroundColor: "#f7fafb",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 30,
+    paddingHorizontal: spacing.xs
+  },
+  manualLabel: {
+    color: colors.mutedText,
+    flex: 1,
+    fontSize: 10,
+    fontWeight: "900",
+    textTransform: "uppercase"
+  },
+  manualValue: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900",
+    minWidth: 54,
+    textAlign: "center"
+  },
+  manualStepButton: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: colors.border,
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 30
+  },
+  manualStepText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 16
   },
   emptyFrameList: {
     alignItems: "center",

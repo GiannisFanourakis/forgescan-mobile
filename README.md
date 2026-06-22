@@ -30,8 +30,9 @@ Everything else is internal project data.
 - Expo Go is UI-only for camera capture now; the capture screen reports that a native Android build is required.
 - Android dev build uses a native CameraX full-screen preview by default for ForgeScan controls, zoom, timed burst, photo, and video modes.
 - Video mode requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
-- Native Camera2 hardware diagnostics are installed to inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, and native zoom.
-- Camera2 manual ISO/shutter/focus and ARCore SharedCamera pose-linked capture remain future extensions. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
+- Native Camera2 hardware diagnostics inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, native zoom, ISO range, shutter range, and focus distance.
+- Manual ISO/shutter/focus locks run through Camera2 interop on Android devices that expose `MANUAL_SENSOR`.
+- ARCore SharedCamera pose-linked capture remains a future extension. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
 - Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
 - Android masking is ML Kit-first.
 - ARCore availability is checked in the native module. If live ARCore tracking is unavailable, ForgeScan uses turntable pose assumptions.
@@ -118,6 +119,7 @@ $env:Path="$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME
 ## Known Limitations
 
 - Live ARCore camera-session keyframe capture is prepared as a native module boundary; the current smoke test writes internal fallback keyframe metadata when live tracking is not active.
+- Manual ISO/shutter/focus depends on the device exposing Camera2 `MANUAL_SENSOR`; otherwise the capture menu keeps auto mode.
 - Android Gaussian Splat V1 is a small phone-safe optimizer, not production 3DGS.
 - GPU/Vulkan compute is prepared only; CPU/local V1 is the working path.
 - `.ksplat` writer is experimental.

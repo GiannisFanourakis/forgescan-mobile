@@ -6,6 +6,9 @@ export interface NativeAdvancedCameraInfo {
   rawCapture: boolean;
   logicalMultiCamera: boolean;
   maxDigitalZoom: number;
+  isoRange?: [number, number];
+  exposureTimeRangeNs?: [number, number];
+  minimumFocusDistance?: number;
   focalLengths: number[];
   opticalStabilization: boolean;
   videoStabilization: boolean;
