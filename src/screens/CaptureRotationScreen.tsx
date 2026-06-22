@@ -1,6 +1,7 @@
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { CameraCapturedPicture, CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import type { CameraCapturedPicture, VideoQuality } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import type { ReactElement } from "react";
 import { useRef, useState } from "react";
@@ -13,7 +14,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Button } from "../components/Button";
 import { Screen } from "../components/Screen";
 import {
   getCoverageLabel,
@@ -46,6 +46,14 @@ const burstIntervalOptions: { label: string; value: BurstIntervalMs }[] = [
   { label: "2s", value: 2000 }
 ];
 
+const videoQualityOptions: { label: string; value: VideoQuality }[] = [
+  { label: "4K", value: "2160p" },
+  { label: "1080", value: "1080p" },
+  { label: "720", value: "720p" }
+];
+
+const ZOOM_STEP = 0.08;
+
 export function CaptureRotationScreen({
   navigation,
   route
@@ -67,8 +75,10 @@ export function CaptureRotationScreen({
   const burstDelayResolveRef = useRef<(() => void) | null>(null);
   const videoStartedAtRef = useRef<number | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const [activeMenu, setActiveMenu] = useState<ToolbarMenu>("camera");
+  const [activeMenu, setActiveMenu] = useState<ToolbarMenu | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("photo");
+  const [cameraZoom, setCameraZoom] = useState(0);
+  const [videoQuality, setVideoQuality] = useState<VideoQuality>("2160p");
   const [burstIntervalMs, setBurstIntervalMs] =
     useState<BurstIntervalMs>(1000);
   const [isCameraReady, setIsCameraReady] = useState(false);
@@ -236,6 +246,10 @@ export function CaptureRotationScreen({
     clearBurstDelay();
   }
 
+  function setZoomLevel(value: number): void {
+    setCameraZoom(Math.max(0, Math.min(1, value)));
+  }
+
   function waitForBurstInterval(durationMs: number): Promise<void> {
     return new Promise((resolve) => {
       burstDelayResolveRef.current = resolve;
@@ -275,6 +289,19 @@ export function CaptureRotationScreen({
     return isRecording ? "Stop Recording" : "Record Video";
   }
 
+  function getVideoBitrate(quality: VideoQuality): number {
+    switch (quality) {
+      case "2160p":
+        return 48_000_000;
+      case "1080p":
+        return 18_000_000;
+      case "720p":
+        return 8_000_000;
+      default:
+        return 10_000_000;
+    }
+  }
+
   const primaryActionDisabled =
     !canUseCamera ||
     (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
@@ -295,6 +322,9 @@ export function CaptureRotationScreen({
           onCameraReady={() => setIsCameraReady(true)}
           onMountError={(event) => setCaptureError(event.message)}
           style={styles.cameraView}
+          videoBitrate={getVideoBitrate(videoQuality)}
+          videoQuality={videoQuality}
+          zoom={cameraZoom}
         />
       ) : (
         <View style={styles.cameraFallback} />
@@ -373,6 +403,46 @@ export function CaptureRotationScreen({
             <Text style={styles.warningText}>{coverageWarning}</Text>
           ) : null}
 
+          <View style={styles.zoomRow}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={!permission?.granted || cameraZoom <= 0}
+              onPress={() => setZoomLevel(cameraZoom - ZOOM_STEP)}
+              style={({ pressed }) => [
+                styles.zoomButton,
+                cameraZoom <= 0 ? styles.sideControlDisabled : undefined,
+                pressed && permission?.granted ? styles.pressed : undefined
+              ]}
+            >
+              <Text style={styles.zoomButtonText}>-</Text>
+            </Pressable>
+            <View style={styles.zoomInfo}>
+              <Text style={styles.zoomValue}>
+                Zoom {Math.round(cameraZoom * 100)}%
+              </Text>
+              <View style={styles.zoomTrack}>
+                <View
+                  style={[
+                    styles.zoomFill,
+                    { width: `${Math.round(cameraZoom * 100)}%` }
+                  ]}
+                />
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={!permission?.granted || cameraZoom >= 1}
+              onPress={() => setZoomLevel(cameraZoom + ZOOM_STEP)}
+              style={({ pressed }) => [
+                styles.zoomButton,
+                cameraZoom >= 1 ? styles.sideControlDisabled : undefined,
+                pressed && permission?.granted ? styles.pressed : undefined
+              ]}
+            >
+              <Text style={styles.zoomButtonText}>+</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.modeStrip}>
             {cameraModes.map((mode) => (
               <Pressable
@@ -405,7 +475,7 @@ export function CaptureRotationScreen({
               accessibilityRole="button"
               disabled={isRecording || isBurstRunning}
               onPress={() =>
-                setActiveMenu(activeMenu === "frames" ? "camera" : "frames")
+                setActiveMenu(activeMenu === "frames" ? null : "frames")
               }
               style={({ pressed }) => [
                 styles.sideControl,
@@ -479,7 +549,9 @@ export function CaptureRotationScreen({
               <Pressable
                 accessibilityRole="button"
                 key={menu.value}
-                onPress={() => setActiveMenu(menu.value)}
+                onPress={() =>
+                  setActiveMenu(activeMenu === menu.value ? null : menu.value)
+                }
                 style={({ pressed }) => [
                   styles.toolbarItem,
                   activeMenu === menu.value ? styles.toolbarItemActive : undefined,
@@ -506,52 +578,81 @@ export function CaptureRotationScreen({
               <Text style={styles.menuTitle}>Camera</Text>
               <Text style={styles.menuMeta}>{cameraMode}</Text>
             </View>
-            {!permission?.granted ? (
-              <Button label="Grant Camera Access" onPress={requestPermission} />
-            ) : (
-              <Button
-                disabled={primaryActionDisabled}
-                label={getPrimaryButtonLabel()}
-                variant={isRecording || isBurstRunning ? "danger" : "primary"}
-                onPress={
-                  isBurstRunning ? stopBurstCapture : handlePrimaryCapture
-                }
-              />
-            )}
             {cameraMode === "burst" ? (
-              <View style={styles.optionRow}>
-                {burstIntervalOptions.map((option) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={isBurstRunning}
-                    key={option.value}
-                    onPress={() => setBurstIntervalMs(option.value)}
-                    style={({ pressed }) => [
-                      styles.optionChip,
-                      burstIntervalMs === option.value
-                        ? styles.optionChipActive
-                        : undefined,
-                      pressed && !isBurstRunning ? styles.pressed : undefined
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.optionChipText,
+              <View style={styles.optionGroup}>
+                <Text style={styles.optionGroupTitle}>Burst</Text>
+                <View style={styles.optionRow}>
+                  {burstIntervalOptions.map((option) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isBurstRunning}
+                      key={option.value}
+                      onPress={() => setBurstIntervalMs(option.value)}
+                      style={({ pressed }) => [
+                        styles.optionChip,
                         burstIntervalMs === option.value
-                          ? styles.optionChipTextActive
-                          : undefined
+                          ? styles.optionChipActive
+                          : undefined,
+                        pressed && !isBurstRunning ? styles.pressed : undefined
                       ]}
                     >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.optionChipText,
+                          burstIntervalMs === option.value
+                            ? styles.optionChipTextActive
+                            : undefined
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             ) : null}
-            <Button
+            {cameraMode === "video" ? (
+              <View style={styles.optionGroup}>
+                <Text style={styles.optionGroupTitle}>Video</Text>
+                <View style={styles.optionRow}>
+                  {videoQualityOptions.map((option) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isRecording}
+                      key={option.value}
+                      onPress={() => setVideoQuality(option.value)}
+                      style={({ pressed }) => [
+                        styles.optionChip,
+                        videoQuality === option.value
+                          ? styles.optionChipActive
+                          : undefined,
+                        pressed && !isRecording ? styles.pressed : undefined
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionChipText,
+                          videoQuality === option.value
+                            ? styles.optionChipTextActive
+                            : undefined
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            {!permission?.granted ? (
+              <CompactMenuButton
+                label="Grant Camera"
+                onPress={requestPermission}
+              />
+            ) : null}
+            <CompactMenuButton
               disabled={isRecording || isBurstRunning || isCapturing}
-              label="Simulate Frame"
-              variant="secondary"
+              label="Sim Frame"
               onPress={() => addSimulatedFrame(projectId, rotationId)}
             />
           </View>
@@ -571,7 +672,7 @@ export function CaptureRotationScreen({
               </View>
             ) : (
               <View style={styles.frameStrip}>
-                {rotation.frames.slice(-8).map((frame) => (
+                {rotation.frames.slice(-4).map((frame) => (
                   <View key={frame.filename} style={styles.frameTile}>
                     <Image source={{ uri: frame.uri }} style={styles.frameTileImage} />
                     <Text style={styles.frameTileLabel}>{frame.index}</Text>
@@ -593,16 +694,16 @@ export function CaptureRotationScreen({
               </View>
             ) : null}
             <View style={styles.twoButtonRow}>
-              <Button
+              <CompactMenuButton
                 disabled={frameCount === 0 || isCapturing || isRecording}
-                label="Delete Last Photo"
-                variant="danger"
+                label="Delete Photo"
+                tone="danger"
                 onPress={() => retakeLastFrame(projectId, rotationId)}
               />
-              <Button
+              <CompactMenuButton
                 disabled={videoCount === 0 || isRecording}
-                label="Delete Last Video"
-                variant="danger"
+                label="Delete Video"
+                tone="danger"
                 onPress={() => deleteLastVideo(projectId, rotationId)}
               />
             </View>
@@ -615,14 +716,14 @@ export function CaptureRotationScreen({
               <Text style={styles.menuTitle}>Actions</Text>
               <Text style={styles.menuMeta}>Rotation workflow</Text>
             </View>
-            <Button
+            <CompactMenuButton
               disabled={frameCount === 0 || isRecording || isBurstRunning}
               label="Complete Rotation"
+              tone="primary"
               onPress={handleCompleteRotation}
             />
-            <Button
+            <CompactMenuButton
               label="Back to Plan"
-              variant="secondary"
               onPress={() => navigation.navigate("CapturePlan", { projectId })}
             />
           </View>
@@ -630,6 +731,46 @@ export function CaptureRotationScreen({
         </View>
       </SafeAreaView>
     </View>
+  );
+}
+
+interface CompactMenuButtonProps {
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+  tone?: "default" | "primary" | "danger";
+}
+
+function CompactMenuButton({
+  disabled = false,
+  label,
+  onPress,
+  tone = "default"
+}: CompactMenuButtonProps): ReactElement {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.compactButton,
+        tone === "primary" ? styles.compactButtonPrimary : undefined,
+        tone === "danger" ? styles.compactButtonDanger : undefined,
+        disabled ? styles.compactButtonDisabled : undefined,
+        pressed && !disabled ? styles.pressed : undefined
+      ]}
+    >
+      <Text
+        style={[
+          styles.compactButtonText,
+          tone === "primary" ? styles.compactButtonTextPrimary : undefined,
+          tone === "danger" ? styles.compactButtonTextDanger : undefined,
+          disabled ? styles.compactButtonTextDisabled : undefined
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -768,9 +909,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.14)",
     borderRadius: 8,
     borderWidth: 1,
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-    padding: spacing.sm
+    gap: 7,
+    marginBottom: spacing.xs,
+    padding: spacing.xs
   },
   captureReadout: {
     alignItems: "center",
@@ -784,14 +925,14 @@ const styles = StyleSheet.create({
   },
   previewStatusLabel: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "900"
   },
   previewStatusValue: {
     color: "#dfece8",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 17
+    lineHeight: 14
   },
   coverageBadge: {
     alignItems: "flex-end",
@@ -799,12 +940,12 @@ const styles = StyleSheet.create({
   },
   coverageValue: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900"
   },
   coverageLabel: {
     color: "#dfece8",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
     textTransform: "uppercase"
   },
@@ -821,13 +962,56 @@ const styles = StyleSheet.create({
   },
   warningText: {
     color: "#ffd28a",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
-    lineHeight: 16
+    lineHeight: 14
+  },
+  zoomRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs
+  },
+  zoomButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: "center",
+    width: 38
+  },
+  zoomButtonText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 20
+  },
+  zoomInfo: {
+    flex: 1,
+    gap: 3
+  },
+  zoomValue: {
+    color: "#dfece8",
+    fontSize: 10,
+    fontWeight: "900",
+    textAlign: "center",
+    textTransform: "uppercase"
+  },
+  zoomTrack: {
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 999,
+    height: 4,
+    overflow: "hidden"
+  },
+  zoomFill: {
+    backgroundColor: "#ffffff",
+    borderRadius: 999,
+    height: 4
   },
   modeStrip: {
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.xs
   },
   modeItem: {
     alignItems: "center",
@@ -836,7 +1020,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 38
+    minHeight: 30
   },
   modeItemActive: {
     backgroundColor: "#ffffff",
@@ -844,7 +1028,7 @@ const styles = StyleSheet.create({
   },
   modeText: {
     color: "#dfece8",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900"
   },
   modeTextActive: {
@@ -862,9 +1046,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 46,
-    minWidth: 82,
-    paddingHorizontal: spacing.sm
+    minHeight: 36,
+    minWidth: 70,
+    paddingHorizontal: spacing.xs
   },
   sideControlActive: {
     backgroundColor: "rgba(255, 255, 255, 0.22)"
@@ -877,7 +1061,7 @@ const styles = StyleSheet.create({
   },
   sideControlText: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900"
   },
   shutterButton: {
@@ -885,10 +1069,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.22)",
     borderColor: "#ffffff",
     borderRadius: 999,
-    borderWidth: 4,
-    height: 82,
+    borderWidth: 3,
+    height: 68,
     justifyContent: "center",
-    width: 82
+    width: 68
   },
   shutterButtonStop: {
     borderColor: "#ffddd9"
@@ -899,18 +1083,18 @@ const styles = StyleSheet.create({
   shutterButtonInner: {
     backgroundColor: "#ffffff",
     borderRadius: 999,
-    height: 58,
-    width: 58
+    height: 48,
+    width: 48
   },
   shutterButtonInnerStop: {
     backgroundColor: "#d14c40",
     borderRadius: 8,
-    height: 38,
-    width: 38
+    height: 30,
+    width: 30
   },
   shutterLabel: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900",
     textAlign: "center"
   },
@@ -920,21 +1104,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    padding: 4
+    padding: 3
   },
   toolbarItem: {
     alignItems: "center",
     borderRadius: 6,
     flex: 1,
     justifyContent: "center",
-    minHeight: 36
+    minHeight: 30
   },
   toolbarItemActive: {
     backgroundColor: "#ffffff"
   },
   toolbarText: {
     color: "#dfece8",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900"
   },
   toolbarTextActive: {
@@ -945,8 +1129,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 8,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.sm
+    gap: spacing.xs,
+    padding: spacing.xs
   },
   menuHeader: {
     alignItems: "center",
@@ -955,18 +1139,27 @@ const styles = StyleSheet.create({
   },
   menuTitle: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "900"
   },
   menuMeta: {
     color: colors.mutedText,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "800",
+    textTransform: "uppercase"
+  },
+  optionGroup: {
+    gap: spacing.xs
+  },
+  optionGroupTitle: {
+    color: colors.mutedText,
+    fontSize: 10,
+    fontWeight: "900",
     textTransform: "uppercase"
   },
   optionRow: {
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.xs
   },
   optionChip: {
     alignItems: "center",
@@ -975,7 +1168,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 40
+    minHeight: 30
   },
   optionChipActive: {
     backgroundColor: "#ecf6f6",
@@ -983,7 +1176,7 @@ const styles = StyleSheet.create({
   },
   optionChipText: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "900"
   },
   optionChipTextActive: {
@@ -996,11 +1189,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 58
+    minHeight: 42
   },
   emptyFrameText: {
     color: colors.mutedText,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "800"
   },
   frameStrip: {
@@ -1012,17 +1205,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderRadius: 8,
     overflow: "hidden",
-    width: 62
+    width: 48
   },
   frameTileImage: {
-    height: 56,
-    width: 62
+    height: 42,
+    width: 48
   },
   frameTileLabel: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900",
-    padding: 5,
+    padding: 3,
     textAlign: "center"
   },
   videoRow: {
@@ -1033,25 +1226,62 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: spacing.sm
+    padding: spacing.xs
   },
   videoTitle: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "900"
   },
   videoMeta: {
     color: colors.mutedText,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "700"
   },
   videoBadge: {
     color: colors.sky,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "900"
   },
   twoButtonRow: {
-    gap: spacing.sm
+    flexDirection: "row",
+    gap: spacing.xs
+  },
+  compactButton: {
+    alignItems: "center",
+    backgroundColor: "#f7fafb",
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 32,
+    paddingHorizontal: spacing.xs
+  },
+  compactButtonPrimary: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  compactButtonDanger: {
+    backgroundColor: "#f0d8d5",
+    borderColor: "#e4b9b4"
+  },
+  compactButtonDisabled: {
+    opacity: 0.42
+  },
+  compactButtonText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  compactButtonTextPrimary: {
+    color: "#ffffff"
+  },
+  compactButtonTextDanger: {
+    color: colors.danger
+  },
+  compactButtonTextDisabled: {
+    color: colors.mutedText
   },
   errorMessage: {
     backgroundColor: "rgba(240, 216, 213, 0.94)",

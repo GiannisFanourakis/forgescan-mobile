@@ -28,6 +28,10 @@ Everything else is internal project data.
 
 - Android dev build is the first real engine target.
 - Expo Go supports UI and capture fallback only; native engines are unavailable there.
+- Current capture uses the in-app Expo camera with ForgeScan controls, zoom, timed burst, photo, and video modes.
+- Video mode requests 4K/2160p when selected; actual 4K/60 availability depends on what Android exposes to the app camera API.
+- Native Camera2 hardware diagnostics are installed to inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, and native zoom.
+- Full OEM-style camera control requires replacing capture with a native CameraX/Camera2 surface. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
 - Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
 - Android masking is ML Kit-first.
 - ARCore availability is checked in the native module. If live ARCore tracking is unavailable, ForgeScan uses turntable pose assumptions.
@@ -74,6 +78,7 @@ It is not shown in the normal home flow.
 
 Buttons:
 
+- `Test Android Camera Hardware`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
 - `Start ARCore Keyframe Capture Test`
@@ -82,7 +87,7 @@ Buttons:
 - `Run Tiny .ksplat Writer Test`
 - `Run Full Android Scan Test`
 
-Diagnostics show ML Kit status, mask threshold, ARCore availability, fallback pose status, optimizer status, `.ksplat` writer status, last output paths/sizes, and native errors.
+Diagnostics show Android camera hardware support, ML Kit status, mask threshold, ARCore availability, fallback pose status, optimizer status, `.ksplat` writer status, last output paths/sizes, and native errors.
 
 ## Commands
 

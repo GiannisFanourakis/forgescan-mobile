@@ -86,6 +86,7 @@ It is a developer troubleshooting route, not a normal home-screen option.
 
 Diagnostics buttons:
 
+- `Test Android Camera Hardware`
 - `Test ML Kit Availability`
 - `Run One-Frame ML Kit Mask Test`
 - `Start ARCore Keyframe Capture Test`
@@ -96,6 +97,7 @@ Diagnostics buttons:
 
 Diagnostics must fail clearly for:
 
+- Android Camera2 hardware unavailable.
 - ARCore unavailable.
 - ML Kit unavailable.
 - Mask generation failed.
@@ -107,6 +109,7 @@ Diagnostics must fail clearly for:
 
 Diagnostics pass only when:
 
+- Camera2 diagnostics report at least one back camera and list manual/RAW/OIS/multi-camera support honestly.
 - Masking writes at least one non-empty mask.
 - Trainable V1 or coarse fallback writes a non-empty `.ksplat`.
 - Quality tier is shown.

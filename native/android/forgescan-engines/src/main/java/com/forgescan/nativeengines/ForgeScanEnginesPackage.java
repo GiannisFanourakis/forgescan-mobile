@@ -13,6 +13,7 @@ public class ForgeScanEnginesPackage implements ReactPackage {
   public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
     List<NativeModule> modules = new ArrayList<>();
     modules.add(new ForgeScanNativeMaskingModule(reactContext));
+    modules.add(new ForgeScanAdvancedCameraModule(reactContext));
     modules.add(new ForgeScanARCaptureModule(reactContext));
     modules.add(new ForgeScanKsplatOptimizerModule(reactContext));
     return modules;

@@ -11,6 +11,8 @@ import {
   runNativeARCoreKeyframeSmokeTest
 } from "../native/NativeARCapture";
 import { NativeARCaptureAvailability } from "../native/NativeARCaptureTypes";
+import { getNativeAdvancedCameraAvailability } from "../native/NativeAdvancedCamera";
+import { NativeAdvancedCameraAvailability } from "../native/NativeAdvancedCameraTypes";
 import {
   getNativeKsplatOptimizerAvailability,
   runNativeGaussianTrainingSmokeTest,
@@ -48,6 +50,7 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
   const currentPlatformLabel = getRuntimePlatformLabel();
   const hasForgeScanNativeModules = Boolean(
     NativeModules.ForgeScanNativeMasking ||
+      NativeModules.ForgeScanAdvancedCamera ||
       NativeModules.ForgeScanARCapture ||
       NativeModules.ForgeScanKsplatOptimizer
   );
@@ -60,6 +63,8 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
     useState<NativeKsplatOptimizerAvailability | null>(null);
   const [arAvailability, setArAvailability] =
     useState<NativeARCaptureAvailability | null>(null);
+  const [advancedCameraAvailability, setAdvancedCameraAvailability] =
+    useState<NativeAdvancedCameraAvailability | null>(null);
   const [maskTestStatus, setMaskTestStatus] = useState<SmokeStatus>("not run");
   const [arSmokeStatus, setArSmokeStatus] = useState<SmokeStatus>("not run");
   const [trainingSmokeStatus, setTrainingSmokeStatus] =
@@ -135,6 +140,30 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             value={hasForgeScanNativeModules ? "Dev build / native" : "Expo Go / JS runtime"}
           />
           <DiagnosticLine label="Platform" value={Platform.OS} />
+          <DiagnosticLine
+            label="Advanced Camera2 module"
+            value={formatPresence(advancedCameraAvailability?.camera2Available)}
+          />
+          <DiagnosticLine
+            label="Manual ISO/exposure/focus supported"
+            value={formatPresence(advancedCameraAvailability?.manualSensorSupported)}
+          />
+          <DiagnosticLine
+            label="OIS / video stabilization"
+            value={`${formatPresence(advancedCameraAvailability?.opticalStabilizationSupported)} / ${formatPresence(advancedCameraAvailability?.videoStabilizationSupported)}`}
+          />
+          <DiagnosticLine
+            label="Logical multi-camera / physical lenses"
+            value={`${formatPresence(advancedCameraAvailability?.logicalMultiCameraSupported)} / ${formatPresence(advancedCameraAvailability?.physicalCameraIdsAvailable)}`}
+          />
+          <DiagnosticLine
+            label="Max native digital zoom"
+            value={
+              advancedCameraAvailability?.maxDigitalZoom
+                ? `${advancedCameraAvailability.maxDigitalZoom.toFixed(1)}x`
+                : "unknown"
+            }
+          />
           <DiagnosticLine
             label="React Native New Architecture"
             value={architectureStatus}
@@ -213,6 +242,97 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
             value="not implemented"
           />
           <DiagnosticLine label="Last native error" value={lastNativeError} />
+          <Button
+            disabled={isRunning}
+            label="Test Android Camera Hardware"
+            variant="secondary"
+            onPress={() => {
+              void runDiagnostic("Android camera hardware", async () => {
+                const availability = await getNativeAdvancedCameraAvailability();
+                setAdvancedCameraAvailability(availability);
+                const backCameras = availability.cameras.filter(
+                  (camera) => camera.lensFacing === "back"
+                );
+                const bestBackCamera = backCameras[0] ?? availability.cameras[0];
+
+                return [
+                  {
+                    label: "Advanced camera module installed",
+                    status: availability.available ? "pass" : "fail",
+                    detail: availability.available ? "yes" : "no"
+                  },
+                  {
+                    label: "Camera2 hardware access",
+                    status: availability.camera2Available ? "pass" : "fail",
+                    detail: availability.camera2Available ? "available" : "unavailable"
+                  },
+                  {
+                    label: "Back camera count",
+                    status: backCameras.length > 0 ? "pass" : "fail",
+                    detail: `${backCameras.length} back cameras / ${availability.cameras.length} total`
+                  },
+                  {
+                    label: "Manual sensor control",
+                    status: availability.manualSensorSupported ? "pass" : "warn",
+                    detail: availability.manualSensorSupported
+                      ? "manual ISO/exposure/focus possible through Camera2 path"
+                      : "not exposed by Camera2 on this runtime"
+                  },
+                  {
+                    label: "RAW capture",
+                    status: availability.rawCaptureSupported ? "pass" : "warn",
+                    detail: availability.rawCaptureSupported ? "supported" : "not exposed"
+                  },
+                  {
+                    label: "OIS / video stabilization",
+                    status:
+                      availability.opticalStabilizationSupported ||
+                      availability.videoStabilizationSupported
+                        ? "pass"
+                        : "warn",
+                    detail: `${formatPresence(availability.opticalStabilizationSupported)} / ${formatPresence(availability.videoStabilizationSupported)}`
+                  },
+                  {
+                    label: "Multi-camera physical lenses",
+                    status:
+                      availability.logicalMultiCameraSupported ||
+                      availability.physicalCameraIdsAvailable
+                        ? "pass"
+                        : "warn",
+                    detail: availability.cameras
+                      .map(
+                        (camera) =>
+                          `${camera.id}:${camera.lensFacing}:${camera.focalLengths.join(",")}mm`
+                      )
+                      .join(" | ") || "no cameras returned"
+                  },
+                  {
+                    label: "Max digital zoom",
+                    status: (availability.maxDigitalZoom ?? 1) > 1 ? "pass" : "warn",
+                    detail: `${availability.maxDigitalZoom ?? 1}x`
+                  },
+                  {
+                    label: "Best back camera hardware level",
+                    status:
+                      bestBackCamera?.hardwareLevel === "full" ||
+                      bestBackCamera?.hardwareLevel === "level-3"
+                        ? "pass"
+                        : "warn",
+                    detail: bestBackCamera
+                      ? `${bestBackCamera.id} / ${bestBackCamera.hardwareLevel}`
+                      : "unknown"
+                  },
+                  {
+                    label: "Native capture engine",
+                    status: availability.cameraXCaptureImplemented ? "pass" : "warn",
+                    detail: availability.cameraXCaptureImplemented
+                      ? "CameraX capture implemented"
+                      : "CameraX/Camera2 capture replacement is next."
+                  }
+                ];
+              });
+            }}
+          />
           <Button
             disabled={isRunning}
             label="Test ML Kit Availability"
