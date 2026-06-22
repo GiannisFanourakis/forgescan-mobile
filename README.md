@@ -27,11 +27,11 @@ Everything else is internal project data.
 ## Current Android Truth
 
 - Android dev build is the first real engine target.
-- Expo Go supports UI and capture fallback only; native engines are unavailable there.
-- Current capture uses the in-app Expo camera with ForgeScan controls, zoom, timed burst, photo, and video modes.
-- Video mode requests 4K/2160p when selected; actual 4K/60 availability depends on what Android exposes to the app camera API.
+- Expo Go is UI-only for camera capture now; the capture screen reports that a native Android build is required.
+- Android dev build uses a native CameraX full-screen preview by default for ForgeScan controls, zoom, timed burst, photo, and video modes.
+- Video mode requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
 - Native Camera2 hardware diagnostics are installed to inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, and native zoom.
-- Full OEM-style camera control requires replacing capture with a native CameraX/Camera2 surface. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
+- Camera2 manual ISO/shutter/focus and ARCore SharedCamera pose-linked capture remain future extensions. The phone's stock camera app cannot run ForgeScan's controlled frame/pose/mask/splat pipeline directly.
 - Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
 - Android masking is ML Kit-first.
 - ARCore availability is checked in the native module. If live ARCore tracking is unavailable, ForgeScan uses turntable pose assumptions.

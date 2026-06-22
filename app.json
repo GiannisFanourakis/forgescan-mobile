@@ -29,14 +29,6 @@
       "package": "com.anonymous.forgescanmobile"
     },
     "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "ForgeScan uses the camera for photo, timed burst, and muted video object capture.",
-          "microphonePermission": false,
-          "recordAudioAndroid": false
-        }
-      ],
       "./plugins/withForgeScanNativeEngines"
     ]
   }

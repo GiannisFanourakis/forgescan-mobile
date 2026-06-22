@@ -1,12 +1,12 @@
 import { useIsFocused } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import type { CameraCapturedPicture, VideoQuality } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import type { ReactElement } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Image,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +20,14 @@ import {
   getCoverageWarning
 } from "../core/coverage";
 import { RootStackParamList } from "../navigation/types";
+import {
+  captureNativeCameraXPhoto,
+  isNativeCameraXCaptureAvailable,
+  startNativeCameraXVideo,
+  stopNativeCameraXVideo
+} from "../native/NativeAdvancedCamera";
+import type { NativeCameraXVideoQuality } from "../native/NativeAdvancedCameraTypes";
+import { NativeCameraXView } from "../native/NativeCameraXView";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 
@@ -46,7 +54,7 @@ const burstIntervalOptions: { label: string; value: BurstIntervalMs }[] = [
   { label: "2s", value: 2000 }
 ];
 
-const videoQualityOptions: { label: string; value: VideoQuality }[] = [
+const videoQualityOptions: { label: string; value: NativeCameraXVideoQuality }[] = [
   { label: "4K", value: "2160p" },
   { label: "1080", value: "1080p" },
   { label: "720", value: "720p" }
@@ -68,20 +76,19 @@ export function CaptureRotationScreen({
     retakeLastFrame
   } = useProjects();
   const isFocused = useIsFocused();
-  const cameraRef = useRef<CameraView>(null);
   const captureInFlightRef = useRef(false);
   const burstStopRequestedRef = useRef(false);
   const burstDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const burstDelayResolveRef = useRef<(() => void) | null>(null);
   const videoStartedAtRef = useRef<number | null>(null);
-  const [permission, requestPermission] = useCameraPermissions();
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [activeMenu, setActiveMenu] = useState<ToolbarMenu | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("photo");
   const [cameraZoom, setCameraZoom] = useState(0);
-  const [videoQuality, setVideoQuality] = useState<VideoQuality>("2160p");
+  const [videoQuality, setVideoQuality] =
+    useState<NativeCameraXVideoQuality>("2160p");
   const [burstIntervalMs, setBurstIntervalMs] =
     useState<BurstIntervalMs>(1000);
-  const [isCameraReady, setIsCameraReady] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isBurstRunning, setIsBurstRunning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -91,6 +98,17 @@ export function CaptureRotationScreen({
   const rotation = project?.capture.rotations.find(
     (candidate) => candidate.id === route.params.rotationId
   );
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      setHasCameraPermission(false);
+      return;
+    }
+
+    void PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA).then(
+      setHasCameraPermission
+    );
+  }, []);
 
   if (!project || !rotation) {
     return (
@@ -113,7 +131,24 @@ export function CaptureRotationScreen({
   const projectId = project.project.id;
   const rotationId = rotation.id;
   const nextFrameNumber = frameCount + 1;
-  const canUseCamera = permission?.granted === true && isCameraReady;
+  const nativeCameraAvailable =
+    Platform.OS === "android" &&
+    NativeCameraXView !== null &&
+    isNativeCameraXCaptureAvailable();
+  const canUseCamera =
+    hasCameraPermission && nativeCameraAvailable && isFocused;
+
+  async function requestCameraPermission(): Promise<void> {
+    if (Platform.OS !== "android") {
+      setCaptureError("Native camera capture currently targets Android dev builds.");
+      return;
+    }
+
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA
+    );
+    setHasCameraPermission(result === PermissionsAndroid.RESULTS.GRANTED);
+  }
 
   async function handlePrimaryCapture(): Promise<void> {
     if (cameraMode === "photo") {
@@ -127,7 +162,7 @@ export function CaptureRotationScreen({
     }
 
     if (isRecording) {
-      cameraRef.current?.stopRecording();
+      await stopNativeCameraXVideo();
       return;
     }
 
@@ -136,7 +171,6 @@ export function CaptureRotationScreen({
 
   async function captureSinglePhoto(): Promise<boolean> {
     if (
-      !cameraRef.current ||
       !canUseCamera ||
       isCapturing ||
       captureInFlightRef.current ||
@@ -150,16 +184,17 @@ export function CaptureRotationScreen({
     setCaptureError(null);
 
     try {
-      const photo: CameraCapturedPicture =
-        await cameraRef.current.takePictureAsync({
-          quality: 0.94,
-          skipProcessing: false
-        });
+      const photo = await captureNativeCameraXPhoto({
+        projectId,
+        rotationId,
+        filename: `capture_${Date.now()}.jpg`,
+        videoQuality
+      });
 
       await addCapturedFrame(projectId, rotationId, {
         uri: photo.uri,
-        width: photo.width,
-        height: photo.height
+        ...(photo.width && photo.width > 0 ? { width: photo.width } : {}),
+        ...(photo.height && photo.height > 0 ? { height: photo.height } : {})
       });
       return true;
     } catch (error: unknown) {
@@ -208,7 +243,7 @@ export function CaptureRotationScreen({
   }
 
   async function startVideoCapture(): Promise<void> {
-    if (!cameraRef.current || !canUseCamera || isRecording || isBurstRunning) {
+    if (!canUseCamera || isRecording || isBurstRunning) {
       return;
     }
 
@@ -218,8 +253,11 @@ export function CaptureRotationScreen({
     videoStartedAtRef.current = Date.now();
 
     try {
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: 60
+      const video = await startNativeCameraXVideo({
+        projectId,
+        rotationId,
+        filename: `capture_${Date.now()}.mp4`,
+        videoQuality
       });
 
       if (video?.uri) {
@@ -289,40 +327,18 @@ export function CaptureRotationScreen({
     return isRecording ? "Stop Recording" : "Record Video";
   }
 
-  function getVideoBitrate(quality: VideoQuality): number {
-    switch (quality) {
-      case "2160p":
-        return 48_000_000;
-      case "1080p":
-        return 18_000_000;
-      case "720p":
-        return 8_000_000;
-      default:
-        return 10_000_000;
-    }
-  }
-
   const primaryActionDisabled =
     !canUseCamera ||
     (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
     (cameraMode !== "burst" && isBurstRunning);
-  const shutterDisabled = permission?.granted ? primaryActionDisabled : false;
+  const shutterDisabled = hasCameraPermission ? primaryActionDisabled : false;
 
   return (
     <View style={styles.cameraRoot}>
       <StatusBar style="light" translucent />
-      {permission?.granted && isFocused ? (
-        <CameraView
-          ref={cameraRef}
-          active={isFocused}
-          animateShutter
-          facing="back"
-          mode={cameraMode === "video" ? "video" : "picture"}
-          mute
-          onCameraReady={() => setIsCameraReady(true)}
-          onMountError={(event) => setCaptureError(event.message)}
+      {hasCameraPermission && isFocused && NativeCameraXView ? (
+        <NativeCameraXView
           style={styles.cameraView}
-          videoBitrate={getVideoBitrate(videoQuality)}
           videoQuality={videoQuality}
           zoom={cameraZoom}
         />
@@ -331,17 +347,17 @@ export function CaptureRotationScreen({
       )}
 
       <View pointerEvents="none" style={styles.previewOverlay}>
-        {!permission?.granted ? (
+        {!hasCameraPermission ? (
           <View style={styles.emptyPreviewState}>
             <Text style={styles.emptyPreviewTitle}>Camera access</Text>
             <Text style={styles.emptyPreviewText}>
               Tap the shutter to grant access.
             </Text>
           </View>
-        ) : !isCameraReady ? (
+        ) : !nativeCameraAvailable ? (
           <View style={styles.emptyPreviewState}>
-            <Text style={styles.emptyPreviewTitle}>Standby</Text>
-            <Text style={styles.emptyPreviewText}>Preparing preview</Text>
+            <Text style={styles.emptyPreviewTitle}>Native build required</Text>
+            <Text style={styles.emptyPreviewText}>CameraX is not installed here.</Text>
           </View>
         ) : null}
         <View style={styles.previewGuide} />
@@ -406,12 +422,12 @@ export function CaptureRotationScreen({
           <View style={styles.zoomRow}>
             <Pressable
               accessibilityRole="button"
-              disabled={!permission?.granted || cameraZoom <= 0}
+              disabled={!hasCameraPermission || cameraZoom <= 0}
               onPress={() => setZoomLevel(cameraZoom - ZOOM_STEP)}
               style={({ pressed }) => [
                 styles.zoomButton,
                 cameraZoom <= 0 ? styles.sideControlDisabled : undefined,
-                pressed && permission?.granted ? styles.pressed : undefined
+                pressed && hasCameraPermission ? styles.pressed : undefined
               ]}
             >
               <Text style={styles.zoomButtonText}>-</Text>
@@ -431,12 +447,12 @@ export function CaptureRotationScreen({
             </View>
             <Pressable
               accessibilityRole="button"
-              disabled={!permission?.granted || cameraZoom >= 1}
+              disabled={!hasCameraPermission || cameraZoom >= 1}
               onPress={() => setZoomLevel(cameraZoom + ZOOM_STEP)}
               style={({ pressed }) => [
                 styles.zoomButton,
                 cameraZoom >= 1 ? styles.sideControlDisabled : undefined,
-                pressed && permission?.granted ? styles.pressed : undefined
+                pressed && hasCameraPermission ? styles.pressed : undefined
               ]}
             >
               <Text style={styles.zoomButtonText}>+</Text>
@@ -492,8 +508,8 @@ export function CaptureRotationScreen({
               accessibilityRole="button"
               disabled={shutterDisabled}
               onPress={() => {
-                if (!permission?.granted) {
-                  void requestPermission();
+                if (!hasCameraPermission) {
+                  void requestCameraPermission();
                   return;
                 }
 
@@ -541,7 +557,7 @@ export function CaptureRotationScreen({
           </View>
 
           <Text style={styles.shutterLabel}>
-            {permission?.granted ? getPrimaryButtonLabel() : "Grant Camera Access"}
+            {hasCameraPermission ? getPrimaryButtonLabel() : "Grant Camera Access"}
           </Text>
 
           <View style={styles.toolbar}>
@@ -576,7 +592,7 @@ export function CaptureRotationScreen({
           <View style={styles.menuPanel}>
             <View style={styles.menuHeader}>
               <Text style={styles.menuTitle}>Camera</Text>
-              <Text style={styles.menuMeta}>{cameraMode}</Text>
+              <Text style={styles.menuMeta}>CameraX / {cameraMode}</Text>
             </View>
             {cameraMode === "burst" ? (
               <View style={styles.optionGroup}>
@@ -644,10 +660,10 @@ export function CaptureRotationScreen({
                 </View>
               </View>
             ) : null}
-            {!permission?.granted ? (
+            {!hasCameraPermission ? (
               <CompactMenuButton
                 label="Grant Camera"
-                onPress={requestPermission}
+                onPress={requestCameraPermission}
               />
             ) : null}
             <CompactMenuButton

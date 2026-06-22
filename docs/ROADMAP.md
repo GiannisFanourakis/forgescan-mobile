@@ -2,7 +2,7 @@
 
 ## Current Executable Prototype
 
-- Real Expo camera capture.
+- Real Android CameraX capture.
 - Unlimited frame capture with recommended presets.
 - Manual rotation completion.
 - Local project persistence.

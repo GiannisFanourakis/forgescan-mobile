@@ -326,8 +326,8 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     label: "Native capture engine",
                     status: availability.cameraXCaptureImplemented ? "pass" : "warn",
                     detail: availability.cameraXCaptureImplemented
-                      ? "CameraX capture implemented"
-                      : "CameraX/Camera2 capture replacement is next."
+                      ? "CameraX preview/photo/video capture implemented"
+                      : "Android native CameraX capture is missing."
                   }
                 ];
               });

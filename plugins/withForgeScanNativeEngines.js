@@ -11,6 +11,12 @@ const javaPackageCall = "packages.add(new ForgeScanEnginesPackage());";
 const mlKitSubjectSegmentationDependency =
   'implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")';
 const arCoreDependency = 'implementation("com.google.ar:core:1.54.0")';
+const cameraXCoreDependency = 'implementation("androidx.camera:camera-core:1.4.2")';
+const cameraXCamera2Dependency = 'implementation("androidx.camera:camera-camera2:1.4.2")';
+const cameraXLifecycleDependency =
+  'implementation("androidx.camera:camera-lifecycle:1.4.2")';
+const cameraXViewDependency = 'implementation("androidx.camera:camera-view:1.4.2")';
+const cameraXVideoDependency = 'implementation("androidx.camera:camera-video:1.4.2")';
 
 function copyDirectory(source, destination) {
   if (!fs.existsSync(source)) {
@@ -74,6 +80,26 @@ function addAndroidEngineDependencies(platformProjectRoot) {
 
   if (!contents.includes("com.google.ar:core")) {
     dependencies.push(arCoreDependency);
+  }
+
+  if (!contents.includes("androidx.camera:camera-core")) {
+    dependencies.push(cameraXCoreDependency);
+  }
+
+  if (!contents.includes("androidx.camera:camera-camera2")) {
+    dependencies.push(cameraXCamera2Dependency);
+  }
+
+  if (!contents.includes("androidx.camera:camera-lifecycle")) {
+    dependencies.push(cameraXLifecycleDependency);
+  }
+
+  if (!contents.includes("androidx.camera:camera-view")) {
+    dependencies.push(cameraXViewDependency);
+  }
+
+  if (!contents.includes("androidx.camera:camera-video")) {
+    dependencies.push(cameraXVideoDependency);
   }
 
   if (dependencies.length === 0) {
