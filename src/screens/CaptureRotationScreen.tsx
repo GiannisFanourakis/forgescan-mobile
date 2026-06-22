@@ -408,6 +408,7 @@ export function CaptureRotationScreen({
       <StatusBar style="light" translucent />
       {hasCameraPermission && isFocused && NativeCameraXView ? (
         <NativeCameraXView
+          collapsable={false}
           manualControlsEnabled={manualControlsEnabled}
           manualFocusDistance={manualFocusDistance}
           manualIso={manualIso}

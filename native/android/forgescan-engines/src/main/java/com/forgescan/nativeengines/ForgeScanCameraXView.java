@@ -81,13 +81,55 @@ public class ForgeScanCameraXView extends FrameLayout {
   public ForgeScanCameraXView(ReactContext context) {
     super(context);
     reactContext = context;
+    setClipChildren(false);
+    setClipToPadding(false);
     previewView = new PreviewView(context);
+    previewView.setClipChildren(false);
+    previewView.setClipToPadding(false);
     previewView.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
     previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
     addView(
       previewView,
       new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     );
+  }
+
+  @Override
+  public void requestLayout() {
+    super.requestLayout();
+    post(this::forceLayoutPreview);
+  }
+
+  @Override
+  protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    int width = MeasureSpec.getSize(widthMeasureSpec);
+    int height = MeasureSpec.getSize(heightMeasureSpec);
+    setMeasuredDimension(width, height);
+
+    int exactWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
+    int exactHeight = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+    previewView.measure(exactWidth, exactHeight);
+  }
+
+  @Override
+  protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+    int width = right - left;
+    int height = bottom - top;
+    previewView.layout(0, 0, width, height);
+    if (changed) {
+      Log.d(TAG, "CameraX host laid out " + width + "x" + height);
+      post(this::startCamera);
+    }
+  }
+
+  @Override
+  protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+    super.onSizeChanged(width, height, oldWidth, oldHeight);
+    forceLayoutPreview();
+    if (width > 0 && height > 0) {
+      Log.d(TAG, "CameraX host sized " + width + "x" + height);
+      post(this::startCamera);
+    }
   }
 
   public static ForgeScanCameraXView getActiveView() {
@@ -647,8 +689,23 @@ public class ForgeScanCameraXView extends FrameLayout {
       activity instanceof LifecycleOwner &&
       activity.hasWindowFocus() &&
       getWindowVisibility() == View.VISIBLE &&
+      getWidth() > 0 &&
+      getHeight() > 0 &&
       ActivityCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) ==
         PackageManager.PERMISSION_GRANTED;
+  }
+
+  private void forceLayoutPreview() {
+    int width = getWidth();
+    int height = getHeight();
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
+    int exactWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
+    int exactHeight = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+    previewView.measure(exactWidth, exactHeight);
+    previewView.layout(0, 0, width, height);
   }
 
   private String safeMessage(Throwable error) {

@@ -8,6 +8,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 export const NATIVE_CAMERA_X_VIEW_NAME = "ForgeScanCameraXView";
 
 export interface NativeCameraXViewProps {
+  collapsable?: boolean;
   style?: StyleProp<ViewStyle>;
   zoom?: number;
   videoQuality?: "2160p" | "1080p" | "720p";
