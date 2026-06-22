@@ -7,7 +7,7 @@ export type RootStackParamList = {
   NewProject: undefined;
   CapturePlan: { projectId: string };
   CaptureRotation: { projectId: string; rotationId: RotationId };
-  ProjectReview: { projectId: string };
+  ProjectReview: { projectId: string; autoProcess?: boolean };
   ReconstructionPlan: { projectId: string };
   FullReconstructionRun: { projectId: string };
 };

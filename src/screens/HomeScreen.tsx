@@ -56,23 +56,6 @@ export function HomeScreen({ navigation }: Props): ReactElement {
           <Metric label="Device" value="Android iOS" />
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigation.navigate("DeviceSupport")}
-          style={({ pressed }) => [
-            styles.diagnosticsButton,
-            pressed ? styles.pressed : undefined
-          ]}
-        >
-          <View style={styles.diagnosticsText}>
-            <Text style={styles.diagnosticsTitle}>Native Engine Diagnostics</Text>
-            <Text style={styles.diagnosticsMeta}>
-              Masking, .ksplat writer, and phone readiness tests
-            </Text>
-          </View>
-          <Text style={styles.diagnosticsChevron}>Open</Text>
-        </Pressable>
-
         {recentProject ? (
           <Pressable
             accessibilityRole="button"
@@ -95,17 +78,6 @@ export function HomeScreen({ navigation }: Props): ReactElement {
             </Text>
           </Pressable>
         ) : null}
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigation.navigate("DeviceSupport")}
-          style={({ pressed }) => [
-            styles.supportButton,
-            pressed ? styles.pressed : undefined
-          ]}
-        >
-          <Text style={styles.supportText}>Device support</Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -315,44 +287,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "uppercase"
   },
-  diagnosticsButton: {
-    alignItems: "center",
-    backgroundColor: "#13201f",
-    borderColor: colors.accent,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    minHeight: 72,
-    padding: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    elevation: 2
-  },
-  diagnosticsText: {
-    flex: 1,
-    gap: 4
-  },
-  diagnosticsTitle: {
-    color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "900"
-  },
-  diagnosticsMeta: {
-    color: "#bdd2ce",
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17
-  },
-  diagnosticsChevron: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "900",
-    textTransform: "uppercase"
-  },
   recentProject: {
     alignItems: "center",
     backgroundColor: colors.surface,
@@ -382,16 +316,6 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 13,
     fontWeight: "900"
-  },
-  supportButton: {
-    alignItems: "center",
-    minHeight: 44,
-    justifyContent: "center"
-  },
-  supportText: {
-    color: colors.mutedText,
-    fontSize: 14,
-    fontWeight: "800"
   },
   pressed: {
     opacity: 0.78

@@ -6,6 +6,14 @@ ForgeScan Mobile is a controlled object splatting app with turntable-style captu
 Capture -> Splatting -> Preview -> Export
 ```
 
+Normal user flow:
+
+```text
+1. Capture
+2. Process Scan
+3. Preview & Export
+```
+
 Normal user-facing exports are only:
 
 ```text
@@ -14,7 +22,7 @@ preview.mp4
 preview.gif
 ```
 
-Everything else is internal or Advanced Details only.
+Everything else is internal project data.
 
 ## Current Android Truth
 
@@ -61,7 +69,8 @@ advanced/splatting/ksplat-optimizer-input.json
 
 ## Native Engine Diagnostics
 
-Open `Native Engine Diagnostics` from the home screen.
+`Native Engine Diagnostics` remains a developer troubleshooting route.
+It is not shown in the normal home flow.
 
 Buttons:
 

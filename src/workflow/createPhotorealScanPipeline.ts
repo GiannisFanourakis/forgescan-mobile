@@ -272,7 +272,7 @@ function createPreviewStatus(
       detail: ksplatGenerated
         ? `${optimizerResult.outputFilename} generated with ${optimizerResult.qualityTier ?? "coarse-v1"} quality.`
         : ksplatFailed
-          ? "Native processing failed. See Advanced Details."
+          ? "Native processing failed. Check Native Engine Diagnostics."
           : "Native processing is required to generate the photoreal scan. Showing fallback preview only."
     },
     {
@@ -318,7 +318,7 @@ function createUserMessage(result: KsplatOptimizerResult): string {
   }
 
   if (result.status === "failed") {
-    return "On-phone splat generation failed. See Advanced Details.";
+    return "On-phone splat generation failed. Check Native Engine Diagnostics.";
   }
 
   return "Native processing is required to generate .ksplat.";

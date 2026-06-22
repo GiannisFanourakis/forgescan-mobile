@@ -383,7 +383,7 @@ function createReadme(manifest: ForgeScanProjectManifest): string {
     "- preview.mp4 (requires native preview rendering)",
     "- preview.gif (requires native preview rendering)",
     "",
-    "Internal/debug files are kept for Advanced Details only:",
+    "Internal project package files:",
     "- photoreal/splatting-job.json",
     "- photoreal/cameras.json",
     "- advanced/splatting/ksplat-optimizer-input.json",

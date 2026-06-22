@@ -60,7 +60,7 @@ export function getPrimaryActionLabel(
     case "capture":
       return isCaptureReady(manifest) ? "Review Capture" : "Continue Capture";
     case "processing":
-      return "Create Photoreal Scan";
+      return "Create .ksplat Preview";
     case "preview":
       return "Open Preview";
     case "export":
@@ -79,7 +79,7 @@ export function getPrimaryActionDescription(
         ? "Required rotations are complete. Review the capture before creating the photoreal scan."
         : "Capture upright and tilted rotations. Add underside if you want more coverage.";
     case "processing":
-      return "Prepare object data, alignment, splat inputs, and the .ksplat export target.";
+      return "Run background removal and splatting in one step, then show the .ksplat preview/export status.";
     case "preview":
       return "Inspect the best available photoreal scan preview and preview media status.";
     case "export":

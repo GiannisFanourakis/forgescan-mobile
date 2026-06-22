@@ -1,9 +1,11 @@
 # ForgeScan Mobile Test Plan
 
-This plan verifies:
+This plan verifies the simple normal flow:
 
 ```text
-Capture -> Splatting -> Preview -> Export
+1. Capture
+2. Process Scan
+3. Preview & Export
 ```
 
 Normal export UI must show only:
@@ -21,17 +23,17 @@ preview.gif
 3. Run `npm run start`.
 4. Open the app in Expo Go.
 5. Create a project.
-6. Capture required rotations.
-7. Open Project Review.
-8. Tap `Create Photoreal Scan`.
-9. Confirm native masking reports development/native build required or fallback object preparation is clearly marked.
-10. Confirm native `.ksplat` generation reports development/native build required.
-11. Confirm no fake `.ksplat` is created.
-12. Confirm normal export UI only shows:
+6. Capture the required rotations.
+7. Tap `Create .ksplat Preview`.
+8. Confirm Project Review opens in the three-step layout.
+9. Tap `Process Scan` if processing did not start automatically.
+10. Confirm background removal and splatting run as one action.
+11. Confirm Expo Go clearly reports that native `.ksplat` generation requires a native build or uses a clearly marked fallback.
+12. Confirm no fake `.ksplat` is created.
+13. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
     - `preview.mp4`
     - `preview.gif`
-13. Confirm internal masks, JSON, logs, source frames, project folders, and smoke-test files appear only in Advanced Details.
 
 ## Android Real V1 Test
 
@@ -55,67 +57,44 @@ npx expo run:android
 
 Phone flow:
 
-1. Open Android dev build.
-2. Open `Native Engine Diagnostics`.
-3. Tap `Test ML Kit Availability`.
-4. Confirm ML Kit Subject Segmentation is available or a clear unavailable reason is shown.
-5. Confirm confidence threshold is `0.85`.
-6. Tap `Run One-Frame ML Kit Mask Test`.
-7. Pass only if a real PNG mask exists and size is greater than 0.
-8. Tap `Start ARCore Keyframe Capture Test`.
-9. Confirm ARCore availability is shown.
-10. If ARCore live tracking is unavailable, confirm warning says `ARCore tracking unavailable. Using turntable pose assumptions.`
-11. Confirm `advanced/camera/keyframes.json` is written for the internal smoke test when frames exist.
-12. Tap `Test Gaussian Splat Optimizer`.
-13. Confirm optimizer backend is `trainable-3dgs-android-v1`.
-14. Confirm `.ksplat` writer status is `experimental-ksplat` or `valid-ksplat`.
-15. Tap `Run Tiny Gaussian Training Test`.
-16. Pass only if iterations, Gaussian count, final loss, and a non-empty smoke `.ksplat` are shown.
-17. Tap `Run Tiny .ksplat Writer Test`.
-18. Pass only if writer smoke `.ksplat` exists and size is greater than 0.
-19. Confirm smoke-test files are not shown as user scan exports.
-20. Create a real scan.
-21. Capture 40-60 keyframes or normal upright/tilted rotations.
-22. Optional: capture underside rotation.
-23. Complete rotations manually.
-24. Tap `Create Photoreal Scan`.
-25. Confirm object masking ran:
-    - `mlkit-complete` when ML Kit inference passed
-    - `fallback-local` only if native masking failed
-26. Confirm at least one real mask file exists and size is greater than 0.
-27. Confirm optimizer input includes camera matrices when available or turntable assumptions when ARCore pose is missing.
-28. Confirm Android splat optimizer V1 runs.
-29. Confirm `.ksplat` exists, filename ends in `.ksplat`, and size is greater than 0.
-30. Confirm `.ksplat` writer status is shown.
-31. Confirm warning says Android V1 is not final production 3DGS quality when applicable.
-32. Confirm Export shows only:
+1. Open the Android dev build.
+2. Create a project.
+3. Capture upright rotation.
+4. Capture tilted rotation.
+5. Optional: capture underside rotation.
+6. Complete the rotations manually.
+7. Tap `Create .ksplat Preview`.
+8. Confirm Project Review shows:
+   - `1 Capture`
+   - `2 Process`
+   - `3 Preview & Export`
+9. Confirm processing starts automatically, or tap `Process Scan`.
+10. Confirm object/background removal runs.
+11. Confirm splatting runs after masking.
+12. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
+13. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
     - `preview.mp4`
     - `preview.gif`
-33. Confirm preview MP4/GIF status is `Requires native preview rendering`.
-34. Confirm `.ksplat` export is blocked unless validation passes.
+14. Confirm preview MP4/GIF status is `Requires native preview rendering`.
+15. Confirm masks, JSON, OBJ, GLB, PLY, logs, source frames, project folders, and smoke-test files are not shown as normal exports.
 
-## Full Android Scan Test Button
+## Troubleshooting Diagnostics
 
-In `Native Engine Diagnostics`, `Run Full Android Scan Test` must fail clearly for:
+Use `Native Engine Diagnostics` only when the simple flow fails.
+It is a developer troubleshooting route, not a normal home-screen option.
 
-- `no captured frames`
-- `required rotation incomplete`
-- `mask output missing`
-- `coarse splat V1 failed`
-- `.ksplat missing`
-- `.ksplat zero bytes`
+Diagnostics buttons:
 
-It passes only if:
+- `Test ML Kit Availability`
+- `Run One-Frame ML Kit Mask Test`
+- `Start ARCore Keyframe Capture Test`
+- `Test Gaussian Splat Optimizer`
+- `Run Tiny Gaussian Training Test`
+- `Run Tiny .ksplat Writer Test`
+- `Run Full Android Scan Test`
 
-- active project exists
-- capture validates
-- masking writes at least one non-empty mask
-- trainable V1 or coarse fallback writes a non-empty `.ksplat`
-- quality tier is shown
-- production 3DGS remains marked not implemented
-
-## Failure Cases
+Diagnostics must fail clearly for:
 
 - ARCore unavailable.
 - ML Kit unavailable.
@@ -125,4 +104,10 @@ It passes only if:
 - `.ksplat` zero bytes.
 - Android build failure.
 - New Architecture accidentally re-enabled.
-- Normal export UI exposes masks, JSON, OBJ, GLB, PLY, logs, frames, project folders, or smoke-test files.
+
+Diagnostics pass only when:
+
+- Masking writes at least one non-empty mask.
+- Trainable V1 or coarse fallback writes a non-empty `.ksplat`.
+- Quality tier is shown.
+- Production 3DGS remains marked not implemented.

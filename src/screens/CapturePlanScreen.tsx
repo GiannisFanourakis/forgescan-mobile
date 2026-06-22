@@ -24,6 +24,14 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
     );
   }
 
+  const requiredCaptureComplete = project.capture.rotations.every((rotation) => {
+    if (!rotation.required) {
+      return true;
+    }
+
+    return rotation.status === "complete" && rotation.frames.length > 0;
+  });
+
   return (
     <Screen>
       <Section>
@@ -85,11 +93,12 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       </Section>
 
       <Button
-        label="Review Capture"
-        variant="secondary"
+        label={requiredCaptureComplete ? "Create .ksplat Preview" : "Review Capture"}
+        variant={requiredCaptureComplete ? "primary" : "secondary"}
         onPress={() =>
           navigation.navigate("ProjectReview", {
-            projectId: project.project.id
+            projectId: project.project.id,
+            autoProcess: requiredCaptureComplete
           })
         }
       />
