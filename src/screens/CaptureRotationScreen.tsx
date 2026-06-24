@@ -61,9 +61,8 @@ type CaptureTimerSeconds = 0 | 3 | 10;
 type RealCapturePath = "arcore-tracked" | "basic-untracked";
 
 const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
-  { label: "Camera", value: "camera" },
-  { label: "Frames", value: "frames" },
-  { label: "Actions", value: "actions" }
+  { label: "Settings", value: "camera" },
+  { label: "Details", value: "actions" }
 ];
 
 const cameraModes: { label: string; value: CameraMode }[] = [
@@ -807,8 +806,9 @@ export function CaptureRotationScreen({
               <Text style={styles.previewStatusLabel}>
                 {captureStatus ?? `Frame ${nextFrameNumber}`}
               </Text>
-              <Text style={styles.previewStatusValue}>{rotation.angleHint}</Text>
-              <Text style={styles.previewStatusValue}>{poseStatus}</Text>
+              <Text style={styles.previewStatusValue} numberOfLines={1}>
+                {capturePath === "arcore-tracked" ? "Tracked scan" : "Basic capture"} / {poseStatus}
+              </Text>
             </View>
             <View style={styles.coverageBadge}>
               <Text style={styles.coverageValue}>{getCoverageLabel(frameCount)}</Text>
@@ -827,102 +827,6 @@ export function CaptureRotationScreen({
           ) : coverageWarning ? (
             <Text style={styles.warningText}>{coverageWarning}</Text>
           ) : null}
-
-          <View style={styles.capturePathStrip}>
-            {realCapturePaths.map((path) => (
-              <Pressable
-                accessibilityRole="button"
-                disabled={isRecording || isBurstRunning}
-                key={path.value}
-                onPress={() => setCapturePath(path.value)}
-                style={({ pressed }) => [
-                  styles.capturePathItem,
-                  capturePath === path.value
-                    ? styles.capturePathItemActive
-                    : undefined,
-                  pressed && !isRecording && !isBurstRunning
-                    ? styles.pressed
-                    : undefined
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.capturePathText,
-                    capturePath === path.value
-                      ? styles.capturePathTextActive
-                      : undefined
-                  ]}
-                >
-                  {path.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
-
-          <View style={styles.poseGrid}>
-            <PoseStat label="Capture path" value={capturePath === "arcore-tracked" ? "Tracked" : "Basic"} />
-            <PoseStat label="Last source" value={lastCaptureSource} />
-            <PoseStat label="Pose sync" value={lastPoseSynchronization} />
-            <PoseStat
-              label="Intrinsics"
-              value={lastFramePose?.hasIntrinsics ? "yes" : "no"}
-            />
-            <PoseStat
-              label="Extrinsics"
-              value={lastFramePose?.hasExtrinsics ? "yes" : "no"}
-            />
-            <PoseStat label="Pose matrix" value={poseMatrixStatus} />
-            <PoseStat label="Tracking" value={lastTrackingState} />
-            <PoseStat
-              label="Tracked frames"
-              value={`${rotationPoseCompleteness.trackedFrames}`}
-            />
-            <PoseStat
-              label="Usable splat"
-              value={`${rotationPoseCompleteness.usableForSplat}`}
-            />
-          </View>
-
-          <View style={styles.zoomRow}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!hasCameraPermission || cameraZoom <= 0}
-              onPress={() => setZoomLevel(cameraZoom - ZOOM_STEP)}
-              style={({ pressed }) => [
-                styles.zoomButton,
-                cameraZoom <= 0 ? styles.sideControlDisabled : undefined,
-                pressed && hasCameraPermission ? styles.pressed : undefined
-              ]}
-            >
-              <Text style={styles.zoomButtonText}>-</Text>
-            </Pressable>
-            <View style={styles.zoomInfo}>
-              <Text style={styles.zoomValue}>
-                Zoom {Math.round(cameraZoom * 100)}%
-              </Text>
-              <View style={styles.zoomTrack}>
-                <View
-                  style={[
-                    styles.zoomFill,
-                    { width: `${Math.round(cameraZoom * 100)}%` }
-                  ]}
-                />
-              </View>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!hasCameraPermission || cameraZoom >= 1}
-              onPress={() => setZoomLevel(cameraZoom + ZOOM_STEP)}
-              style={({ pressed }) => [
-                styles.zoomButton,
-                cameraZoom >= 1 ? styles.sideControlDisabled : undefined,
-                pressed && hasCameraPermission ? styles.pressed : undefined
-              ]}
-            >
-              <Text style={styles.zoomButtonText}>+</Text>
-            </Pressable>
-          </View>
 
           <View style={styles.modeStrip}>
             {cameraModes.map((mode) => (
@@ -1063,6 +967,37 @@ export function CaptureRotationScreen({
             </View>
             <View style={styles.optionGroup}>
               <Text style={styles.optionGroupTitle}>Real Scan</Text>
+              <View style={styles.capturePathStrip}>
+                {realCapturePaths.map((path) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isRecording || isBurstRunning}
+                    key={path.value}
+                    onPress={() => setCapturePath(path.value)}
+                    style={({ pressed }) => [
+                      styles.capturePathItem,
+                      capturePath === path.value
+                        ? styles.capturePathItemActive
+                        : undefined,
+                      pressed && !isRecording && !isBurstRunning
+                        ? styles.pressed
+                        : undefined
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.capturePathText,
+                        capturePath === path.value
+                          ? styles.capturePathTextActive
+                          : undefined
+                      ]}
+                    >
+                      {path.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
               <View style={styles.optionRow}>
                 <CompactMenuButton
                   disabled={
@@ -1314,8 +1249,31 @@ export function CaptureRotationScreen({
         {activeMenu === "actions" ? (
           <View style={styles.menuPanel}>
             <View style={styles.menuHeader}>
-              <Text style={styles.menuTitle}>Actions</Text>
-              <Text style={styles.menuMeta}>Rotation workflow</Text>
+              <Text style={styles.menuTitle}>Details</Text>
+              <Text style={styles.menuMeta}>Tracking proof</Text>
+            </View>
+            <View style={styles.poseGrid}>
+              <PoseStat label="Capture path" value={capturePath === "arcore-tracked" ? "Tracked" : "Basic"} />
+              <PoseStat label="Last source" value={lastCaptureSource} />
+              <PoseStat label="Pose sync" value={lastPoseSynchronization} />
+              <PoseStat
+                label="Intrinsics"
+                value={lastFramePose?.hasIntrinsics ? "yes" : "no"}
+              />
+              <PoseStat
+                label="Extrinsics"
+                value={lastFramePose?.hasExtrinsics ? "yes" : "no"}
+              />
+              <PoseStat label="Pose matrix" value={poseMatrixStatus} />
+              <PoseStat label="Tracking" value={lastTrackingState} />
+              <PoseStat
+                label="Tracked frames"
+                value={`${rotationPoseCompleteness.trackedFrames}`}
+              />
+              <PoseStat
+                label="Usable splat"
+                value={`${rotationPoseCompleteness.usableForSplat}`}
+              />
             </View>
             <CompactMenuButton
               disabled={frameCount === 0 || isRecording || isBurstRunning}
@@ -1633,7 +1591,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "#ffffff",
-    fontSize: 25,
+    fontSize: 21,
     fontWeight: "900",
     textShadowColor: "rgba(0, 0, 0, 0.45)",
     textShadowOffset: { width: 0, height: 1 },
@@ -1645,18 +1603,18 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.22)",
     borderRadius: 8,
     borderWidth: 1,
-    minWidth: 70,
+    minWidth: 58,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs
   },
   frameBadgeValue: {
     color: "#ffffff",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900"
   },
   frameBadgeLabel: {
     color: "#dfece8",
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: "800",
     textTransform: "uppercase"
   },
@@ -1711,11 +1669,11 @@ const styles = StyleSheet.create({
     flex: 1
   },
   bottomDock: {
-    backgroundColor: "rgba(5, 7, 6, 0.76)",
+    backgroundColor: "rgba(5, 7, 6, 0.68)",
     borderColor: "rgba(255, 255, 255, 0.14)",
     borderRadius: 8,
     borderWidth: 1,
-    gap: 7,
+    gap: 6,
     marginBottom: spacing.xs,
     padding: spacing.xs
   },
@@ -1731,12 +1689,12 @@ const styles = StyleSheet.create({
   },
   previewStatusLabel: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900"
   },
   previewStatusValue: {
     color: "#dfece8",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
     lineHeight: 14
   },
@@ -1885,7 +1843,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 30
+    minHeight: 28
   },
   modeItemActive: {
     backgroundColor: "#ffffff",
@@ -1893,7 +1851,7 @@ const styles = StyleSheet.create({
   },
   modeText: {
     color: "#dfece8",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900"
   },
   modeTextActive: {
@@ -1911,8 +1869,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 36,
-    minWidth: 70,
+    minHeight: 34,
+    minWidth: 64,
     paddingHorizontal: spacing.xs
   },
   sideControlActive: {
@@ -1926,7 +1884,7 @@ const styles = StyleSheet.create({
   },
   sideControlText: {
     color: "#ffffff",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900"
   },
   shutterButton: {
@@ -1935,9 +1893,9 @@ const styles = StyleSheet.create({
     borderColor: "#ffffff",
     borderRadius: 999,
     borderWidth: 3,
-    height: 68,
+    height: 62,
     justifyContent: "center",
-    width: 68
+    width: 62
   },
   shutterButtonStop: {
     borderColor: "#ffddd9"
@@ -1948,8 +1906,8 @@ const styles = StyleSheet.create({
   shutterButtonInner: {
     backgroundColor: "#ffffff",
     borderRadius: 999,
-    height: 48,
-    width: 48
+    height: 44,
+    width: 44
   },
   shutterButtonInnerStop: {
     backgroundColor: "#d14c40",
@@ -1959,7 +1917,7 @@ const styles = StyleSheet.create({
   },
   shutterLabel: {
     color: "#ffffff",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900",
     textAlign: "center"
   },
@@ -1976,14 +1934,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     flex: 1,
     justifyContent: "center",
-    minHeight: 30
+    minHeight: 26
   },
   toolbarItemActive: {
     backgroundColor: "#ffffff"
   },
   toolbarText: {
     color: "#dfece8",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900"
   },
   toolbarTextActive: {
