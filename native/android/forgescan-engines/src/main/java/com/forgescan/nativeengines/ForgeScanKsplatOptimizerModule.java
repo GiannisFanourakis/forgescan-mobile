@@ -26,8 +26,9 @@ import org.json.JSONObject;
 public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   public static final String NAME = "ForgeScanKsplatOptimizer";
   private static final String TRAINABLE_OPTIMIZER_NAME = "trainable-3dgs-android-v1";
+  private static final String CALIBRATED_OPTIMIZER_NAME = "calibrated-multiview-3dgs-android-v1";
   private static final String COARSE_FALLBACK_NAME = "coarse-on-device-splat-v1";
-  private static final String OPTIMIZER_VERSION = "0.3.0";
+  private static final String OPTIMIZER_VERSION = "0.4.0";
   private static final String WRITER_STATUS = "experimental-ksplat";
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
   private volatile boolean cancelled = false;
@@ -89,29 +90,46 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
           throw new IOException("No training frames could be decoded.");
         }
 
-        List<Splat> splats = initializeSplats(samples, config);
+        ProductionReadiness productionReadiness = inspectProductionReadiness(input, samples);
+        List<Splat> splats = productionReadiness.ready
+          ? initializeCalibratedMultiViewSplats(samples, config)
+          : initializeSplats(samples, config);
         if (splats.isEmpty()) {
           throw new IOException("No masked foreground samples could initialize Gaussians.");
         }
 
         TrainingStats stats = trainSplats(splats, samples, config);
+        if (productionReadiness.ready) {
+          normalizeSplatBounds(splats);
+        }
         File output = resolveOutput(input);
         writeKsplat(splats, output);
         boolean validOutput = output.exists() && output.length() > 0;
 
         JSONObject result = baseResult(input, startedAt, output, validOutput ? "generated" : "failed");
-        result.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
-        result.put("qualityTier", validOutput ? "trainable-v1" : "none");
+        result.put("optimizerName", productionReadiness.ready ? CALIBRATED_OPTIMIZER_NAME : TRAINABLE_OPTIMIZER_NAME);
+        result.put("qualityTier", validOutput ? productionReadiness.qualityTier : "none");
         result.put("ksplatEngineStatus", validOutput ? "generated" : "failed");
         result.put("iterationCount", stats.iterations);
         result.put("gaussianCount", splats.size());
         result.put("finalLoss", stats.finalLoss);
         result.put("optimizerRuntimeStatus", "trainable-loop-complete");
         result.put("optimizerBlocker", "none");
+        result.put("production3dgs", validOutput && productionReadiness.ready);
+        result.put("production3dgsStatus", productionReadiness.ready ? "production-3dgs-running" : "production-3dgs-missing");
         putPoseDiagnostics(input, result);
-        result.put("warnings", new JSONArray()
-          .put("Generated experimental .ksplat from trainable Android V1.")
-          .put("This is Android V1 optimization, not final production 3DGS quality."));
+        JSONArray warnings = new JSONArray();
+        if (productionReadiness.ready) {
+          warnings.put("Generated calibrated multi-view .ksplat using camera intrinsics/extrinsics.");
+          warnings.put("Android V1 still uses a phone-safe optimizer, not CUDA-class production training.");
+        } else {
+          warnings.put("Generated experimental .ksplat from trainable Android V1.");
+          warnings.put("This is not production 3DGS because calibrated synchronized multi-view input is incomplete.");
+          for (String warning : productionReadiness.warnings) {
+            warnings.put(warning);
+          }
+        }
+        result.put("warnings", warnings);
         result.put("errors", new JSONArray());
         promise.resolve(result.toString());
       } catch (Exception trainableError) {
@@ -333,12 +351,252 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
         mask,
         estimateYaw(frame, frames),
         hasCameraPose(frame),
+        parseCameraCalibration(frame, image.getWidth(), image.getHeight()),
+        frame.optString("poseSynchronization", "missing"),
+        frame.optString("trackingState", "unknown"),
         frame.optString("rotationId"),
         frame.optInt("frameIndex")
       ));
     }
 
     return samples;
+  }
+
+  private ProductionReadiness inspectProductionReadiness(
+    JSONObject input,
+    List<TrainingSample> samples
+  ) {
+    List<String> warnings = new ArrayList<>();
+    JSONObject readiness = input.optJSONObject("trackedCaptureReadiness");
+    JSONObject frameStats = readiness == null ? null : readiness.optJSONObject("frameStats");
+    int usableFrames = frameStats == null
+      ? countCalibratedSamples(samples)
+      : frameStats.optInt("usableForSplat", countCalibratedSamples(samples));
+    int synchronizedFrames = frameStats == null
+      ? countSynchronizedSamples(samples)
+      : frameStats.optInt("framesWithSharedCameraSynchronizedPose", countSynchronizedSamples(samples));
+    int associatedFrames = frameStats == null
+      ? countAssociatedSamples(samples)
+      : frameStats.optInt("framesWithCameraPhotoAssociatedPose", countAssociatedSamples(samples));
+    int minFrames = Math.min(40, Math.max(12, samples.size() / 2));
+    boolean enoughFrames = usableFrames >= minFrames;
+    boolean hasSynchronizedFrames = synchronizedFrames >= minFrames;
+    boolean allHaveCalibration = countCalibratedSamples(samples) >= minFrames;
+
+    if (!enoughFrames) {
+      warnings.add("Production 3DGS requires more calibrated tracked keyframes.");
+    }
+    if (!allHaveCalibration) {
+      warnings.add("Production 3DGS requires camera intrinsics and a valid 4x4 extrinsics matrix.");
+    }
+    if (!hasSynchronizedFrames) {
+      warnings.add("Production 3DGS requires shared-camera-synchronized frames; camera-photo-associated frames are not final-grade synchronization.");
+    }
+    if (associatedFrames > 0 && synchronizedFrames == 0) {
+      warnings.add("Current tracked capture pairs CameraX photos with ARCore poses. That is useful for testing but not true synchronized capture.");
+    }
+
+    return new ProductionReadiness(
+      enoughFrames && allHaveCalibration && hasSynchronizedFrames,
+      enoughFrames && allHaveCalibration && hasSynchronizedFrames ? "production-3dgs" : "trainable-v1",
+      warnings
+    );
+  }
+
+  private int countCalibratedSamples(List<TrainingSample> samples) {
+    int count = 0;
+    for (TrainingSample sample : samples) {
+      if (sample.calibration != null) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private int countSynchronizedSamples(List<TrainingSample> samples) {
+    int count = 0;
+    for (TrainingSample sample : samples) {
+      if (sample.calibration != null && "shared-camera-synchronized".equals(sample.poseSynchronization)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private int countAssociatedSamples(List<TrainingSample> samples) {
+    int count = 0;
+    for (TrainingSample sample : samples) {
+      if (sample.calibration != null && "camera-photo-associated".equals(sample.poseSynchronization)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private CameraCalibration parseCameraCalibration(JSONObject frame, int imageWidth, int imageHeight) {
+    JSONObject intrinsics = frame.optJSONObject("cameraIntrinsics");
+    JSONObject extrinsics = frame.optJSONObject("cameraExtrinsics");
+    JSONArray transform = extrinsics == null ? null : extrinsics.optJSONArray("transform");
+    if (intrinsics == null || transform == null || transform.length() != 16) {
+      return null;
+    }
+
+    float sourceWidth = (float) intrinsics.optDouble("width", imageWidth);
+    float sourceHeight = (float) intrinsics.optDouble("height", imageHeight);
+    float scaleX = imageWidth / Math.max(1.0f, sourceWidth);
+    float scaleY = imageHeight / Math.max(1.0f, sourceHeight);
+    float[] cameraToWorld = new float[16];
+    for (int index = 0; index < 16; index += 1) {
+      cameraToWorld[index] = (float) transform.optDouble(index, index % 5 == 0 ? 1.0 : 0.0);
+    }
+
+    return new CameraCalibration(
+      (float) intrinsics.optDouble("fx", imageWidth) * scaleX,
+      (float) intrinsics.optDouble("fy", imageHeight) * scaleY,
+      (float) intrinsics.optDouble("cx", imageWidth * 0.5f) * scaleX,
+      (float) intrinsics.optDouble("cy", imageHeight * 0.5f) * scaleY,
+      imageWidth,
+      imageHeight,
+      cameraToWorld
+    );
+  }
+
+  private List<Splat> initializeCalibratedMultiViewSplats(
+    List<TrainingSample> samples,
+    OptimizerConfig config
+  ) {
+    List<Splat> splats = new ArrayList<>();
+    List<TrainingSample> calibrated = new ArrayList<>();
+    for (TrainingSample sample : samples) {
+      if (sample.calibration != null) {
+        calibrated.add(sample);
+      }
+    }
+    if (calibrated.size() < 2) {
+      return splats;
+    }
+
+    TrainingSample anchor = chooseAnchorSample(calibrated);
+    int target = Math.min(config.gaussianCount, 16000);
+    List<ForegroundCandidate> candidates = collectForegroundCandidates(anchor, target * 2);
+    int stride = Math.max(1, (int) Math.ceil(candidates.size() / (double) Math.max(1, target)));
+    float[] depthCandidates = new float[] { 0.35f, 0.5f, 0.7f, 0.95f, 1.25f };
+
+    for (int index = 0; index < candidates.size() && splats.size() < target; index += stride) {
+      ForegroundCandidate candidate = candidates.get(index);
+      Splat best = null;
+      int bestSupport = 0;
+      double bestLoss = Double.MAX_VALUE;
+
+      for (float depth : depthCandidates) {
+        float[] world = unproject(anchor.calibration, candidate.x, candidate.y, depth);
+        Splat trial = new Splat(
+          world[0],
+          world[1],
+          world[2],
+          clampFloat(0.008f + candidate.confidence * 0.014f, 0.008f, 0.025f),
+          Color.red(candidate.color),
+          Color.green(candidate.color),
+          Color.blue(candidate.color),
+          Math.round(clampFloat(150f + candidate.confidence * 90f, 150f, 240f))
+        );
+        MultiViewSupport support = evaluateMultiViewSupport(trial, calibrated);
+        if (
+          support.supportCount > bestSupport ||
+          (support.supportCount == bestSupport && support.colorLoss < bestLoss)
+        ) {
+          best = trial;
+          bestSupport = support.supportCount;
+          bestLoss = support.colorLoss;
+        }
+      }
+
+      if (best != null && bestSupport >= Math.max(2, Math.min(6, calibrated.size() / 5))) {
+        splats.add(best);
+      }
+    }
+
+    return splats;
+  }
+
+  private MultiViewSupport evaluateMultiViewSupport(Splat splat, List<TrainingSample> samples) {
+    int support = 0;
+    double loss = 0.0;
+
+    for (TrainingSample sample : samples) {
+      ProjectedPoint point = projectCalibrated(splat, sample.calibration, sample.image);
+      if (!point.inBounds || !isForeground(sample.mask, sample.image, point.x, point.y)) {
+        continue;
+      }
+
+      int target = sample.image.getPixel(point.x, point.y);
+      float dr = Color.red(target) - splat.r;
+      float dg = Color.green(target) - splat.g;
+      float db = Color.blue(target) - splat.b;
+      loss += (dr * dr + dg * dg + db * db) / (255.0 * 255.0 * 3.0);
+      support += 1;
+    }
+
+    return new MultiViewSupport(support, support == 0 ? Double.MAX_VALUE : loss / support);
+  }
+
+  private float[] unproject(CameraCalibration calibration, int x, int y, float depth) {
+    float cameraX = ((x - calibration.fxCenterX) / Math.max(1.0f, calibration.fx)) * depth;
+    float cameraY = ((y - calibration.fyCenterY) / Math.max(1.0f, calibration.fy)) * depth;
+    float cameraZ = depth;
+    return transformPoint(calibration.cameraToWorld, cameraX, cameraY, cameraZ);
+  }
+
+  private float[] transformPoint(float[] matrix, float x, float y, float z) {
+    return new float[] {
+      matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+      matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+      matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]
+    };
+  }
+
+  private float[] inverseTransformPoint(float[] cameraToWorld, float x, float y, float z) {
+    float dx = x - cameraToWorld[12];
+    float dy = y - cameraToWorld[13];
+    float dz = z - cameraToWorld[14];
+    return new float[] {
+      cameraToWorld[0] * dx + cameraToWorld[1] * dy + cameraToWorld[2] * dz,
+      cameraToWorld[4] * dx + cameraToWorld[5] * dy + cameraToWorld[6] * dz,
+      cameraToWorld[8] * dx + cameraToWorld[9] * dy + cameraToWorld[10] * dz
+    };
+  }
+
+  private void normalizeSplatBounds(List<Splat> splats) {
+    if (splats.isEmpty()) {
+      return;
+    }
+
+    float minX = Float.MAX_VALUE;
+    float minY = Float.MAX_VALUE;
+    float minZ = Float.MAX_VALUE;
+    float maxX = -Float.MAX_VALUE;
+    float maxY = -Float.MAX_VALUE;
+    float maxZ = -Float.MAX_VALUE;
+    for (Splat splat : splats) {
+      minX = Math.min(minX, splat.x);
+      minY = Math.min(minY, splat.y);
+      minZ = Math.min(minZ, splat.z);
+      maxX = Math.max(maxX, splat.x);
+      maxY = Math.max(maxY, splat.y);
+      maxZ = Math.max(maxZ, splat.z);
+    }
+
+    float centerX = (minX + maxX) * 0.5f;
+    float centerY = (minY + maxY) * 0.5f;
+    float centerZ = (minZ + maxZ) * 0.5f;
+    float extent = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+    float scale = extent <= 0.0001f ? 1.0f : 1.4f / extent;
+    for (Splat splat : splats) {
+      splat.x = (splat.x - centerX) * scale;
+      splat.y = (splat.y - centerY) * scale;
+      splat.z = (splat.z - centerZ) * scale;
+      splat.scale = clampFloat(splat.scale * scale, 0.006f, 0.045f);
+    }
   }
 
   private List<Splat> initializeSplats(
@@ -654,6 +912,10 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   }
 
   private ProjectedPoint project(Splat splat, TrainingSample sample) {
+    if (sample.calibration != null) {
+      return projectCalibrated(splat, sample.calibration, sample.image);
+    }
+
     double yawRadians = Math.toRadians(sample.yawDegrees);
     float cos = (float) Math.cos(-yawRadians);
     float sin = (float) Math.sin(-yawRadians);
@@ -666,6 +928,30 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       px,
       py,
       px >= 0 && py >= 0 && px < sample.image.getWidth() && py < sample.image.getHeight()
+    );
+  }
+
+  private ProjectedPoint projectCalibrated(
+    Splat splat,
+    CameraCalibration calibration,
+    Bitmap image
+  ) {
+    if (calibration == null) {
+      return new ProjectedPoint(0, 0, false);
+    }
+
+    float[] camera = inverseTransformPoint(calibration.cameraToWorld, splat.x, splat.y, splat.z);
+    float z = camera[2];
+    if (z <= 0.01f) {
+      return new ProjectedPoint(0, 0, false);
+    }
+
+    int px = Math.round(calibration.fx * (camera[0] / z) + calibration.fxCenterX);
+    int py = Math.round(calibration.fy * (camera[1] / z) + calibration.fyCenterY);
+    return new ProjectedPoint(
+      px,
+      py,
+      px >= 0 && py >= 0 && px < image.getWidth() && py < image.getHeight()
     );
   }
 
@@ -785,9 +1071,9 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
 
   private List<TrainingSample> syntheticTrainingSamples() {
     List<TrainingSample> samples = new ArrayList<>();
-    samples.add(new TrainingSample(syntheticImage(0), syntheticMask(), 0.0f, false, "smoke", 1));
-    samples.add(new TrainingSample(syntheticImage(1), syntheticMask(), 90.0f, false, "smoke", 2));
-    samples.add(new TrainingSample(syntheticImage(2), syntheticMask(), 180.0f, false, "smoke", 3));
+    samples.add(new TrainingSample(syntheticImage(0), syntheticMask(), 0.0f, false, null, "missing", "unknown", "smoke", 1));
+    samples.add(new TrainingSample(syntheticImage(1), syntheticMask(), 90.0f, false, null, "missing", "unknown", "smoke", 2));
+    samples.add(new TrainingSample(syntheticImage(2), syntheticMask(), 180.0f, false, null, "missing", "unknown", "smoke", 3));
     return samples;
   }
 
@@ -914,16 +1200,82 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     final Bitmap mask;
     final float yawDegrees;
     final boolean usesCameraPose;
+    final CameraCalibration calibration;
+    final String poseSynchronization;
+    final String trackingState;
     final String rotationId;
     final int frameIndex;
 
-    TrainingSample(Bitmap image, Bitmap mask, float yawDegrees, boolean usesCameraPose, String rotationId, int frameIndex) {
+    TrainingSample(
+      Bitmap image,
+      Bitmap mask,
+      float yawDegrees,
+      boolean usesCameraPose,
+      CameraCalibration calibration,
+      String poseSynchronization,
+      String trackingState,
+      String rotationId,
+      int frameIndex
+    ) {
       this.image = image;
       this.mask = mask;
       this.yawDegrees = yawDegrees;
       this.usesCameraPose = usesCameraPose;
+      this.calibration = calibration;
+      this.poseSynchronization = poseSynchronization;
+      this.trackingState = trackingState;
       this.rotationId = rotationId;
       this.frameIndex = frameIndex;
+    }
+  }
+
+  private static class CameraCalibration {
+    final float fx;
+    final float fy;
+    final float fxCenterX;
+    final float fyCenterY;
+    final int width;
+    final int height;
+    final float[] cameraToWorld;
+
+    CameraCalibration(
+      float fx,
+      float fy,
+      float fxCenterX,
+      float fyCenterY,
+      int width,
+      int height,
+      float[] cameraToWorld
+    ) {
+      this.fx = fx;
+      this.fy = fy;
+      this.fxCenterX = fxCenterX;
+      this.fyCenterY = fyCenterY;
+      this.width = width;
+      this.height = height;
+      this.cameraToWorld = cameraToWorld;
+    }
+  }
+
+  private static class ProductionReadiness {
+    final boolean ready;
+    final String qualityTier;
+    final List<String> warnings;
+
+    ProductionReadiness(boolean ready, String qualityTier, List<String> warnings) {
+      this.ready = ready;
+      this.qualityTier = qualityTier;
+      this.warnings = warnings;
+    }
+  }
+
+  private static class MultiViewSupport {
+    final int supportCount;
+    final double colorLoss;
+
+    MultiViewSupport(int supportCount, double colorLoss) {
+      this.supportCount = supportCount;
+      this.colorLoss = colorLoss;
     }
   }
 
