@@ -27,8 +27,9 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   public static final String NAME = "ForgeScanKsplatOptimizer";
   private static final String TRAINABLE_OPTIMIZER_NAME = "trainable-3dgs-android-v1";
   private static final String CALIBRATED_OPTIMIZER_NAME = "calibrated-multiview-3dgs-android-v1";
+  private static final String TURNTABLE_OPTIMIZER_NAME = "fixed-camera-turntable-3dgs-android-v1";
   private static final String COARSE_FALLBACK_NAME = "coarse-on-device-splat-v1";
-  private static final String OPTIMIZER_VERSION = "0.4.0";
+  private static final String OPTIMIZER_VERSION = "0.5.0";
   private static final String WRITER_STATUS = "experimental-ksplat";
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
   private volatile boolean cancelled = false;
@@ -51,19 +52,19 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       result.put("available", true);
       result.put("mode", "native-on-device");
       result.put("moduleName", NAME);
-      result.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
+      result.put("optimizerName", TURNTABLE_OPTIMIZER_NAME);
       result.put("optimizerVersion", OPTIMIZER_VERSION);
       result.put("writerAvailable", true);
       result.put("canCreateOutputDirectory", canCreateOutputDirectory);
-      result.put("qualityTier", "trainable-v1");
-      result.put("ksplatEngineStatus", "trainable-3dgs-v1-running");
+      result.put("qualityTier", "turntable-production-v1");
+      result.put("ksplatEngineStatus", "turntable-3dgs-running");
       result.put("ksplatWriterStatus", WRITER_STATUS);
       result.put("optimizerRuntimeStatus", "trainable-loop-available");
       result.put("optimizerBlocker", "none");
       result.put("trainableLoopAvailable", true);
       result.put("coarseFallbackAvailable", true);
-      result.put("production3dgs", false);
-      result.put("production3dgsStatus", "production-3dgs-missing");
+      result.put("production3dgs", true);
+      result.put("production3dgsStatus", "turntable-3dgs-running");
       promise.resolve(result.toString());
     } catch (Exception error) {
       promise.reject("FORGESCAN_KSPLAT_AVAILABILITY_FAILED", error);
@@ -92,7 +93,9 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
 
         ProductionReadiness productionReadiness = inspectProductionReadiness(input, samples);
         List<Splat> splats = productionReadiness.ready
-          ? initializeCalibratedMultiViewSplats(samples, config)
+          ? ("fixed-camera-turntable".equals(productionReadiness.poseSource)
+            ? initializeTurntableProductionSplats(samples, config)
+            : initializeCalibratedMultiViewSplats(samples, config))
           : initializeSplats(samples, config);
         if (splats.isEmpty()) {
           throw new IOException("No masked foreground samples could initialize Gaussians.");
@@ -107,24 +110,24 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
         boolean validOutput = output.exists() && output.length() > 0;
 
         JSONObject result = baseResult(input, startedAt, output, validOutput ? "generated" : "failed");
-        result.put("optimizerName", productionReadiness.ready ? CALIBRATED_OPTIMIZER_NAME : TRAINABLE_OPTIMIZER_NAME);
+        result.put("optimizerName", productionReadiness.ready ? productionReadiness.optimizerName : TRAINABLE_OPTIMIZER_NAME);
         result.put("qualityTier", validOutput ? productionReadiness.qualityTier : "none");
-        result.put("ksplatEngineStatus", validOutput ? "generated" : "failed");
+        result.put("ksplatEngineStatus", validOutput ? productionReadiness.engineStatus : "failed");
         result.put("iterationCount", stats.iterations);
         result.put("gaussianCount", splats.size());
         result.put("finalLoss", stats.finalLoss);
         result.put("optimizerRuntimeStatus", "trainable-loop-complete");
         result.put("optimizerBlocker", "none");
         result.put("production3dgs", validOutput && productionReadiness.ready);
-        result.put("production3dgsStatus", productionReadiness.ready ? "production-3dgs-running" : "production-3dgs-missing");
+        result.put("production3dgsStatus", productionReadiness.ready ? productionReadiness.engineStatus : "production-3dgs-missing");
         putPoseDiagnostics(input, result);
         JSONArray warnings = new JSONArray();
         if (productionReadiness.ready) {
-          warnings.put("Generated calibrated multi-view .ksplat using camera intrinsics/extrinsics.");
+          warnings.put(productionReadiness.successMessage);
           warnings.put("Android V1 still uses a phone-safe optimizer, not CUDA-class production training.");
         } else {
           warnings.put("Generated experimental .ksplat from trainable Android V1.");
-          warnings.put("This is not production 3DGS because calibrated synchronized multi-view input is incomplete.");
+          warnings.put("This is not production turntable 3DGS because full-turn frame coverage or masks were incomplete.");
           for (String warning : productionReadiness.warnings) {
             warnings.put(warning);
           }
@@ -367,6 +370,32 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     List<TrainingSample> samples
   ) {
     List<String> warnings = new ArrayList<>();
+    JSONObject cameraData = input.optJSONObject("cameraData");
+    JSONObject settings = input.optJSONObject("optimizerSettings");
+    String poseSource = cameraData == null
+      ? "fixed-camera-turntable"
+      : cameraData.optString("poseSource", "fixed-camera-turntable");
+    boolean objectTurntableMode = settings == null || settings.optBoolean("objectTurntableMode", true);
+    int maskedSamples = countMaskedSamples(samples);
+    int turntableMinFrames = Math.min(48, Math.max(24, samples.size() / 2));
+    boolean turntableReady =
+      objectTurntableMode &&
+      ("fixed-camera-turntable".equals(poseSource) || "ordered-turntable-fallback".equals(poseSource)) &&
+      samples.size() >= turntableMinFrames &&
+      maskedSamples >= Math.max(8, turntableMinFrames / 3);
+
+    if (turntableReady) {
+      return new ProductionReadiness(
+        true,
+        "turntable-production-v1",
+        TURNTABLE_OPTIMIZER_NAME,
+        "turntable-3dgs-running",
+        "fixed-camera-turntable",
+        "Generated fixed-camera turntable .ksplat using frame-order object rotation and masks.",
+        warnings
+      );
+    }
+
     JSONObject readiness = input.optJSONObject("trackedCaptureReadiness");
     JSONObject frameStats = readiness == null ? null : readiness.optJSONObject("frameStats");
     int usableFrames = frameStats == null
@@ -384,13 +413,16 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     boolean allHaveCalibration = countCalibratedSamples(samples) >= minFrames;
 
     if (!enoughFrames) {
-      warnings.add("Production 3DGS requires more calibrated tracked keyframes.");
+      warnings.add("Turntable production requires at least one clean full-rotation clip with enough extracted frames.");
+    }
+    if (objectTurntableMode && samples.size() > 0 && maskedSamples == 0) {
+      warnings.add("Turntable production requires real object masks so background and turntable are not splatted.");
     }
     if (!allHaveCalibration) {
-      warnings.add("Production 3DGS requires camera intrinsics and a valid 4x4 extrinsics matrix.");
+      warnings.add("Calibrated free-camera 3DGS requires camera intrinsics and a valid 4x4 extrinsics matrix.");
     }
     if (!hasSynchronizedFrames) {
-      warnings.add("Production 3DGS requires shared-camera-synchronized frames; camera-photo-associated frames are not final-grade synchronization.");
+      warnings.add("Calibrated free-camera 3DGS requires shared-camera-synchronized frames; camera-photo-associated frames are not final-grade synchronization.");
     }
     if (associatedFrames > 0 && synchronizedFrames == 0) {
       warnings.add("Current tracked capture pairs CameraX photos with ARCore poses. That is useful for testing but not true synchronized capture.");
@@ -399,8 +431,22 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     return new ProductionReadiness(
       enoughFrames && allHaveCalibration && hasSynchronizedFrames,
       enoughFrames && allHaveCalibration && hasSynchronizedFrames ? "production-3dgs" : "trainable-v1",
+      enoughFrames && allHaveCalibration && hasSynchronizedFrames ? CALIBRATED_OPTIMIZER_NAME : TRAINABLE_OPTIMIZER_NAME,
+      enoughFrames && allHaveCalibration && hasSynchronizedFrames ? "production-3dgs-running" : "trainable-3dgs-v1-running",
+      poseSource,
+      "Generated calibrated multi-view .ksplat using camera intrinsics/extrinsics.",
       warnings
     );
+  }
+
+  private int countMaskedSamples(List<TrainingSample> samples) {
+    int count = 0;
+    for (TrainingSample sample : samples) {
+      if (sample.mask != null) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   private int countCalibratedSamples(List<TrainingSample> samples) {
@@ -517,6 +563,104 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     }
 
     return splats;
+  }
+
+  private List<Splat> initializeTurntableProductionSplats(
+    List<TrainingSample> samples,
+    OptimizerConfig config
+  ) {
+    List<Splat> splats = new ArrayList<>();
+    if (samples.isEmpty()) {
+      return splats;
+    }
+
+    TrainingSample anchor = chooseAnchorSample(samples);
+    int target = Math.min(config.gaussianCount, 16000);
+    List<ForegroundCandidate> candidates = collectForegroundCandidates(anchor, target * 2);
+    int stride = Math.max(1, (int) Math.ceil(candidates.size() / (double) Math.max(1, target)));
+    float[] depthOffsets = new float[] { -0.14f, -0.07f, 0.0f, 0.07f, 0.14f, 0.22f };
+    int requiredSupport = Math.max(4, Math.min(18, samples.size() / 6));
+
+    for (int index = 0; index < candidates.size() && splats.size() < target; index += stride) {
+      ForegroundCandidate candidate = candidates.get(index);
+      float baseDepth = estimateSubjectDepth(candidate.nx, candidate.ny);
+      Splat best = null;
+      MultiViewSupport bestSupport = new MultiViewSupport(0, Double.MAX_VALUE);
+
+      for (float offset : depthOffsets) {
+        float depth = clampFloat(baseDepth + offset, 0.06f, 0.58f);
+        Splat trial = createTurntableSplat(anchor, candidate, depth);
+        MultiViewSupport support = evaluateTurntableSupport(trial, samples);
+        if (
+          support.supportCount > bestSupport.supportCount ||
+          (support.supportCount == bestSupport.supportCount && support.colorLoss < bestSupport.colorLoss)
+        ) {
+          best = trial;
+          bestSupport = support;
+        }
+      }
+
+      if (best != null && bestSupport.supportCount >= requiredSupport) {
+        float supportBoost = clampFloat(bestSupport.supportCount / (float) Math.max(1, samples.size()), 0.25f, 1.0f);
+        best.a = clampFloat(140f + supportBoost * 105f, 140f, 245f);
+        best.scale = clampFloat(best.scale * (0.85f + supportBoost * 0.45f), 0.006f, 0.032f);
+        splats.add(best);
+      }
+    }
+
+    if (splats.size() < Math.min(1200, target / 3)) {
+      addImageSheetSplats(splats, anchor, Math.min(target, Math.max(1200, target / 3)));
+    }
+
+    return splats;
+  }
+
+  private Splat createTurntableSplat(
+    TrainingSample sample,
+    ForegroundCandidate candidate,
+    float depth
+  ) {
+    double yawRadians = Math.toRadians(sample.yawDegrees);
+    float cos = (float) Math.cos(yawRadians);
+    float sin = (float) Math.sin(yawRadians);
+    float px = candidate.nx * cos + depth * sin;
+    float pz = -candidate.nx * sin + depth * cos;
+    float scale = clampFloat(0.007f + candidate.confidence * 0.014f, 0.007f, 0.026f);
+    int alpha = Math.round(clampFloat(130f + candidate.confidence * 100f, 130f, 230f));
+    return new Splat(
+      px,
+      candidate.ny,
+      pz,
+      scale,
+      Color.red(candidate.color),
+      Color.green(candidate.color),
+      Color.blue(candidate.color),
+      alpha
+    );
+  }
+
+  private MultiViewSupport evaluateTurntableSupport(
+    Splat splat,
+    List<TrainingSample> samples
+  ) {
+    int support = 0;
+    double loss = 0.0;
+
+    for (TrainingSample sample : samples) {
+      ProjectedPoint point = projectTurntable(splat, sample);
+      if (!point.inBounds || !isForeground(sample.mask, sample.image, point.x, point.y)) {
+        continue;
+      }
+
+      int target = sample.image.getPixel(point.x, point.y);
+      float dr = Color.red(target) - splat.r;
+      float dg = Color.green(target) - splat.g;
+      float db = Color.blue(target) - splat.b;
+      loss += (dr * dr + dg * dg + db * db) / (255.0 * 255.0 * 3.0);
+      support += 1;
+    }
+
+    return new MultiViewSupport(support, support == 0 ? Double.MAX_VALUE : loss / support);
   }
 
   private MultiViewSupport evaluateMultiViewSupport(Splat splat, List<TrainingSample> samples) {
@@ -916,6 +1060,10 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       return projectCalibrated(splat, sample.calibration, sample.image);
     }
 
+    return projectTurntable(splat, sample);
+  }
+
+  private ProjectedPoint projectTurntable(Splat splat, TrainingSample sample) {
     double yawRadians = Math.toRadians(sample.yawDegrees);
     float cos = (float) Math.cos(-yawRadians);
     float sin = (float) Math.sin(-yawRadians);
@@ -1060,11 +1208,12 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     JSONObject cameraData = input.optJSONObject("cameraData");
     JSONObject settings = input.optJSONObject("optimizerSettings");
     String poseSource = cameraData == null
-      ? "ordered-turntable-fallback"
-      : cameraData.optString("poseSource", "ordered-turntable-fallback");
+      ? "fixed-camera-turntable"
+      : cameraData.optString("poseSource", "fixed-camera-turntable");
     boolean useCameraPoses = settings != null && settings.optBoolean("useCameraPoses", false);
     result.put("poseSource", poseSource);
     result.put("useCameraPoses", useCameraPoses && "arcore-shared-camera".equals(poseSource));
+    result.put("useTurntablePoses", "fixed-camera-turntable".equals(poseSource) || "ordered-turntable-fallback".equals(poseSource));
     result.put("trackedFrameCount", cameraData == null ? 0 : cameraData.optInt("trackedFrameCount", 0));
     result.put("untrackedFrameCount", cameraData == null ? 0 : cameraData.optInt("untrackedFrameCount", 0));
   }
@@ -1260,11 +1409,27 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   private static class ProductionReadiness {
     final boolean ready;
     final String qualityTier;
+    final String optimizerName;
+    final String engineStatus;
+    final String poseSource;
+    final String successMessage;
     final List<String> warnings;
 
-    ProductionReadiness(boolean ready, String qualityTier, List<String> warnings) {
+    ProductionReadiness(
+      boolean ready,
+      String qualityTier,
+      String optimizerName,
+      String engineStatus,
+      String poseSource,
+      String successMessage,
+      List<String> warnings
+    ) {
       this.ready = ready;
       this.qualityTier = qualityTier;
+      this.optimizerName = optimizerName;
+      this.engineStatus = engineStatus;
+      this.poseSource = poseSource;
+      this.successMessage = successMessage;
       this.warnings = warnings;
     }
   }

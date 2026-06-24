@@ -177,17 +177,17 @@ function createCameraData(
       : []),
     ...(!hasTrackedPose
       ? [
-          "Camera pose metadata missing. Using turntable assumptions.",
-          "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+          "Fixed-camera turntable video selected. Object rotation angles are inferred from frame order.",
+          "Keep the camera still and capture one smooth full object rotation for best splat quality."
         ]
       : [])
   ];
 
   return {
     cameraModel: "unknown-mobile-camera",
-    poseSource: hasTrackedPose ? "arcore-shared-camera" : "ordered-turntable-fallback",
+    poseSource: hasTrackedPose ? "arcore-shared-camera" : "fixed-camera-turntable",
     motion: "controlled-object-turntable",
-    fallbackTurntablePoseUsed: !hasTrackedPose,
+    fallbackTurntablePoseUsed: false,
     trackedFrameCount: trackedFrames.length,
     untrackedFrameCount,
     warnings: [...new Set(warnings)],

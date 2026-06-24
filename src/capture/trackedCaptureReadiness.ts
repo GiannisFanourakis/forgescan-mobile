@@ -132,7 +132,7 @@ export function getTrackedCaptureWarnings(
 
   if (stats.framesUsingTurntableAssumptions > 0 || stats.usableForSplat === 0) {
     warnings.push(
-      "Camera pose metadata missing. Optimizer will use turntable assumptions."
+      "Fixed-camera turntable capture uses frame-order object rotation instead of free-camera pose matrices."
     );
   }
 

@@ -180,13 +180,16 @@ export async function createPhotorealScan(
 
   if (trackedFrameCount === 0) {
     warnings.push(
-      "Camera pose metadata missing. Using turntable assumptions.",
-      "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
+      "Fixed-camera turntable video selected. Object rotation is inferred from frame order."
     );
   }
 
   if (optimizerResult.status === "generated") {
-    if (optimizerResult.qualityTier === "trainable-v1") {
+    if (optimizerResult.qualityTier === "turntable-production-v1") {
+      warnings.push(
+        "Turntable production V1 generated from a fixed camera and rotating object."
+      );
+    } else if (optimizerResult.qualityTier === "trainable-v1") {
       warnings.push(
         "This is Android V1 optimization, not final production 3DGS quality."
       );
@@ -259,7 +262,7 @@ export async function createPhotorealScan(
     { label: "Optimizer runtime status", value: optimizerResult.optimizerRuntimeStatus ?? "unknown" },
     { label: "Optimizer blocker", value: optimizerResult.optimizerBlocker ?? "none" },
     { label: "Optimizer engine", value: optimizerResult.optimizerName ?? "unavailable" },
-    { label: "Optimizer pose source", value: optimizerResult.poseSource ?? (trackedFrameCount > 0 ? "arcore-shared-camera" : "ordered-turntable-fallback") },
+    { label: "Optimizer pose source", value: optimizerResult.poseSource ?? (trackedFrameCount > 0 ? "arcore-shared-camera" : "fixed-camera-turntable") },
     { label: "Tracked camera frames", value: `${optimizerResult.trackedFrameCount ?? trackedFrameCount}` },
     {
       label: "Optimizer iterations",
@@ -381,6 +384,10 @@ function getResultStatus(
 
 function createUserMessage(result: KsplatOptimizerResult): string {
   if (result.status === "generated") {
+    if (result.qualityTier === "turntable-production-v1") {
+      return "Photoreal scan generated with fixed-camera turntable 3DGS.";
+    }
+
     if (result.qualityTier === "trainable-v1") {
       return "Photoreal scan generated with Android Gaussian Splat V1.";
     }

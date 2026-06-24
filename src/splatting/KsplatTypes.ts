@@ -25,10 +25,12 @@ export type KsplatQualityTier =
   | "smoke-test"
   | "trainable-v1"
   | "coarse-v1"
+  | "turntable-production-v1"
   | "production-3dgs";
 
 export type KsplatEngineStatus =
   | "production-3dgs-running"
+  | "turntable-3dgs-running"
   | "trainable-3dgs-v1-running"
   | "coarse-v1-fallback"
   | "generated"
@@ -106,7 +108,7 @@ export interface CameraFrameData {
 
 export interface KsplatCameraData {
   cameraModel: "unknown-mobile-camera";
-  poseSource: "arcore-shared-camera" | "ordered-turntable-fallback";
+  poseSource: "arcore-shared-camera" | "fixed-camera-turntable" | "ordered-turntable-fallback";
   motion: "controlled-object-turntable";
   fallbackTurntablePoseUsed: boolean;
   trackedFrameCount: number;
@@ -126,6 +128,6 @@ export interface KsplatOptimizerSettings {
   nativePreferred: boolean;
   objectTurntableMode: boolean;
   objectMaskThreshold: number;
-  poseSource: "arcore-shared-camera" | "ordered-turntable-fallback";
+  poseSource: "arcore-shared-camera" | "fixed-camera-turntable" | "ordered-turntable-fallback";
   useCameraPoses: boolean;
 }

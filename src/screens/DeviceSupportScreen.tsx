@@ -1040,7 +1040,7 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                     label: "Production 3DGS",
                     status: availability.production3dgs ? "pass" : "warn",
                     detail: availability.production3dgs
-                      ? "implemented"
+                      ? "fixed-camera turntable"
                       : "not implemented"
                   }
                 ];
@@ -1272,6 +1272,7 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                   {
                     label: "Gaussian optimizer",
                     status:
+                      result.optimizerName === "fixed-camera-turntable-3dgs-android-v1" ||
                       result.optimizerName === "trainable-3dgs-android-v1" ||
                       result.optimizerName === "coarse-on-device-splat-v1"
                         ? "pass"
@@ -1281,16 +1282,22 @@ export function DeviceSupportScreen(_props: Props): ReactElement {
                   {
                     label: "Quality tier",
                     status:
-                      result.qualityTier === "trainable-v1"
+                      result.qualityTier === "turntable-production-v1"
                         ? "pass"
-                        : result.qualityTier === "coarse-v1"
+                        : result.qualityTier === "trainable-v1"
                           ? "warn"
-                          : "fail",
+                          : result.qualityTier === "coarse-v1"
+                            ? "warn"
+                            : "fail",
                     detail: result.qualityTier ?? "none"
                   },
                   {
                     label: "Training stats",
-                    status: result.qualityTier === "trainable-v1" ? "pass" : "warn",
+                    status:
+                      result.qualityTier === "turntable-production-v1" ||
+                      result.qualityTier === "trainable-v1"
+                        ? "pass"
+                        : "warn",
                     detail: `${result.iterationCount ?? 0} iterations / ${result.gaussianCount ?? 0} gaussians / loss ${formatNumber(result.finalLoss)}`
                   },
                   {

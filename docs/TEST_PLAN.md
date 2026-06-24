@@ -35,9 +35,9 @@ preview.gif
     - `preview.mp4`
     - `preview.gif`
 
-## Android Stable Camera Capture Test
+## Android Fixed-Camera Turntable Production Test
 
-Current POCO X7 Pro test status: ARCore tracked capture is disabled in this build after a native ARCore runtime crash. Use this test to verify the app stays stable while capturing video through the native camera path.
+Current POCO X7 Pro test status: ARCore tracked capture is disabled in this build after a native ARCore runtime crash. The primary production path is fixed-camera turntable video.
 
 1. Run `npm install`.
 2. Run `npm run typecheck`.
@@ -52,8 +52,13 @@ Current POCO X7 Pro test status: ARCore tracked capture is disabled in this buil
 11. Stop recording and confirm the clip appears under `Clips`.
 12. Confirm the app does not return to a black preview.
 13. Pinch the preview and confirm zoom changes.
-14. Record a smooth full-turn video.
+14. Keep the camera still and record one smooth full-turn object rotation.
 15. Complete the rotation.
+16. Tap `Process Scan`.
+17. Confirm object/background removal runs.
+18. Confirm the optimizer reports `fixed-camera-turntable-3dgs-android-v1`.
+19. Confirm the quality tier is `turntable-production-v1`.
+20. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
 
 ## Android Real Tracked Scan Test
 
@@ -114,12 +119,12 @@ Phone flow:
    - `2 Process`
    - `3 Preview & Export`
 22. Confirm `Tracked Capture Readiness` appears with status, total frames, usable tracked frames, and per-rotation usable frame counts.
-23. Confirm video-only rotations warn that processing will extract frames and use turntable pose assumptions.
+23. Confirm video-only rotations say processing will extract frames and use fixed-camera turntable object poses.
 24. Confirm processing starts automatically, or tap `Process Scan`.
 25. Confirm object/background removal runs through ML Kit Subject Segmentation.
 26. Confirm mask PNG files are written and size is greater than 0.
-27. Confirm optimizer input includes `trackedCaptureReadiness` and camera matrices when tracked keyframes were captured.
-28. Confirm the Android splat optimizer runs.
+27. Confirm optimizer input includes `poseSource: fixed-camera-turntable` for video-only turntable capture.
+28. Confirm the Android turntable splat optimizer runs.
 29. Confirm `.ksplat` is marked Generated only if the file exists and size is greater than 0.
 30. Confirm Preview & Export shows only:
     - `ForgeScan_{projectName}.ksplat`
@@ -151,10 +156,10 @@ Use this quick test before a full scan:
 17. Tap `Show Last Pose Matrix`.
 18. Confirm a 16-value pose matrix is shown when tracking is available.
 
-If Basic capture is used instead of Tracked capture, the app must warn:
+If Basic video capture is used, the app must treat it as the normal fixed-camera turntable route:
 
 ```text
-Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions.
+Fixed-camera turntable video selected. Object rotation is inferred from frame order.
 ```
 
 ## Troubleshooting Diagnostics
