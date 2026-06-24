@@ -345,39 +345,163 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       return splats;
     }
 
-    int perSampleBudget = Math.max(12, config.gaussianCount / samples.size());
+    int perSampleBudget = Math.max(48, (int) Math.ceil(config.gaussianCount / (double) samples.size()));
     for (TrainingSample sample : samples) {
       if (splats.size() >= config.gaussianCount) {
         break;
       }
 
-      double pixelBudget = Math.max(1.0, perSampleBudget);
-      int sampleStep = Math.max(
-        4,
-        (int) Math.sqrt((sample.image.getWidth() * sample.image.getHeight()) / pixelBudget)
-      );
+      int remainingBudget = Math.min(perSampleBudget, config.gaussianCount - splats.size());
+      List<ForegroundCandidate> candidates = collectForegroundCandidates(sample, remainingBudget);
       double yawRadians = Math.toRadians(sample.yawDegrees);
       float cos = (float) Math.cos(yawRadians);
       float sin = (float) Math.sin(yawRadians);
+      int stride = Math.max(1, (int) Math.ceil(candidates.size() / (double) Math.max(1, remainingBudget)));
 
-      for (int y = sampleStep / 2; y < sample.image.getHeight() && splats.size() < config.gaussianCount; y += sampleStep) {
-        for (int x = sampleStep / 2; x < sample.image.getWidth() && splats.size() < config.gaussianCount; x += sampleStep) {
-          if (!isForeground(sample.mask, sample.image, x, y)) {
-            continue;
-          }
-
-          int color = sample.image.getPixel(x, y);
-          float nx = (x / Math.max(1.0f, sample.image.getWidth() - 1.0f)) - 0.5f;
-          float ny = 0.5f - (y / Math.max(1.0f, sample.image.getHeight() - 1.0f));
-          float radius = 0.48f + Math.abs(nx) * 0.16f;
-          float px = nx * cos + radius * sin * 0.22f;
-          float pz = -nx * sin + radius * cos * 0.22f;
-          splats.add(new Splat(px, ny, pz, 0.018f, Color.red(color), Color.green(color), Color.blue(color), 220));
-        }
+      for (int index = 0; index < candidates.size() && splats.size() < config.gaussianCount; index += stride) {
+        ForegroundCandidate candidate = candidates.get(index);
+        float subjectDepth = estimateSubjectDepth(candidate.nx, candidate.ny);
+        float px = candidate.nx * cos + subjectDepth * sin;
+        float pz = -candidate.nx * sin + subjectDepth * cos;
+        float scale = clampFloat(0.012f + candidate.confidence * 0.018f, 0.012f, 0.038f);
+        int alpha = Math.round(clampFloat(150f + candidate.confidence * 95f, 150f, 245f));
+        splats.add(new Splat(
+          px,
+          candidate.ny,
+          pz,
+          scale,
+          Color.red(candidate.color),
+          Color.green(candidate.color),
+          Color.blue(candidate.color),
+          alpha
+        ));
       }
     }
 
     return splats;
+  }
+
+  private List<ForegroundCandidate> collectForegroundCandidates(
+    TrainingSample sample,
+    int targetCount
+  ) {
+    List<ForegroundCandidate> candidates = new ArrayList<>();
+    int width = sample.image.getWidth();
+    int height = sample.image.getHeight();
+    int backgroundColor = estimateBackgroundColor(sample.image);
+    int initialStep = Math.max(2, (int) Math.sqrt((width * height) / (double) Math.max(1, targetCount * 4)));
+
+    for (int step = initialStep; step >= 2; step = Math.max(1, step / 2)) {
+      candidates.clear();
+      for (int y = step / 2; y < height; y += step) {
+        for (int x = step / 2; x < width; x += step) {
+          float confidence = foregroundConfidence(sample, backgroundColor, x, y);
+          if (confidence <= 0.0f) {
+            continue;
+          }
+          int color = sample.image.getPixel(x, y);
+          float nx = (x / Math.max(1.0f, width - 1.0f)) - 0.5f;
+          float ny = 0.5f - (y / Math.max(1.0f, height - 1.0f));
+          candidates.add(new ForegroundCandidate(x, y, nx, ny, color, confidence));
+        }
+      }
+
+      if (candidates.size() >= targetCount || step == 1) {
+        break;
+      }
+    }
+
+    if (candidates.isEmpty()) {
+      int fallbackStep = Math.max(2, (int) Math.sqrt((width * height) / (double) Math.max(1, targetCount)));
+      for (int y = fallbackStep / 2; y < height; y += fallbackStep) {
+        for (int x = fallbackStep / 2; x < width; x += fallbackStep) {
+          float nx = (x / Math.max(1.0f, width - 1.0f)) - 0.5f;
+          float ny = 0.5f - (y / Math.max(1.0f, height - 1.0f));
+          if (Math.abs(nx) > 0.42f || Math.abs(ny) > 0.46f) {
+            continue;
+          }
+          candidates.add(new ForegroundCandidate(x, y, nx, ny, sample.image.getPixel(x, y), 0.45f));
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  private float foregroundConfidence(
+    TrainingSample sample,
+    int backgroundColor,
+    int x,
+    int y
+  ) {
+    float maskConfidence = maskConfidence(sample.mask, sample.image, x, y);
+    float imageConfidence = centralSubjectConfidence(sample.image, backgroundColor, x, y);
+    return Math.max(maskConfidence, imageConfidence);
+  }
+
+  private float maskConfidence(Bitmap mask, Bitmap image, int x, int y) {
+    if (mask == null) {
+      return 0.0f;
+    }
+
+    int mx = Math.min(mask.getWidth() - 1, Math.max(0, Math.round((x / (float) image.getWidth()) * mask.getWidth())));
+    int my = Math.min(mask.getHeight() - 1, Math.max(0, Math.round((y / (float) image.getHeight()) * mask.getHeight())));
+    int maskColor = mask.getPixel(mx, my);
+    int value = Math.max(Color.alpha(maskColor), Math.max(Color.red(maskColor), Math.max(Color.green(maskColor), Color.blue(maskColor))));
+    return value > 48 ? clampFloat(value / 255.0f, 0.0f, 1.0f) : 0.0f;
+  }
+
+  private float centralSubjectConfidence(Bitmap image, int backgroundColor, int x, int y) {
+    float nx = Math.abs((x / Math.max(1.0f, image.getWidth() - 1.0f)) - 0.5f);
+    float ny = Math.abs((y / Math.max(1.0f, image.getHeight() - 1.0f)) - 0.5f);
+    if (nx > 0.42f || ny > 0.46f) {
+      return 0.0f;
+    }
+
+    int color = image.getPixel(x, y);
+    float distance = colorDistance(color, backgroundColor) / 441.7f;
+    float centerWeight = 1.0f - clampFloat((nx / 0.42f + ny / 0.46f) * 0.5f, 0.0f, 1.0f);
+    float textureWeight = localTextureConfidence(image, x, y);
+    float confidence = distance * 0.72f + textureWeight * 0.38f + centerWeight * 0.18f;
+    return confidence > 0.22f ? clampFloat(confidence, 0.0f, 0.82f) : 0.0f;
+  }
+
+  private float localTextureConfidence(Bitmap image, int x, int y) {
+    int x2 = Math.min(image.getWidth() - 1, x + 2);
+    int y2 = Math.min(image.getHeight() - 1, y + 2);
+    return clampFloat(colorDistance(image.getPixel(x, y), image.getPixel(x2, y2)) / 160.0f, 0.0f, 1.0f);
+  }
+
+  private int estimateBackgroundColor(Bitmap image) {
+    int width = image.getWidth();
+    int height = image.getHeight();
+    int[] colors = new int[] {
+      image.getPixel(0, 0),
+      image.getPixel(width - 1, 0),
+      image.getPixel(0, height - 1),
+      image.getPixel(width - 1, height - 1)
+    };
+    int r = 0;
+    int g = 0;
+    int b = 0;
+    for (int color : colors) {
+      r += Color.red(color);
+      g += Color.green(color);
+      b += Color.blue(color);
+    }
+    return Color.rgb(r / colors.length, g / colors.length, b / colors.length);
+  }
+
+  private float colorDistance(int a, int b) {
+    int dr = Color.red(a) - Color.red(b);
+    int dg = Color.green(a) - Color.green(b);
+    int db = Color.blue(a) - Color.blue(b);
+    return (float) Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  private float estimateSubjectDepth(float nx, float ny) {
+    float ellipsoid = 1.0f - clampFloat((nx * nx) / 0.25f + (ny * ny) / 0.36f, 0.0f, 1.0f);
+    return 0.12f + ellipsoid * 0.24f;
   }
 
   private TrainingStats trainSplats(
@@ -665,7 +789,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
 
     OptimizerConfig(int maxIterations, int gaussianCount, int imageDownscale, float learningRate) {
       this.maxIterations = Math.max(1, Math.min(maxIterations, 48));
-      this.gaussianCount = Math.max(32, Math.min(gaussianCount, 2000));
+      this.gaussianCount = Math.max(96, Math.min(gaussianCount, 3200));
       this.imageDownscale = Math.max(1, Math.min(imageDownscale, 4));
       this.learningRate = clampFloat(learningRate, 0.005f, 0.25f);
     }
@@ -677,7 +801,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       }
       String preset = settings.optString("qualityPreset", "smoke");
       int defaultIterations = "standard".equals(preset) ? 36 : "fast".equals(preset) ? 24 : 18;
-      int defaultGaussians = "standard".equals(preset) ? 1200 : "fast".equals(preset) ? 900 : 600;
+      int defaultGaussians = "standard".equals(preset) ? 2400 : "fast".equals(preset) ? 1800 : 1400;
       return new OptimizerConfig(
         settings.optInt("maxIterations", defaultIterations),
         settings.optInt("gaussianCount", settings.optInt("maxSplats", defaultGaussians)),
@@ -728,6 +852,24 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       this.x = x;
       this.y = y;
       this.inBounds = inBounds;
+    }
+  }
+
+  private static class ForegroundCandidate {
+    final int x;
+    final int y;
+    final float nx;
+    final float ny;
+    final int color;
+    final float confidence;
+
+    ForegroundCandidate(int x, int y, float nx, float ny, int color, float confidence) {
+      this.x = x;
+      this.y = y;
+      this.nx = nx;
+      this.ny = ny;
+      this.color = color;
+      this.confidence = confidence;
     }
   }
 
