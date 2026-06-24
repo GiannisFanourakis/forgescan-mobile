@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ReactElement, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Modal, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
@@ -24,6 +24,12 @@ import { NormalExportItem } from "../workflow/exportArtifacts";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ProjectReview">;
 type SimpleStep = "capture" | "process" | "preview";
+type ProcessingStageId =
+  | "checking"
+  | "masking"
+  | "splatting"
+  | "preview"
+  | "finishing";
 
 const stepOrder: SimpleStep[] = ["capture", "process", "preview"];
 const stepLabels: Record<SimpleStep, string> = {
@@ -31,6 +37,43 @@ const stepLabels: Record<SimpleStep, string> = {
   process: "Process",
   preview: "Preview & Export"
 };
+const processingStages: Array<{
+  id: ProcessingStageId;
+  label: string;
+  detail: string;
+  start: number;
+}> = [
+  {
+    id: "checking",
+    label: "Checking clip",
+    detail: "Validating capture and output paths",
+    start: 0
+  },
+  {
+    id: "masking",
+    label: "Removing background",
+    detail: "Sampling video frames and writing object masks",
+    start: 0.12
+  },
+  {
+    id: "splatting",
+    label: "Building .ksplat",
+    detail: "Optimizing the phone-safe splat cloud",
+    start: 0.48
+  },
+  {
+    id: "preview",
+    label: "Preparing preview",
+    detail: "Validating the generated scan file",
+    start: 0.84
+  },
+  {
+    id: "finishing",
+    label: "Finishing",
+    detail: "Unlocking preview and export",
+    start: 0.94
+  }
+];
 
 export function ProjectReviewScreen({
   navigation,
@@ -44,6 +87,10 @@ export function ProjectReviewScreen({
   const [scanResult, setScanResult] =
     useState<CreatePhotorealScanPipelineResult | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(
+    null
+  );
+  const [processingNow, setProcessingNow] = useState(Date.now());
   const autoStartedRef = useRef(false);
 
   const validation = useMemo(
@@ -65,6 +112,18 @@ export function ProjectReviewScreen({
     autoStartedRef.current = true;
     void runScanProcessing(project);
   }, [isRunning, project, route.params.autoProcess, scanResult, validation?.validForReconstruction]);
+
+  useEffect(() => {
+    if (!isRunning) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setProcessingNow(Date.now());
+    }, 500);
+
+    return () => clearInterval(timer);
+  }, [isRunning]);
 
   if (!project || !validation) {
     return (
@@ -101,9 +160,22 @@ export function ProjectReviewScreen({
       : generatedPhotorealFile
         ? createGeneratedExportItems(photorealFile)
         : [];
+  const estimatedProcessingSeconds = estimateProcessingSeconds(manifest);
+  const elapsedProcessingSeconds =
+    processingStartedAt === null
+      ? 0
+      : Math.max(0, (processingNow - processingStartedAt) / 1000);
+  const processingProgress = isRunning
+    ? Math.min(0.94, elapsedProcessingSeconds / estimatedProcessingSeconds)
+    : scanResult
+      ? 1
+      : 0;
+  const currentProcessingStage = getProcessingStage(processingProgress);
 
   async function runScanProcessing(manifest: ForgeScanProjectManifest): Promise<void> {
     setIsRunning(true);
+    setProcessingStartedAt(Date.now());
+    setProcessingNow(Date.now());
     setStatusMessage("Processing scan");
     setProgressSteps([
       "Removing background",
@@ -122,6 +194,7 @@ export function ProjectReviewScreen({
       );
     } finally {
       setIsRunning(false);
+      setProcessingNow(Date.now());
     }
   }
 
@@ -282,6 +355,16 @@ export function ProjectReviewScreen({
           ))}
         </Section>
       ) : null}
+      <ProcessingOverlay
+        elapsedSeconds={elapsedProcessingSeconds}
+        etaSeconds={Math.max(
+          0,
+          Math.ceil(estimatedProcessingSeconds - elapsedProcessingSeconds)
+        )}
+        progress={processingProgress}
+        stage={currentProcessingStage}
+        visible={isRunning}
+      />
     </Screen>
   );
 }
@@ -395,6 +478,124 @@ function getUserFacingWarnings(warnings: string[]): string[] {
   return warnings.length > 0
     ? ["Clip scan processing used the current local phone-safe path."]
     : [];
+}
+
+interface ProcessingOverlayProps {
+  elapsedSeconds: number;
+  etaSeconds: number;
+  progress: number;
+  stage: (typeof processingStages)[number];
+  visible: boolean;
+}
+
+function ProcessingOverlay({
+  elapsedSeconds,
+  etaSeconds,
+  progress,
+  stage,
+  visible
+}: ProcessingOverlayProps): ReactElement {
+  const percent = Math.max(1, Math.round(progress * 100));
+
+  return (
+    <Modal animationType="fade" transparent visible={visible}>
+      <View style={styles.processingBackdrop}>
+        <View style={styles.processingPanel}>
+          <Text style={styles.processingTitle}>Processing scan</Text>
+          <Text style={styles.processingStage}>{stage.label}</Text>
+          <Text style={styles.processingDetail}>{stage.detail}</Text>
+          <View style={styles.progressTrackLarge}>
+            <View
+              style={[
+                styles.progressFillLarge,
+                {
+                  width: `${percent}%`
+                }
+              ]}
+            />
+          </View>
+          <View style={styles.processingStats}>
+            <Text style={styles.processingStat}>{percent}%</Text>
+            <Text style={styles.processingStat}>
+              ETA {formatDuration(etaSeconds)}
+            </Text>
+            <Text style={styles.processingStat}>
+              {formatDuration(elapsedSeconds)} elapsed
+            </Text>
+          </View>
+          <View style={styles.stageList}>
+            {processingStages.map((candidate) => {
+              const completed = progress >= candidate.start;
+              const active = candidate.id === stage.id;
+
+              return (
+                <View key={candidate.id} style={styles.stageRow}>
+                  <View
+                    style={[
+                      styles.stageDot,
+                      completed ? styles.stageDotDone : undefined,
+                      active ? styles.stageDotActive : undefined
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.stageRowText,
+                      active ? styles.stageRowTextActive : undefined
+                    ]}
+                  >
+                    {candidate.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function estimateProcessingSeconds(manifest: ForgeScanProjectManifest): number {
+  const videoCount = manifest.capture.rotations.reduce(
+    (sum, rotation) => sum + (rotation.videos?.length ?? 0),
+    0
+  );
+  const frameCount = manifest.capture.rotations.reduce(
+    (sum, rotation) => sum + rotation.frames.length,
+    0
+  );
+  const maskUnits = Math.max(frameCount, videoCount * 36, 36);
+
+  return Math.max(28, Math.min(180, 12 + maskUnits * 0.7 + videoCount * 8));
+}
+
+function getProcessingStage(
+  progress: number
+): (typeof processingStages)[number] {
+  return [...processingStages]
+    .reverse()
+    .find((stage) => progress >= stage.start) ?? getDefaultProcessingStage();
+}
+
+function getDefaultProcessingStage(): (typeof processingStages)[number] {
+  const stage = processingStages[0];
+  if (!stage) {
+    throw new Error("Processing stages are not configured.");
+  }
+
+  return stage;
+}
+
+function formatDuration(seconds: number): string {
+  const wholeSeconds = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainder = wholeSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${remainder}s`;
+  }
+
+  return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
 }
 
 const styles = StyleSheet.create({
@@ -560,5 +761,87 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.sm
+  },
+  processingBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 24, 23, 0.72)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  processingPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: spacing.md,
+    maxWidth: 420,
+    padding: spacing.lg,
+    width: "100%"
+  },
+  processingTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  processingStage: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  processingDetail: {
+    color: colors.mutedText,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  progressTrackLarge: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    height: 12,
+    overflow: "hidden"
+  },
+  progressFillLarge: {
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    height: 12
+  },
+  processingStats: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  processingStat: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  stageList: {
+    gap: spacing.sm
+  },
+  stageRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  stageDot: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    height: 10,
+    width: 10
+  },
+  stageDotActive: {
+    backgroundColor: colors.accent
+  },
+  stageDotDone: {
+    backgroundColor: "#d9eadf"
+  },
+  stageRowText: {
+    color: colors.mutedText,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  stageRowTextActive: {
+    color: colors.text
   }
 });
