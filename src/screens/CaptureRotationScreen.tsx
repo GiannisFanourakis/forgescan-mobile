@@ -57,6 +57,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "CaptureRotation">;
 type CameraMode = "photo" | "burst" | "video";
 type ToolbarMenu = "camera" | "frames" | "actions";
 type BurstIntervalMs = 500 | 1000 | 2000;
+type CaptureTimerSeconds = 0 | 3 | 10;
 type RealCapturePath = "arcore-tracked" | "basic-untracked";
 
 const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
@@ -80,6 +81,19 @@ const burstIntervalOptions: { label: string; value: BurstIntervalMs }[] = [
   { label: "0.5s", value: 500 },
   { label: "1s", value: 1000 },
   { label: "2s", value: 2000 }
+];
+
+const captureTimerOptions: { label: string; value: CaptureTimerSeconds }[] = [
+  { label: "Off", value: 0 },
+  { label: "3s", value: 3 },
+  { label: "10s", value: 10 }
+];
+
+const quickZoomOptions: { label: string; value: number }[] = [
+  { label: "0.5x", value: 0 },
+  { label: "1x", value: 0.22 },
+  { label: "2x", value: 0.55 },
+  { label: "4x", value: 0.88 }
 ];
 
 const videoQualityOptions: { label: string; value: NativeCameraXVideoQuality }[] = [
@@ -127,6 +141,11 @@ export function CaptureRotationScreen({
   const [activeMenu, setActiveMenu] = useState<ToolbarMenu | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("photo");
   const [cameraZoom, setCameraZoom] = useState(0);
+  const [torchEnabled, setTorchEnabled] = useState(false);
+  const [gridEnabled, setGridEnabled] = useState(true);
+  const [captureTimerSeconds, setCaptureTimerSeconds] =
+    useState<CaptureTimerSeconds>(0);
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
   const [videoQuality, setVideoQuality] =
     useState<NativeCameraXVideoQuality>("2160p");
   const [advancedCameraAvailability, setAdvancedCameraAvailability] =
@@ -263,6 +282,10 @@ export function CaptureRotationScreen({
 
   async function handlePrimaryCapture(): Promise<void> {
     if (cameraMode === "photo") {
+      const timerCompleted = await runCaptureTimer();
+      if (!timerCompleted) {
+        return;
+      }
       await captureSinglePhoto();
       return;
     }
@@ -278,6 +301,24 @@ export function CaptureRotationScreen({
     }
 
     await startVideoCapture();
+  }
+
+  async function runCaptureTimer(): Promise<boolean> {
+    if (captureTimerSeconds === 0) {
+      return true;
+    }
+
+    if (!canUseCamera || isCapturing || isRecording || isBurstRunning) {
+      return false;
+    }
+
+    for (let seconds = captureTimerSeconds; seconds > 0; seconds -= 1) {
+      setCountdownSeconds(seconds);
+      await sleep(1000);
+    }
+
+    setCountdownSeconds(null);
+    return true;
   }
 
   async function captureSinglePhoto(): Promise<boolean> {
@@ -565,6 +606,12 @@ export function CaptureRotationScreen({
     });
   }
 
+  function sleep(durationMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, durationMs);
+    });
+  }
+
   function clearBurstDelay(): void {
     if (burstDelayRef.current) {
       clearTimeout(burstDelayRef.current);
@@ -605,6 +652,17 @@ export function CaptureRotationScreen({
     navigation.navigate("CapturePlan", { projectId });
   }
 
+  function cycleCaptureTimer(): void {
+    const currentIndex = captureTimerOptions.findIndex(
+      (option) => option.value === captureTimerSeconds
+    );
+    const nextIndex =
+      currentIndex < 0 || currentIndex === captureTimerOptions.length - 1
+        ? 0
+        : currentIndex + 1;
+    setCaptureTimerSeconds(captureTimerOptions[nextIndex]?.value ?? 0);
+  }
+
   function getPrimaryButtonLabel(): string {
     if (cameraMode === "photo") {
       return isCapturing ? "Capturing" : "Take Photo";
@@ -619,6 +677,7 @@ export function CaptureRotationScreen({
 
   const primaryActionDisabled =
     !canUseCamera ||
+    countdownSeconds !== null ||
     (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
     (cameraMode !== "burst" && isBurstRunning);
   const shutterDisabled = hasCameraPermission ? primaryActionDisabled : false;
@@ -642,6 +701,7 @@ export function CaptureRotationScreen({
           manualIso={manualIso}
           manualShutterNs={manualShutterNs}
           style={styles.cameraView}
+          torchEnabled={torchEnabled}
           videoQuality={videoQuality}
           zoom={cameraZoom}
         />
@@ -663,9 +723,20 @@ export function CaptureRotationScreen({
             <Text style={styles.emptyPreviewText}>CameraX is not installed here.</Text>
           </View>
         ) : null}
-        <View style={styles.previewGuide} />
-        <View style={styles.previewLineHorizontal} />
-        <View style={styles.previewLineVertical} />
+        {gridEnabled ? (
+          <>
+            <View style={styles.previewGuide} />
+            <View style={styles.previewLineHorizontal} />
+            <View style={styles.previewLineVertical} />
+            <View style={[styles.gridLineVertical, { left: "33.33%" }]} />
+            <View style={[styles.gridLineVertical, { left: "66.66%" }]} />
+            <View style={[styles.gridLineHorizontal, { top: "33.33%" }]} />
+            <View style={[styles.gridLineHorizontal, { top: "66.66%" }]} />
+          </>
+        ) : null}
+        {countdownSeconds !== null ? (
+          <Text style={styles.countdownText}>{countdownSeconds}</Text>
+        ) : null}
       </View>
 
       <SafeAreaView pointerEvents="box-none" style={styles.overlaySafe}>
@@ -687,6 +758,40 @@ export function CaptureRotationScreen({
           <View style={styles.frameBadge}>
             <Text style={styles.frameBadgeValue}>{frameCount}</Text>
             <Text style={styles.frameBadgeLabel}>Frames</Text>
+          </View>
+        </View>
+
+        <View style={styles.cameraAppControls}>
+          <View style={styles.quickToggleRow}>
+            <QuickControlButton
+              active={torchEnabled}
+              disabled={!hasCameraPermission}
+              label={torchEnabled ? "Torch On" : "Torch"}
+              onPress={() => setTorchEnabled((current) => !current)}
+            />
+            <QuickControlButton
+              active={gridEnabled}
+              label={gridEnabled ? "Grid On" : "Grid"}
+              onPress={() => setGridEnabled((current) => !current)}
+            />
+            <QuickControlButton
+              active={captureTimerSeconds > 0}
+              disabled={isRecording || isBurstRunning}
+              label={
+                captureTimerSeconds === 0 ? "Timer" : `${captureTimerSeconds}s`
+              }
+              onPress={cycleCaptureTimer}
+            />
+          </View>
+          <View style={styles.quickZoomRow}>
+            {quickZoomOptions.map((option) => (
+              <QuickControlButton
+                active={Math.abs(cameraZoom - option.value) < 0.03}
+                key={option.label}
+                label={option.label}
+                onPress={() => setZoomLevel(option.value)}
+              />
+            ))}
           </View>
         </View>
 
@@ -1270,6 +1375,44 @@ function CompactMenuButton({
   );
 }
 
+interface QuickControlButtonProps {
+  active?: boolean;
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+}
+
+function QuickControlButton({
+  active = false,
+  disabled = false,
+  label,
+  onPress
+}: QuickControlButtonProps): ReactElement {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quickControlButton,
+        active ? styles.quickControlButtonActive : undefined,
+        disabled ? styles.quickControlButtonDisabled : undefined,
+        pressed && !disabled ? styles.pressed : undefined
+      ]}
+    >
+      <Text
+        style={[
+          styles.quickControlText,
+          active ? styles.quickControlTextActive : undefined,
+          disabled ? styles.quickControlTextDisabled : undefined
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 interface ManualControlRowProps {
   disabled?: boolean;
   label: string;
@@ -1432,6 +1575,26 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 1
   },
+  gridLineHorizontal: {
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    height: 1,
+    position: "absolute",
+    width: "100%"
+  },
+  gridLineVertical: {
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    height: "100%",
+    position: "absolute",
+    width: 1
+  },
+  countdownText: {
+    color: "#ffffff",
+    fontSize: 88,
+    fontWeight: "900",
+    textShadowColor: "rgba(0, 0, 0, 0.55)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12
+  },
   overlaySafe: {
     flex: 1,
     paddingHorizontal: spacing.md
@@ -1496,6 +1659,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     textTransform: "uppercase"
+  },
+  cameraAppControls: {
+    gap: spacing.xs,
+    paddingTop: spacing.xs
+  },
+  quickToggleRow: {
+    flexDirection: "row",
+    gap: spacing.xs
+  },
+  quickZoomRow: {
+    alignSelf: "center",
+    backgroundColor: "rgba(5, 7, 6, 0.54)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4
+  },
+  quickControlButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(5, 7, 6, 0.66)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 28,
+    minWidth: 54,
+    paddingHorizontal: spacing.xs
+  },
+  quickControlButtonActive: {
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff"
+  },
+  quickControlButtonDisabled: {
+    opacity: 0.42
+  },
+  quickControlText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  quickControlTextActive: {
+    color: "#101817"
+  },
+  quickControlTextDisabled: {
+    color: "#dfece8"
   },
   captureSpacer: {
     flex: 1

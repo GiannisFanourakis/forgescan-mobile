@@ -25,6 +25,11 @@ public class ForgeScanCameraXViewManager extends SimpleViewManager<ForgeScanCame
     view.setZoom(zoom);
   }
 
+  @ReactProp(name = "torchEnabled", defaultBoolean = false)
+  public void setTorchEnabled(ForgeScanCameraXView view, boolean enabled) {
+    view.setTorchEnabled(enabled);
+  }
+
   @ReactProp(name = "videoQuality")
   public void setVideoQuality(ForgeScanCameraXView view, String videoQuality) {
     view.setVideoQuality(videoQuality);

@@ -11,6 +11,7 @@ export interface NativeCameraXViewProps {
   collapsable?: boolean;
   style?: StyleProp<ViewStyle>;
   zoom?: number;
+  torchEnabled?: boolean;
   videoQuality?: "2160p" | "1080p" | "720p";
   manualControlsEnabled?: boolean;
   manualIso?: number;

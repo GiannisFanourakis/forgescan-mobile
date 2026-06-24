@@ -59,6 +59,7 @@ public class ForgeScanCameraXView extends FrameLayout {
   private Promise activeRecordingPromise;
   private Camera camera;
   private float zoom = 0f;
+  private boolean torchEnabled = false;
   private String videoQuality = "2160p";
   private boolean manualControlsEnabled = false;
   private int manualIso = 100;
@@ -180,6 +181,13 @@ public class ForgeScanCameraXView extends FrameLayout {
     zoom = Math.max(0f, Math.min(1f, nextZoom));
     if (camera != null) {
       camera.getCameraControl().setLinearZoom(zoom);
+    }
+  }
+
+  public void setTorchEnabled(boolean enabled) {
+    torchEnabled = enabled;
+    if (camera != null && camera.getCameraInfo().hasFlashUnit()) {
+      camera.getCameraControl().enableTorch(torchEnabled);
     }
   }
 
@@ -469,6 +477,9 @@ public class ForgeScanCameraXView extends FrameLayout {
       videoCapture
     );
     camera.getCameraControl().setLinearZoom(zoom);
+    if (camera.getCameraInfo().hasFlashUnit()) {
+      camera.getCameraControl().enableTorch(torchEnabled);
+    }
   }
 
   @OptIn(markerClass = ExperimentalCamera2Interop.class)
@@ -490,6 +501,9 @@ public class ForgeScanCameraXView extends FrameLayout {
       imageCapture
     );
     camera.getCameraControl().setLinearZoom(zoom);
+    if (camera.getCameraInfo().hasFlashUnit()) {
+      camera.getCameraControl().enableTorch(torchEnabled);
+    }
   }
 
   @OptIn(markerClass = ExperimentalCamera2Interop.class)
@@ -507,6 +521,9 @@ public class ForgeScanCameraXView extends FrameLayout {
       preview
     );
     camera.getCameraControl().setLinearZoom(zoom);
+    if (camera.getCameraInfo().hasFlashUnit()) {
+      camera.getCameraControl().enableTorch(torchEnabled);
+    }
   }
 
   @OptIn(markerClass = ExperimentalCamera2Interop.class)
