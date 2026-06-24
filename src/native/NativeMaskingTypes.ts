@@ -84,7 +84,11 @@ export interface NativeMaskingAvailability {
 export interface NativeMaskingFrameInput {
   rotationId: RotationId;
   frameIndex: number;
-  frameUri: string;
+  frameUri?: string;
+  videoUri?: string;
+  videoSampleIndex?: number;
+  videoSampleCount?: number;
+  videoSampleTimeMs?: number;
 }
 
 export interface NativeMaskingRotationMetadata {

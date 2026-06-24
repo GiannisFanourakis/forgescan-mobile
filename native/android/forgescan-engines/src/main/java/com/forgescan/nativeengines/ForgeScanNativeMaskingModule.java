@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.media.MediaMetadataRetriever;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -236,9 +237,10 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
   ) throws Exception {
     String rotationId = frame.getString("rotationId");
     int frameIndex = frame.getInt("frameIndex");
-    String sourceFrameUri = frame.getString("frameUri");
-    File source = ForgeScanNativeFiles.fileFromUri(sourceFrameUri);
-    Bitmap bitmap = BitmapFactory.decodeFile(source.getAbsolutePath());
+    LoadedMaskSource loadedSource = loadMaskSource(input, frame, rotationId, frameIndex);
+    String sourceFrameUri = loadedSource.sourceFrameUri;
+    File source = loadedSource.sourceFile;
+    Bitmap bitmap = loadedSource.bitmap;
 
     if (bitmap == null) {
       throw new IOException("Unable to decode source frame: " + sourceFrameUri);
@@ -297,12 +299,107 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
     JSONObject artifact = new JSONObject();
     artifact.put("rotationId", frame.getString("rotationId"));
     artifact.put("frameIndex", frame.getInt("frameIndex"));
-    artifact.put("sourceFrameUri", frame.optString("frameUri", ""));
+    artifact.put("sourceFrameUri", frame.optString("frameUri", frame.optString("videoUri", "")));
     artifact.put("rawMaskPath", "");
     artifact.put("refinedMaskPath", "");
     artifact.put("warnings", new JSONArray());
     artifact.put("errors", new JSONArray());
     return artifact;
+  }
+
+  private LoadedMaskSource loadMaskSource(
+    JSONObject input,
+    JSONObject frame,
+    String rotationId,
+    int frameIndex
+  ) throws Exception {
+    String frameUri = frame.optString("frameUri", "");
+    if (!frameUri.isEmpty()) {
+      File source = ForgeScanNativeFiles.fileFromUri(frameUri);
+      return new LoadedMaskSource(
+        source,
+        frameUri,
+        BitmapFactory.decodeFile(source.getAbsolutePath())
+      );
+    }
+
+    String videoUri = frame.optString("videoUri", "");
+    if (videoUri.isEmpty()) {
+      throw new IOException("Masking input has no frameUri or videoUri.");
+    }
+
+    Bitmap videoFrame = extractVideoFrame(frame, videoUri);
+    if (videoFrame == null) {
+      throw new IOException("Unable to extract video frame for masking.");
+    }
+
+    File extractedFrame = ForgeScanNativeFiles.resolveProjectFile(
+      getReactApplicationContext(),
+      input,
+      "advanced/video-frames/" + rotationId + "/frame_" + String.format("%03d", frameIndex) + ".jpg"
+    );
+    writeJpeg(videoFrame, extractedFrame);
+    return new LoadedMaskSource(
+      extractedFrame,
+      ForgeScanNativeFiles.fileUri(extractedFrame),
+      videoFrame
+    );
+  }
+
+  private Bitmap extractVideoFrame(JSONObject frame, String videoUri) throws IOException {
+    File videoFile = ForgeScanNativeFiles.fileFromUri(videoUri);
+    MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+    try {
+      retriever.setDataSource(videoFile.getAbsolutePath());
+      long durationMs = parseLong(
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION),
+        0L
+      );
+      int sampleIndex = Math.max(0, frame.optInt("videoSampleIndex", 0));
+      int sampleCount = Math.max(1, frame.optInt("videoSampleCount", 1));
+      long sampleTimeMs = frame.has("videoSampleTimeMs")
+        ? Math.max(0L, frame.optLong("videoSampleTimeMs", 0L))
+        : inferSampleTimeMs(durationMs, sampleIndex, sampleCount);
+
+      return retriever.getFrameAtTime(
+        sampleTimeMs * 1000L,
+        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+      );
+    } catch (RuntimeException error) {
+      throw new IOException("Video frame extraction failed: " + safeMessage(error), error);
+    } finally {
+      try {
+        retriever.release();
+      } catch (RuntimeException ignored) {
+        // Nothing useful to surface after extraction.
+      }
+    }
+  }
+
+  private long inferSampleTimeMs(long durationMs, int sampleIndex, int sampleCount) {
+    if (durationMs <= 0L) {
+      return sampleIndex * 500L;
+    }
+
+    if (sampleCount <= 1) {
+      return durationMs / 2L;
+    }
+
+    long insetMs = Math.min(250L, Math.max(0L, durationMs / 20L));
+    long usableDuration = Math.max(1L, durationMs - insetMs * 2L);
+    return insetMs + Math.round((sampleIndex / (double) (sampleCount - 1)) * usableDuration);
+  }
+
+  private long parseLong(String value, long fallback) {
+    if (value == null || value.isEmpty()) {
+      return fallback;
+    }
+
+    try {
+      return Long.parseLong(value);
+    } catch (NumberFormatException ignored) {
+      return fallback;
+    }
   }
 
   private Bitmap refineMask(Bitmap rawMask) {
@@ -414,6 +511,18 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
     try {
       if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
         throw new IOException("Unable to write PNG mask: " + file.getAbsolutePath());
+      }
+    } finally {
+      stream.close();
+    }
+  }
+
+  private void writeJpeg(Bitmap bitmap, File file) throws IOException {
+    ForgeScanNativeFiles.ensureParent(file);
+    FileOutputStream stream = new FileOutputStream(file);
+    try {
+      if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)) {
+        throw new IOException("Unable to write sampled video frame: " + file.getAbsolutePath());
       }
     } finally {
       stream.close();
@@ -611,6 +720,18 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
     MaskDimensions(int width, int height) {
       this.width = Math.max(1, width);
       this.height = Math.max(1, height);
+    }
+  }
+
+  private static class LoadedMaskSource {
+    final File sourceFile;
+    final String sourceFrameUri;
+    final Bitmap bitmap;
+
+    LoadedMaskSource(File sourceFile, String sourceFrameUri, Bitmap bitmap) {
+      this.sourceFile = sourceFile;
+      this.sourceFrameUri = sourceFrameUri;
+      this.bitmap = bitmap;
     }
   }
 }

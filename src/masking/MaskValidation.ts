@@ -6,13 +6,15 @@ import {
   MaskingSummary
 } from "./MaskingTypes";
 
+const VIDEO_SAMPLE_COUNT = 36;
+
 export function validateMaskCoverage(
   manifest: ForgeScanProjectManifest,
   masks: MaskArtifact[]
 ): MaskCoverageValidation {
   const requiredFrames = manifest.capture.rotations
     .filter((rotation) => rotation.required)
-    .reduce((sum, rotation) => sum + rotation.frames.length, 0);
+    .reduce((sum, rotation) => sum + getMaskableFrameCount(rotation), 0);
   const completeMasks = masks.filter((mask) => mask.status === "complete");
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -61,7 +63,7 @@ export function createMaskingSummary(
     status: coverage.status,
     engine,
     totalFrames: manifest.capture.rotations.reduce(
-      (sum, rotation) => sum + rotation.frames.length,
+      (sum, rotation) => sum + getMaskableFrameCount(rotation),
       0
     ),
     maskCount: coverage.maskCount,
@@ -75,6 +77,12 @@ export function createMaskingSummary(
     warnings: coverage.warnings,
     errors: coverage.errors
   };
+}
+
+function getMaskableFrameCount(
+  rotation: ForgeScanProjectManifest["capture"]["rotations"][number]
+): number {
+  return rotation.frames.length + (rotation.videos?.length ?? 0) * VIDEO_SAMPLE_COUNT;
 }
 
 function getMaskingStatusFromCounts(

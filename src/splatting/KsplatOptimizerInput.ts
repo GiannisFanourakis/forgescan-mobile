@@ -43,7 +43,7 @@ export function createKsplatOptimizerInput(
 ): KsplatOptimizerInput {
   let order = 0;
   const trackedCaptureReadiness = validateTrackedCaptureForSplat(manifest);
-  const orderedFrames = manifest.capture.rotations.flatMap((rotation) =>
+  const capturedOrderedFrames = manifest.capture.rotations.flatMap((rotation) =>
     rotation.frames.map((frame) => {
       order += 1;
       const readiness = getFramePoseReadiness(frame);
@@ -78,7 +78,15 @@ export function createKsplatOptimizerInput(
       };
     })
   );
-  const cameraData = createCameraData(manifest, trackedCaptureReadiness);
+  const orderedFrames =
+    capturedOrderedFrames.length > 0
+      ? capturedOrderedFrames
+      : createOrderedFramesFromMaskArtifacts(masks);
+  const cameraData = createCameraData(
+    manifest,
+    trackedCaptureReadiness,
+    orderedFrames
+  );
 
   return {
     projectId: manifest.project.id,
@@ -103,7 +111,9 @@ export function createKsplatOptimizerInput(
       rotationId: rotation.id,
       label: rotation.label,
       required: rotation.required,
-      frameCount: rotation.frames.length,
+      frameCount:
+        rotation.frames.length +
+        (rotation.videos?.length ?? 0) * 36,
       status: rotation.status
     })),
     outputFilename: getPhotorealAssetFilename(manifest),
@@ -140,7 +150,8 @@ export function createKsplatOptimizerInput(
 
 function createCameraData(
   manifest: ForgeScanProjectManifest,
-  trackedCaptureReadiness: TrackedCaptureReadiness
+  trackedCaptureReadiness: TrackedCaptureReadiness,
+  orderedFrames: OrderedFrameInput[]
 ): KsplatCameraData {
   const allFrames = manifest.capture.rotations.flatMap((rotation) =>
     rotation.frames.map((frame, index) => ({
@@ -153,7 +164,10 @@ function createCameraData(
     ({ frame }) => getFramePoseReadiness(frame).usableForSplat
   );
   const hasTrackedPose = trackedFrames.length > 0;
-  const untrackedFrameCount = allFrames.length - trackedFrames.length;
+  const untrackedFrameCount =
+    allFrames.length > 0
+      ? allFrames.length - trackedFrames.length
+      : orderedFrames.length;
   const warnings = [
     ...trackedCaptureReadiness.warnings,
     ...(hasTrackedPose && untrackedFrameCount > 0
@@ -177,45 +191,97 @@ function createCameraData(
     trackedFrameCount: trackedFrames.length,
     untrackedFrameCount,
     warnings: [...new Set(warnings)],
-    frames: allFrames.map(({ frame, rotation, index }) => {
-      const readiness = getFramePoseReadiness(frame);
+    frames:
+      allFrames.length > 0
+        ? allFrames.map(({ frame, rotation, index }) => {
+            const readiness = getFramePoseReadiness(frame);
 
-      return {
-        rotationId: rotation.id,
-        frameIndex: frame.index,
-        frameUri: frame.uri,
-        ...(frame.captureSource !== undefined
-          ? { captureSource: frame.captureSource }
-          : {}),
-        ...(frame.cameraIntrinsics !== undefined
-          ? { cameraIntrinsics: frame.cameraIntrinsics }
-          : {}),
-        ...(frame.cameraExtrinsics !== undefined
-          ? { cameraExtrinsics: frame.cameraExtrinsics }
-          : {}),
-        ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
-        poseSynchronization: readiness.poseSynchronization,
-        hasIntrinsics: readiness.hasIntrinsics,
-        hasExtrinsics: readiness.hasExtrinsics,
-        hasValidPoseMatrix: readiness.hasValidPoseMatrix,
-        usableForSplat: readiness.usableForSplat,
-        ...(readiness.unusableReason !== undefined
-          ? { unusableReason: readiness.unusableReason }
-          : {}),
-        ...(frame.timestamp !== undefined ? { timestamp: frame.timestamp } : {}),
-        assumedPose: {
-          yawDegrees:
-            rotation.frames.length > 0
-              ? Math.round((index / rotation.frames.length) * 360)
-              : 0,
-          tiltDegrees:
-            rotation.id === "upright"
-              ? 0
-              : rotation.id === "tilted"
-                ? 45
-              : 160
-        }
-      };
-    })
+            return {
+              rotationId: rotation.id,
+              frameIndex: frame.index,
+              frameUri: frame.uri,
+              ...(frame.captureSource !== undefined
+                ? { captureSource: frame.captureSource }
+                : {}),
+              ...(frame.cameraIntrinsics !== undefined
+                ? { cameraIntrinsics: frame.cameraIntrinsics }
+                : {}),
+              ...(frame.cameraExtrinsics !== undefined
+                ? { cameraExtrinsics: frame.cameraExtrinsics }
+                : {}),
+              ...(frame.trackingState !== undefined ? { trackingState: frame.trackingState } : {}),
+              poseSynchronization: readiness.poseSynchronization,
+              hasIntrinsics: readiness.hasIntrinsics,
+              hasExtrinsics: readiness.hasExtrinsics,
+              hasValidPoseMatrix: readiness.hasValidPoseMatrix,
+              usableForSplat: readiness.usableForSplat,
+              ...(readiness.unusableReason !== undefined
+                ? { unusableReason: readiness.unusableReason }
+                : {}),
+              ...(frame.timestamp !== undefined ? { timestamp: frame.timestamp } : {}),
+              assumedPose: {
+                yawDegrees:
+                  rotation.frames.length > 0
+                    ? Math.round((index / rotation.frames.length) * 360)
+                    : 0,
+                tiltDegrees:
+                  rotation.id === "upright"
+                    ? 0
+                    : rotation.id === "tilted"
+                      ? 45
+                    : 160
+              }
+            };
+          })
+        : orderedFrames.map((frame, index) => ({
+            rotationId: frame.rotationId,
+            frameIndex: frame.frameIndex,
+            frameUri: frame.frameUri,
+            ...(frame.captureSource !== undefined
+              ? { captureSource: frame.captureSource }
+              : {}),
+            ...(frame.poseSynchronization !== undefined
+              ? { poseSynchronization: frame.poseSynchronization }
+              : {}),
+            hasIntrinsics: false,
+            hasExtrinsics: false,
+            hasValidPoseMatrix: false,
+            usableForSplat: true,
+            assumedPose: {
+              yawDegrees:
+                orderedFrames.length > 0
+                  ? Math.round((index / orderedFrames.length) * 360)
+                  : 0,
+              tiltDegrees:
+                frame.rotationId === "upright"
+                  ? 0
+                  : frame.rotationId === "tilted"
+                    ? 45
+                    : 160
+            }
+          }))
   };
+}
+
+function createOrderedFramesFromMaskArtifacts(
+  masks: MaskArtifact[]
+): OrderedFrameInput[] {
+  let order = 0;
+  return masks
+    .filter((mask) => mask.status === "complete" && mask.sourceFrameUri)
+    .map((mask) => {
+      order += 1;
+      return {
+        rotationId: mask.rotationId,
+        frameIndex: mask.frameIndex,
+        frameUri: mask.sourceFrameUri,
+        order,
+        captureSource: "imported",
+        poseSynchronization: "turntable-assumed",
+        hasIntrinsics: false,
+        hasExtrinsics: false,
+        hasValidPoseMatrix: false,
+        usableForSplat: true
+      };
+    });
 }
