@@ -350,7 +350,19 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       return splats;
     }
 
-    int perSampleBudget = Math.max(48, (int) Math.ceil(config.gaussianCount / (double) samples.size()));
+    TrainingSample anchor = chooseAnchorSample(samples);
+    int anchorBudget = Math.min(
+      config.gaussianCount,
+      Math.max(1200, Math.round(config.gaussianCount * 0.72f))
+    );
+    addImageSheetSplats(splats, anchor, anchorBudget);
+
+    int detailBudget = config.gaussianCount - splats.size();
+    if (detailBudget <= 0) {
+      return splats;
+    }
+
+    int perSampleBudget = Math.max(24, (int) Math.ceil(detailBudget / (double) samples.size()));
     for (TrainingSample sample : samples) {
       if (splats.size() >= config.gaussianCount) {
         break;
@@ -368,8 +380,8 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
         float subjectDepth = estimateSubjectDepth(candidate.nx, candidate.ny);
         float px = candidate.nx * cos + subjectDepth * sin;
         float pz = -candidate.nx * sin + subjectDepth * cos;
-        float scale = clampFloat(0.012f + candidate.confidence * 0.018f, 0.012f, 0.038f);
-        int alpha = Math.round(clampFloat(150f + candidate.confidence * 95f, 150f, 245f));
+        float scale = clampFloat(0.008f + candidate.confidence * 0.014f, 0.008f, 0.026f);
+        int alpha = Math.round(clampFloat(70f + candidate.confidence * 90f, 70f, 160f));
         splats.add(new Splat(
           px,
           candidate.ny,
@@ -386,6 +398,61 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     return splats;
   }
 
+  private TrainingSample chooseAnchorSample(List<TrainingSample> samples) {
+    TrainingSample best = samples.get(0);
+    float bestScore = Float.MAX_VALUE;
+
+    for (TrainingSample sample : samples) {
+      float yawScore = yawDistanceFromFront(sample.yawDegrees);
+      float frameBias = Math.max(0, sample.frameIndex) * 0.001f;
+      float score = yawScore + frameBias;
+      if (score < bestScore) {
+        best = sample;
+        bestScore = score;
+      }
+    }
+
+    return best;
+  }
+
+  private float yawDistanceFromFront(float yawDegrees) {
+    float normalized = yawDegrees % 360.0f;
+    if (normalized < 0) {
+      normalized += 360.0f;
+    }
+    return Math.min(normalized, 360.0f - normalized);
+  }
+
+  private void addImageSheetSplats(
+    List<Splat> splats,
+    TrainingSample sample,
+    int budget
+  ) {
+    List<ForegroundCandidate> candidates = collectForegroundCandidates(sample, budget);
+    if (candidates.isEmpty()) {
+      return;
+    }
+
+    int stride = Math.max(1, (int) Math.ceil(candidates.size() / (double) Math.max(1, budget)));
+    for (int index = 0; index < candidates.size() && splats.size() < budget; index += stride) {
+      ForegroundCandidate candidate = candidates.get(index);
+      float shallowDepth = estimateSubjectDepth(candidate.nx, candidate.ny) * 0.08f;
+      float scale = clampFloat(0.010f + candidate.confidence * 0.012f, 0.010f, 0.024f);
+      int alpha = Math.round(clampFloat(190f + candidate.confidence * 60f, 190f, 250f));
+      splats.add(new Splat(
+        candidate.nx,
+        candidate.ny,
+        shallowDepth,
+        scale,
+        Color.red(candidate.color),
+        Color.green(candidate.color),
+        Color.blue(candidate.color),
+        alpha,
+        true
+      ));
+    }
+  }
+
   private List<ForegroundCandidate> collectForegroundCandidates(
     TrainingSample sample,
     int targetCount
@@ -396,7 +463,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     int backgroundColor = estimateBackgroundColor(sample.image);
     int initialStep = Math.max(2, (int) Math.sqrt((width * height) / (double) Math.max(1, targetCount * 4)));
 
-    for (int step = initialStep; step >= 2; step = Math.max(1, step / 2)) {
+    for (int step = initialStep; step >= 1; step = Math.max(1, step / 2)) {
       candidates.clear();
       for (int y = step / 2; y < height; y += step) {
         for (int x = step / 2; x < width; x += step) {
@@ -546,6 +613,10 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
 
       for (TrainingSample sample : samples) {
         for (Splat splat : splats) {
+          if (splat.locked) {
+            continue;
+          }
+
           ProjectedPoint point = project(splat, sample);
           if (!point.inBounds || !isForeground(sample.mask, sample.image, point.x, point.y)) {
             continue;
@@ -905,8 +976,13 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     float g;
     float b;
     float a;
+    final boolean locked;
 
     Splat(float x, float y, float z, float scale, int r, int g, int b, int a) {
+      this(x, y, z, scale, r, g, b, a, false);
+    }
+
+    Splat(float x, float y, float z, float scale, int r, int g, int b, int a, boolean locked) {
       this.x = x;
       this.y = y;
       this.z = z;
@@ -915,6 +991,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       this.g = g;
       this.b = b;
       this.a = a;
+      this.locked = locked;
     }
   }
 }
