@@ -35,7 +35,29 @@ preview.gif
     - `preview.mp4`
     - `preview.gif`
 
+## Android Stable Camera Capture Test
+
+Current POCO X7 Pro test status: ARCore tracked capture is disabled in this build after a native ARCore runtime crash. Use this test to verify the app stays stable while capturing photos/video through the native camera path.
+
+1. Run `npm install`.
+2. Run `npm run typecheck`.
+3. Run `npx expo run:android`.
+4. Open the Android dev build.
+5. Create a project.
+6. Open a capture rotation.
+7. Confirm the camera preview covers the full screen.
+8. Confirm the capture mode is `Basic capture / ARCore off`.
+9. Capture one photo.
+10. Confirm the app does not crash.
+11. Switch to video mode.
+12. Confirm the app does not return to a black preview.
+13. Pinch the preview and confirm zoom changes.
+14. Capture additional photos or a short video.
+15. Complete the rotation.
+
 ## Android Real Tracked Scan Test
+
+This test is paused for the current POCO X7 Pro build because starting ARCore caused a native `libarcore_c.so` crash. The app must report ARCore as disabled instead of starting the session.
 
 Requirements:
 
@@ -62,17 +84,16 @@ Phone flow:
 1. Open the Android dev build.
 2. Open `Native Engine Diagnostics`.
 3. Tap `Test ARCore Availability`.
-4. Confirm ARCore available, SharedCamera supported, Camera2 available, and camera lock support is reported.
-5. Tap `Start ARCore Session Test`.
-6. Confirm the SharedCamera session starts or fails with a clear native error.
+4. Confirm ARCore reports disabled on the current POCO X7 Pro build.
+5. Do not start the ARCore session on this device until the native ARCore crash is resolved.
 7. Create a project.
 8. Open the first capture rotation.
 9. Confirm the camera preview covers the full screen.
-10. Confirm the capture mode is `Tracked`.
+10. Confirm the capture mode is `Basic capture / ARCore off`.
 11. Pinch on the preview and confirm zoom changes.
-12. Tap `Start Tracked` from the Camera menu.
-13. Capture one keyframe.
-14. Confirm pose status says `Frame and pose associated, not fully synchronized.` or `Tracked frame saved with pose.` If ARCore cannot track, confirm it says `Frame saved, but pose missing.`
+12. Confirm `Start Tracked` is unavailable or reports ARCore disabled.
+13. Capture one Basic frame.
+14. Confirm the app stays running and does not start ARCore.
 15. Confirm the capture screen shows:
    - Capture path
    - Last frame source

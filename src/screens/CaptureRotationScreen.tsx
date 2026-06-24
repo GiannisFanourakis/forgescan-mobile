@@ -38,11 +38,8 @@ import type {
   NativeCameraXVideoQuality
 } from "../native/NativeAdvancedCameraTypes";
 import {
-  captureNativeARKeyframe,
   endNativeARCaptureSession,
-  getNativeARCaptureAvailability,
-  getNativeARCaptureSessionStatus,
-  startNativeARCaptureSession
+  getNativeARCaptureAvailability
 } from "../native/NativeARCapture";
 import type {
   NativeARCaptureResult,
@@ -71,8 +68,10 @@ const cameraModes: { label: string; value: CameraMode }[] = [
   { label: "Video", value: "video" }
 ];
 
+const arCoreTrackedCaptureDisabledReason =
+  "ARCore tracking is disabled in this build after a native ARCore crash on this phone. Basic camera capture stays available.";
+
 const realCapturePaths: { label: string; value: RealCapturePath }[] = [
-  { label: "Tracked", value: "arcore-tracked" },
   { label: "Basic", value: "basic-untracked" }
 ];
 
@@ -156,7 +155,7 @@ export function CaptureRotationScreen({
   const [burstIntervalMs, setBurstIntervalMs] =
     useState<BurstIntervalMs>(1000);
   const [capturePath, setCapturePath] =
-    useState<RealCapturePath>("arcore-tracked");
+    useState<RealCapturePath>("basic-untracked");
   const [arCaptureStatus, setArCaptureStatus] =
     useState<NativeARCaptureStatus>("not-started");
   const [poseStatus, setPoseStatus] = useState("Pose not started");
@@ -193,7 +192,7 @@ export function CaptureRotationScreen({
       setPoseStatus(
         availability.arCoreAvailable
           ? "ARCore ready"
-          : "ARCore unavailable"
+          : "ARCore disabled"
       );
     });
   }, []);
@@ -265,7 +264,7 @@ export function CaptureRotationScreen({
   const captureModeCopy =
     capturePath === "arcore-tracked"
       ? "ARCore Tracked Capture saves frames + camera poses for Gaussian Splatting."
-      : "Untracked capture - not suitable for real Gaussian Splat optimization.";
+      : "Basic capture uses the camera directly and avoids ARCore tracking.";
 
   async function requestCameraPermission(): Promise<void> {
     if (Platform.OS !== "android") {
@@ -491,41 +490,11 @@ export function CaptureRotationScreen({
       return false;
     }
 
-    if (arCaptureStatus === "ready" || arCaptureStatus === "tracked") {
-      const status = await getNativeARCaptureSessionStatus();
-      if (status.sessionRunning) {
-        return true;
-      }
-    }
-
-    setPoseStatus("Starting ARCore");
-    const result = await startNativeARCaptureSession({
-      projectId,
-      projectName: projectTitle,
-      projectDirectoryUri,
-      outputDirectory: "advanced/camera",
-      lockExposure: true,
-      lockWhiteBalance: true,
-      lockFocus: true,
-      preferredLens: "default",
-      keyframeIntervalMs: 500,
-      maxKeyframes: 60,
-      minKeyframes: 40,
-      imageResolutionPreset: "high",
-      objectScanMode: true,
-      manualIso,
-      manualShutterNs
-    });
-    setArCaptureStatus(result.status);
-    setPoseStatus(result.sharedCameraSessionStarted ? "ARCore tracking" : "ARCore unavailable");
-    if (result.status === "failed") {
-      setCaptureError(
-        result.errors?.[0] ??
-          "ARCore SharedCamera session failed. Basic capture remains available."
-      );
-      return false;
-    }
-    return result.status === "ready";
+    setCapturePath("basic-untracked");
+    setArCaptureStatus("failed");
+    setPoseStatus("ARCore disabled");
+    setCaptureError(arCoreTrackedCaptureDisabledReason);
+    return false;
   }
 
   async function captureTrackedKeyframe(photo: {
@@ -533,36 +502,11 @@ export function CaptureRotationScreen({
     width?: number;
     height?: number;
   }): Promise<NativeARCaptureResult | null> {
-    const result = await captureNativeARKeyframe({
-      projectId,
-      projectDirectoryUri,
-      rotationId,
-      frameIndex: nextFrameNumber,
-      sourceFrameUri: photo.uri,
-      ...(photo.width && photo.width > 0 ? { width: photo.width } : {}),
-      ...(photo.height && photo.height > 0 ? { height: photo.height } : {}),
-      timestamp: new Date().toISOString(),
-      outputDirectory: "advanced/camera",
-      lockExposure: true,
-      lockWhiteBalance: true,
-      lockFocus: true,
-      preferredLens: "default",
-      keyframeIntervalMs: 500,
-      maxKeyframes: 60,
-      minKeyframes: 40,
-      imageResolutionPreset: "high",
-      objectScanMode: true,
-      manualIso,
-      manualShutterNs
-    });
-    setArCaptureStatus(result.status);
-    if (result.status !== "tracked") {
-      setCaptureError(
-        result.warnings?.[0] ??
-          "Untracked capture does not contain camera pose matrices. Results may fail or use rough turntable assumptions."
-      );
-    }
-    return result;
+    void photo;
+    setCapturePath("basic-untracked");
+    setPoseStatus("ARCore disabled");
+    setCaptureError(arCoreTrackedCaptureDisabledReason);
+    return null;
   }
 
   function setManualIsoLevel(value: number): void {
@@ -807,7 +751,9 @@ export function CaptureRotationScreen({
                 {captureStatus ?? `Frame ${nextFrameNumber}`}
               </Text>
               <Text style={styles.previewStatusValue} numberOfLines={1}>
-                {capturePath === "arcore-tracked" ? "Tracked scan" : "Basic capture"} / {poseStatus}
+                {capturePath === "arcore-tracked"
+                  ? `Tracked scan / ${poseStatus}`
+                  : "Basic capture / ARCore off"}
               </Text>
             </View>
             <View style={styles.coverageBadge}>
@@ -1000,25 +946,18 @@ export function CaptureRotationScreen({
               <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
               <View style={styles.optionRow}>
                 <CompactMenuButton
-                  disabled={
-                    capturePath !== "arcore-tracked" ||
-                    isRecording ||
-                    isBurstRunning
-                  }
-                  label="Start Tracked"
+                  disabled
+                  label="Tracked Off"
                   tone="primary"
                   onPress={() => {
                     void ensureTrackedCaptureSession();
                   }}
                 />
                 <CompactMenuButton
-                  disabled={capturePath !== "arcore-tracked"}
+                  disabled
                   label="AR Status"
                   onPress={() => {
-                    void getNativeARCaptureSessionStatus().then((result) => {
-                      setArCaptureStatus(result.status);
-                      setPoseStatus(result.trackingState ?? "unknown");
-                    });
+                    setPoseStatus("ARCore disabled");
                   }}
                 />
               </View>

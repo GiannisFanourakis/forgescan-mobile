@@ -23,7 +23,16 @@ const nativeARCaptureModule = NativeModules.ForgeScanARCapture as
     }
   | undefined;
 
+const arCoreTrackedCaptureDisabled = true;
+
+const arCoreTrackedCaptureDisabledReason =
+  "ARCore tracked capture is disabled in this build because the native ARCore runtime crashed on this device. Use Basic capture.";
+
 export async function getNativeARCaptureAvailability(): Promise<NativeARCaptureAvailability> {
+  if (arCoreTrackedCaptureDisabled) {
+    return fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled");
+  }
+
   if (!nativeARCaptureModule?.getAvailability) {
     return fallbackAvailability("ARCore tracked capture requires an Android development/native build.");
   }
@@ -44,6 +53,13 @@ export async function getNativeARCaptureAvailability(): Promise<NativeARCaptureA
 export async function startNativeARCaptureSession(
   input: NativeARCaptureSessionInput
 ): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed"
+    };
+  }
+
   if (!nativeARCaptureModule?.startSession) {
     return {
       ...fallbackAvailability("ARCore SharedCamera session requires an Android development/native build."),
@@ -59,6 +75,14 @@ export async function startNativeARCaptureSession(
 export async function captureNativeARKeyframe(
   input: NativeARCaptureKeyframeInput
 ): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed",
+      errors: [arCoreTrackedCaptureDisabledReason]
+    };
+  }
+
   if (!nativeARCaptureModule?.captureKeyframe) {
     return {
       ...fallbackAvailability("ARCore tracked keyframe capture requires an Android development/native build."),
@@ -75,6 +99,13 @@ export async function captureNativeARKeyframe(
 export async function startNativeARTimedKeyframeCapture(
   input: NativeARCaptureTimedInput
 ): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed"
+    };
+  }
+
   if (!nativeARCaptureModule?.startTimedKeyframeCapture) {
     return {
       ...fallbackAvailability("Timed ARCore keyframe capture requires an Android development/native build."),
@@ -88,6 +119,13 @@ export async function startNativeARTimedKeyframeCapture(
 }
 
 export async function stopNativeARTimedKeyframeCapture(): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed"
+    };
+  }
+
   if (!nativeARCaptureModule?.stopTimedKeyframeCapture) {
     return {
       ...fallbackAvailability("Timed ARCore keyframe capture requires an Android development/native build."),
@@ -99,6 +137,13 @@ export async function stopNativeARTimedKeyframeCapture(): Promise<NativeARCaptur
 }
 
 export async function getNativeARCaptureSessionStatus(): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed"
+    };
+  }
+
   if (!nativeARCaptureModule?.getSessionStatus) {
     return {
       ...fallbackAvailability("ARCore session diagnostics require an Android development/native build."),
@@ -110,6 +155,13 @@ export async function getNativeARCaptureSessionStatus(): Promise<NativeARCapture
 }
 
 export async function endNativeARCaptureSession(): Promise<NativeARCaptureResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "ended"
+    };
+  }
+
   if (!nativeARCaptureModule?.endSession) {
     return {
       ...fallbackAvailability("ARCore SharedCamera session requires an Android development/native build."),
@@ -123,6 +175,14 @@ export async function endNativeARCaptureSession(): Promise<NativeARCaptureResult
 export async function runNativeARCoreKeyframeSmokeTest(
   input: NativeARCaptureInput
 ): Promise<NativeARCaptureSmokeResult> {
+  if (arCoreTrackedCaptureDisabled) {
+    return {
+      ...fallbackAvailability(arCoreTrackedCaptureDisabledReason, "disabled"),
+      status: "failed",
+      errors: [arCoreTrackedCaptureDisabledReason]
+    };
+  }
+
   const availability = await getNativeARCaptureAvailability();
 
   if (!availability.available || !nativeARCaptureModule?.runKeyframeCaptureSmokeTest) {
@@ -150,7 +210,10 @@ export async function runNativeARCoreKeyframeSmokeTest(
   }
 }
 
-function fallbackAvailability(message: string): NativeARCaptureAvailability {
+function fallbackAvailability(
+  message: string,
+  trackingState: string = "requires-native-build"
+): NativeARCaptureAvailability {
   return {
     available: false,
     moduleName: "ForgeScanARCapture",
@@ -163,7 +226,7 @@ function fallbackAvailability(message: string): NativeARCaptureAvailability {
     canLockExposure: false,
     canLockWhiteBalance: false,
     canLockFocus: false,
-    trackingState: "requires-native-build",
+    trackingState,
     keyframeCaptureImplemented: false,
     fallbackTurntablePoseUsed: false,
     cameraIntrinsicsCaptured: false,
