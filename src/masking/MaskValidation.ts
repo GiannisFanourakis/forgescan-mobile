@@ -6,7 +6,7 @@ import {
   MaskingSummary
 } from "./MaskingTypes";
 
-const VIDEO_SAMPLE_COUNT = 36;
+const VIDEO_SAMPLE_COUNT = 96;
 
 export function validateMaskCoverage(
   manifest: ForgeScanProjectManifest,

@@ -4,7 +4,7 @@ import {
   NativeMaskingInput
 } from "../native/NativeMaskingTypes";
 
-const DEFAULT_VIDEO_SAMPLE_COUNT = 36;
+const DEFAULT_VIDEO_SAMPLE_COUNT = 96;
 
 export function createNativeMaskingInput(
   manifest: ForgeScanProjectManifest

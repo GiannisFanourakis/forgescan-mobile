@@ -24,7 +24,7 @@ public class ForgeScanKsplatView extends View {
   private static final int SECTION_HEADER_SIZE = 1024;
   private static final int DATA_BASE = HEADER_SIZE + SECTION_HEADER_SIZE;
   private static final int BYTES_PER_SPLAT = 44;
-  private static final int MAX_RENDERED_SPLATS = 18000;
+  private static final int MAX_RENDERED_SPLATS = 50000;
 
   private final ExecutorService loader = Executors.newSingleThreadExecutor();
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);

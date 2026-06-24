@@ -298,7 +298,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     JSONArray frames = input.getJSONArray("orderedFrames");
     JSONArray masks = input.optJSONArray("objectMasks");
     List<TrainingSample> samples = new ArrayList<>();
-    int maxSamples = Math.min(frames.length(), 36);
+    int maxSamples = Math.min(frames.length(), 96);
     int stride = Math.max(1, frames.length() / Math.max(1, maxSamples));
 
     for (int index = 0; index < frames.length() && samples.size() < maxSamples; index += stride) {
@@ -807,7 +807,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
 
     OptimizerConfig(int maxIterations, int gaussianCount, int imageDownscale, float learningRate) {
       this.maxIterations = Math.max(1, Math.min(maxIterations, 48));
-      this.gaussianCount = Math.max(96, Math.min(gaussianCount, 3200));
+      this.gaussianCount = Math.max(96, Math.min(gaussianCount, 16000));
       this.imageDownscale = Math.max(1, Math.min(imageDownscale, 4));
       this.learningRate = clampFloat(learningRate, 0.005f, 0.25f);
     }
@@ -819,7 +819,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
       }
       String preset = settings.optString("qualityPreset", "smoke");
       int defaultIterations = "standard".equals(preset) ? 36 : "fast".equals(preset) ? 24 : 18;
-      int defaultGaussians = "standard".equals(preset) ? 2400 : "fast".equals(preset) ? 1800 : 1400;
+      int defaultGaussians = "standard".equals(preset) ? 12000 : "fast".equals(preset) ? 9000 : 6000;
       return new OptimizerConfig(
         settings.optInt("maxIterations", defaultIterations),
         settings.optInt("gaussianCount", settings.optInt("maxSplats", defaultGaussians)),

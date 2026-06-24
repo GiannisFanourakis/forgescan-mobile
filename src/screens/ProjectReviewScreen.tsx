@@ -564,7 +564,7 @@ function estimateProcessingSeconds(manifest: ForgeScanProjectManifest): number {
     (sum, rotation) => sum + rotation.frames.length,
     0
   );
-  const maskUnits = Math.max(frameCount, videoCount * 36, 36);
+  const maskUnits = Math.max(frameCount, videoCount * 96, 96);
 
   return Math.max(28, Math.min(180, 12 + maskUnits * 0.7 + videoCount * 8));
 }

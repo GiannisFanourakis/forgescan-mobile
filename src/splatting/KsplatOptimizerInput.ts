@@ -113,7 +113,7 @@ export function createKsplatOptimizerInput(
       required: rotation.required,
       frameCount:
         rotation.frames.length +
-        (rotation.videos?.length ?? 0) * 36,
+        (rotation.videos?.length ?? 0) * 96,
       status: rotation.status
     })),
     outputFilename: getPhotorealAssetFilename(manifest),
@@ -121,11 +121,11 @@ export function createKsplatOptimizerInput(
     outputPath: getExpectedKsplatPath(manifest),
     optimizerSettings: {
       target: "ksplat",
-      maxIterations: 24,
-      gaussianCount: orderedFrames.length >= 180 ? 2400 : 1400,
+      maxIterations: 42,
+      gaussianCount: orderedFrames.length >= 180 ? 12000 : 9000,
       imageDownscale: orderedFrames.length >= 180 ? 2 : 1,
       learningRate: 0.08,
-      qualityPreset: orderedFrames.length >= 180 ? "standard" : "fast",
+      qualityPreset: "standard",
       useMasks: masks.length > 0,
       nativePreferred: true,
       objectTurntableMode: true,
@@ -135,7 +135,7 @@ export function createKsplatOptimizerInput(
     },
     frameSampling: {
       targetKeyframeIntervalSeconds: 0.5,
-      targetFrames: "40-60"
+      targetFrames: "96+"
     },
     createdAt: new Date().toISOString(),
     notes: [
