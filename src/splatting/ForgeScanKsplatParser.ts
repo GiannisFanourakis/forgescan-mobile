@@ -22,7 +22,7 @@ const HEADER_SIZE = 4096;
 const SECTION_HEADER_SIZE = 1024;
 const BYTES_PER_SPLAT = 44;
 const DATA_BASE = HEADER_SIZE + SECTION_HEADER_SIZE;
-const MAX_RENDERED_SPLATS = 6000;
+const MAX_RENDERED_SPLATS = 18000;
 
 export async function parseForgeScanKsplat(
   uri: string

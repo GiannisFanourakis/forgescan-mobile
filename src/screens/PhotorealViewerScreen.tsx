@@ -244,7 +244,7 @@ function projectSplats(
       const perspective = 1.05 / Math.max(0.35, 1.2 + viewZ * 0.35);
       const left = clamp(50 + viewX * perspective * 55, 1, 99);
       const top = clamp(50 - splat.y * perspective * 58, 1, 99);
-      const size = clamp(5 + splat.scale * 260 * perspective, 3, 18);
+      const size = clamp(8 + splat.scale * 520 * perspective, 6, 34);
 
       return {
         key: `${index}-${splat.x.toFixed(3)}-${splat.y.toFixed(3)}`,
@@ -254,7 +254,7 @@ function projectSplats(
         r: splat.r,
         g: splat.g,
         b: splat.b,
-        opacity: clamp(splat.a / 255, 0.18, 0.95),
+        opacity: clamp(splat.a / 255, 0.28, 0.88),
         zIndex: Math.round((viewZ + 2) * 1000)
       };
     })
@@ -309,8 +309,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     shadowColor: "#ffffff",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5
+    shadowOpacity: 0.3,
+    shadowRadius: 9
   },
   viewerLabel: {
     alignItems: "center",

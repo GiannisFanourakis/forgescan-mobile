@@ -122,8 +122,8 @@ export function createKsplatOptimizerInput(
     optimizerSettings: {
       target: "ksplat",
       maxIterations: 42,
-      gaussianCount: orderedFrames.length >= 180 ? 12000 : 9000,
-      imageDownscale: orderedFrames.length >= 180 ? 2 : 1,
+      gaussianCount: orderedFrames.length >= 180 ? 42000 : 28000,
+      imageDownscale: 1,
       learningRate: 0.08,
       qualityPreset: "standard",
       useMasks: masks.length > 0,

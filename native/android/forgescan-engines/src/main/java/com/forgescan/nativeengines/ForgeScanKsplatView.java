@@ -24,7 +24,7 @@ public class ForgeScanKsplatView extends View {
   private static final int SECTION_HEADER_SIZE = 1024;
   private static final int DATA_BASE = HEADER_SIZE + SECTION_HEADER_SIZE;
   private static final int BYTES_PER_SPLAT = 44;
-  private static final int MAX_RENDERED_SPLATS = 50000;
+  private static final int MAX_RENDERED_SPLATS = 90000;
 
   private final ExecutorService loader = Executors.newSingleThreadExecutor();
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -108,7 +108,7 @@ public class ForgeScanKsplatView extends View {
       float perspective = 1.05f / Math.max(0.35f, 1.25f + viewZ * 0.35f);
       splat.screenX = centerX + viewX * perspective * viewport;
       splat.screenY = centerY - splat.y * perspective * viewport;
-      splat.screenRadius = Math.max(1.2f, Math.min(26f, splat.scale * viewport * perspective));
+      splat.screenRadius = Math.max(2.4f, Math.min(42f, splat.scale * viewport * perspective * 1.65f));
       splat.viewDepth = viewZ;
     }
 
@@ -124,14 +124,14 @@ public class ForgeScanKsplatView extends View {
         continue;
       }
 
-      int softAlpha = Math.max(10, Math.min(96, Math.round(splat.a * 0.34f)));
+      int softAlpha = Math.max(18, Math.min(118, Math.round(splat.a * 0.46f)));
       paint.setColor(Color.argb(
         softAlpha,
         shadeChannel(splat.r, splat.viewDepth, 0.9f),
         shadeChannel(splat.g, splat.viewDepth, 0.9f),
         shadeChannel(splat.b, splat.viewDepth, 0.9f)
       ));
-      canvas.drawCircle(splat.screenX, splat.screenY, splat.screenRadius * 2.25f, paint);
+      canvas.drawCircle(splat.screenX, splat.screenY, splat.screenRadius * 3.6f, paint);
     }
 
     for (RenderSplat splat : localSplats) {
@@ -145,12 +145,31 @@ public class ForgeScanKsplatView extends View {
       }
 
       paint.setColor(Color.argb(
-        Math.max(28, Math.min(245, splat.a)),
+        Math.max(22, Math.min(150, Math.round(splat.a * 0.56f))),
+        shadeChannel(splat.r, splat.viewDepth, 0.98f),
+        shadeChannel(splat.g, splat.viewDepth, 0.98f),
+        shadeChannel(splat.b, splat.viewDepth, 0.98f)
+      ));
+      canvas.drawCircle(splat.screenX, splat.screenY, splat.screenRadius * 1.85f, paint);
+    }
+
+    for (RenderSplat splat : localSplats) {
+      if (
+        splat.screenX < -32f ||
+        splat.screenY < -32f ||
+        splat.screenX > width + 32f ||
+        splat.screenY > height + 32f
+      ) {
+        continue;
+      }
+
+      paint.setColor(Color.argb(
+        Math.max(34, Math.min(225, Math.round(splat.a * 0.72f))),
         shadeChannel(splat.r, splat.viewDepth, 1.05f),
         shadeChannel(splat.g, splat.viewDepth, 1.05f),
         shadeChannel(splat.b, splat.viewDepth, 1.05f)
       ));
-      canvas.drawCircle(splat.screenX, splat.screenY, Math.max(1.1f, splat.screenRadius * 0.72f), paint);
+      canvas.drawCircle(splat.screenX, splat.screenY, Math.max(1.8f, splat.screenRadius * 1.05f), paint);
     }
 
     if (autoRotate) {
