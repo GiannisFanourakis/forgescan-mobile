@@ -14,7 +14,7 @@ const VIDEO_DERIVED_FRAME_GUIDE = 72;
 
 export function NewProjectScreen({ navigation }: Props): ReactElement {
   const { createProject } = useProjects();
-  const [title, setTitle] = useState("Object scan");
+  const [title, setTitle] = useState("New clip");
   const [includeUnderside, setIncludeUnderside] = useState(false);
 
   function handleCreateProject(): void {
@@ -38,37 +38,36 @@ export function NewProjectScreen({ navigation }: Props): ReactElement {
       </Section>
 
       <Section>
-        <Text style={styles.label}>Capture method</Text>
+        <Text style={styles.label}>Clip capture</Text>
         <Text style={styles.helperText}>
-          ForgeScan now uses video-only turntable capture. Record one smooth
-          full-turn clip for each rotation; processing extracts evenly spaced
-          frames automatically.
+          Record one smooth full-turn clip for each rotation. ForgeScan handles
+          the rest during processing.
         </Text>
         <View style={styles.captureSummary}>
-          <Text style={styles.captureSummaryTitle}>Video scan</Text>
+          <Text style={styles.captureSummaryTitle}>Simple clip scan</Text>
           <Text style={styles.captureSummaryText}>
-            1 clip per rotation · turntable pose math · ARCore off
+            1 clip per rotation
           </Text>
         </View>
       </Section>
 
       <Section>
-        <Text style={styles.label}>Capture plan</Text>
+        <Text style={styles.label}>Rotations</Text>
         <View style={styles.planOptions}>
           <Choice
-            label="2 rotations: upright + tilted"
+            label="2 rotations"
             selected={!includeUnderside}
             onPress={() => setIncludeUnderside(false)}
           />
           <Choice
-            label="3 rotations: upright + tilted + underside"
+            label="3 rotations"
             selected={includeUnderside}
             onPress={() => setIncludeUnderside(true)}
           />
         </View>
       </Section>
 
-      <Button label="Create Scan" onPress={handleCreateProject} />
+      <Button label="Create Clip" onPress={handleCreateProject} />
     </Screen>
   );
 }

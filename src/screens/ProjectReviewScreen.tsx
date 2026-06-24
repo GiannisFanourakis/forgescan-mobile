@@ -5,12 +5,6 @@ import { StyleSheet, Text, View } from "react-native";
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { StatusPill } from "../components/StatusPill";
-import {
-  TrackedCaptureReadiness,
-  TrackedCaptureStatus,
-  validateTrackedCaptureForSplat
-} from "../capture/trackedCaptureReadiness";
-import { getCoverageLabel } from "../core/coverage";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { ForgeScanProjectManifest } from "../core/manifest";
 import { RootStackParamList } from "../navigation/types";
@@ -50,11 +44,6 @@ export function ProjectReviewScreen({
     () => (project ? validateProjectForReconstruction(project) : undefined),
     [project]
   );
-  const trackedReadiness = useMemo(
-    () => (project ? validateTrackedCaptureForSplat(project) : undefined),
-    [project]
-  );
-
   useEffect(() => {
     if (
       !route.params.autoProcess ||
@@ -71,7 +60,7 @@ export function ProjectReviewScreen({
     void runScanProcessing(project);
   }, [isRunning, project, route.params.autoProcess, scanResult, validation?.validForReconstruction]);
 
-  if (!project || !validation || !trackedReadiness) {
+  if (!project || !validation) {
     return (
       <Screen>
         <Text style={styles.title}>Project not found</Text>
@@ -158,8 +147,6 @@ export function ProjectReviewScreen({
         ))}
       </View>
 
-      <TrackedCaptureReadinessCard readiness={trackedReadiness} />
-
       <View style={styles.primaryCard}>
         <Text style={styles.sectionTitle}>{stepLabels[activeStep]}</Text>
         <Text style={styles.messageText}>
@@ -185,7 +172,8 @@ export function ProjectReviewScreen({
             <View style={styles.rowText}>
               <Text style={styles.simpleRowTitle}>{rotation.label}</Text>
               <Text style={styles.simpleRowMeta}>
-                {rotation.frames.length} frames / {getCoverageLabel(rotation.frames.length)}
+                {(rotation.videos?.length ?? 0)} clip
+                {(rotation.videos?.length ?? 0) === 1 ? "" : "s"}
               </Text>
             </View>
             <StatusPill status={rotation.status} />
@@ -202,7 +190,7 @@ export function ProjectReviewScreen({
               <StatusPill status={isRunning ? "capturing" : "complete"} />
             </View>
           ))}
-          {scanResult?.warnings.map((warning) => (
+          {getUserFacingWarnings(scanResult?.warnings ?? []).map((warning) => (
             <Text key={warning} style={[styles.message, styles.warning]}>
               {warning}
             </Text>
@@ -237,76 +225,6 @@ export function ProjectReviewScreen({
         </Section>
       ) : null}
     </Screen>
-  );
-}
-
-interface TrackedCaptureReadinessCardProps {
-  readiness: TrackedCaptureReadiness;
-}
-
-function TrackedCaptureReadinessCard({
-  readiness
-}: TrackedCaptureReadinessCardProps): ReactElement {
-  const statusWarning = getReadinessStatusWarning(readiness.status);
-
-  return (
-    <View style={styles.readinessCard}>
-      <Text style={styles.sectionTitle}>Tracked Capture Readiness</Text>
-      <View style={styles.readinessGrid}>
-        <ReadinessMetric
-          label="Status"
-          value={formatReadinessStatus(readiness.status)}
-        />
-        <ReadinessMetric
-          label="Total frames"
-          value={`${readiness.frameStats.totalFrames}`}
-        />
-        <ReadinessMetric
-          label="Usable tracked"
-          value={`${readiness.frameStats.usableForSplat}`}
-        />
-        <ReadinessMetric
-          label="Associated poses"
-          value={`${readiness.frameStats.framesWithCameraPhotoAssociatedPose}`}
-        />
-      </View>
-      {readiness.perRotation.map((rotation) => (
-        <View key={rotation.rotationId} style={styles.readinessRotationRow}>
-          <View style={styles.rowText}>
-            <Text style={styles.simpleRowTitle}>{rotation.label}</Text>
-            <Text style={styles.simpleRowMeta}>
-              {rotation.usableForSplat} usable / {rotation.totalFrames} total
-            </Text>
-          </View>
-          <Text style={styles.readinessStatusText}>
-            {formatReadinessStatus(rotation.status)}
-          </Text>
-        </View>
-      ))}
-      {statusWarning ? (
-        <Text style={[styles.message, styles.warning]}>{statusWarning}</Text>
-      ) : null}
-      {readiness.warnings.map((warning) => (
-        <Text key={warning} style={[styles.message, styles.warning]}>
-          {warning}
-        </Text>
-      ))}
-    </View>
-  );
-}
-
-function ReadinessMetric({
-  label,
-  value
-}: {
-  label: string;
-  value: string;
-}): ReactElement {
-  return (
-    <View style={styles.readinessMetric}>
-      <Text style={styles.readinessMetricLabel}>{label}</Text>
-      <Text style={styles.readinessMetricValue}>{value}</Text>
-    </View>
   );
 }
 
@@ -356,26 +274,17 @@ function NormalExports({ outputs }: NormalExportsProps): ReactElement {
   );
 }
 
-function formatReadinessStatus(status: TrackedCaptureStatus): string {
-  return status.replace(/-/g, " ");
-}
+function getUserFacingWarnings(warnings: string[]): string[] {
+  const technicalPattern = /arcore|tracked|tracking|pose|camera matrix|frames/i;
+  const filtered = warnings.filter((warning) => !technicalPattern.test(warning));
 
-function getReadinessStatusWarning(
-  status: TrackedCaptureStatus
-): string | null {
-  if (status === "associated-not-synchronized") {
-    return "Current build pairs CameraX frames with ARCore poses. This is usable for testing but not final SharedCamera synchronization.";
+  if (filtered.length > 0) {
+    return filtered;
   }
 
-  if (status === "fallback-turntable") {
-    return "Camera pose metadata missing. Optimizer will use turntable assumptions.";
-  }
-
-  if (status === "missing" || status === "insufficient-tracking") {
-    return "Capture more tracked frames before running splat optimization.";
-  }
-
-  return null;
+  return warnings.length > 0
+    ? ["Clip scan processing used the current local phone-safe path."]
+    : [];
 }
 
 const styles = StyleSheet.create({

@@ -55,7 +55,7 @@ type RealCapturePath = "arcore-tracked" | "basic-untracked";
 const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
   { label: "Settings", value: "camera" },
   { label: "Clips", value: "clips" },
-  { label: "Details", value: "actions" }
+  { label: "Done", value: "actions" }
 ];
 
 const cameraModes: { label: string; value: CameraMode }[] = [
@@ -63,7 +63,7 @@ const cameraModes: { label: string; value: CameraMode }[] = [
 ];
 
 const arCoreTrackedCaptureDisabledReason =
-  "ARCore tracking is disabled in this build after a native ARCore crash on this phone. Basic camera capture stays available.";
+  "Clip capture is ready.";
 
 const realCapturePaths: { label: string; value: RealCapturePath }[] = [
   { label: "Basic", value: "basic-untracked" }
@@ -184,9 +184,7 @@ export function CaptureRotationScreen({
     );
     void getNativeARCaptureAvailability().then((availability) => {
       setPoseStatus(
-        availability.arCoreAvailable
-          ? "ARCore ready"
-          : "ARCore disabled"
+        availability.arCoreAvailable ? "Ready" : "Ready"
       );
     });
   }, []);
@@ -252,10 +250,7 @@ export function CaptureRotationScreen({
     bestBackCamera?.exposureTimeRangeNs ?? DEFAULT_SHUTTER_RANGE_NS;
   const maxFocusDistance = bestBackCamera?.minimumFocusDistance ?? 0;
   const projectDirectoryUri = getProjectStoragePaths(project).projectUri;
-  const captureModeCopy =
-    capturePath === "arcore-tracked"
-      ? "ARCore Tracked Capture saves frames + camera poses for Gaussian Splatting."
-      : "Basic capture uses the camera directly and avoids ARCore tracking.";
+  const captureModeCopy = "Record one smooth full-turn clip.";
 
   async function requestCameraPermission(): Promise<void> {
     if (Platform.OS !== "android") {
@@ -417,7 +412,7 @@ export function CaptureRotationScreen({
     setCaptureError(null);
     if (capturePath === "arcore-tracked") {
       setCaptureError(
-        "Plain video is Basic untracked capture here. Real Gaussian Splat scans need tracked keyframes."
+        "Video clip capture is the active scan mode."
       );
       return;
     }
@@ -469,8 +464,8 @@ export function CaptureRotationScreen({
 
     setCapturePath("basic-untracked");
     setArCaptureStatus("failed");
-    setPoseStatus("ARCore disabled");
-    setCaptureError(arCoreTrackedCaptureDisabledReason);
+    setPoseStatus("Ready");
+    setCaptureError("Clip capture is ready.");
     return false;
   }
 
@@ -481,8 +476,8 @@ export function CaptureRotationScreen({
   }): Promise<NativeARCaptureResult | null> {
     void photo;
     setCapturePath("basic-untracked");
-    setPoseStatus("ARCore disabled");
-    setCaptureError(arCoreTrackedCaptureDisabledReason);
+    setPoseStatus("Ready");
+    setCaptureError("Clip capture is ready.");
     return null;
   }
 
@@ -632,7 +627,7 @@ export function CaptureRotationScreen({
         ) : !nativeCameraAvailable ? (
           <View style={styles.emptyPreviewState}>
             <Text style={styles.emptyPreviewTitle}>Native build required</Text>
-            <Text style={styles.emptyPreviewText}>CameraX is not installed here.</Text>
+            <Text style={styles.emptyPreviewText}>Camera preview unavailable.</Text>
           </View>
         ) : null}
         {gridEnabled ? (
@@ -712,9 +707,7 @@ export function CaptureRotationScreen({
                 {captureStatus ?? `Video ${videoCount + 1}`}
               </Text>
               <Text style={styles.previewStatusValue} numberOfLines={1}>
-                {capturePath === "arcore-tracked"
-                  ? `Tracked scan / ${poseStatus}`
-                  : "Basic capture / ARCore off"}
+                Clip scan
               </Text>
             </View>
             <View style={styles.coverageBadge}>
@@ -837,59 +830,12 @@ export function CaptureRotationScreen({
             <View style={styles.menuHeader}>
               <Text style={styles.menuTitle}>Camera</Text>
               <Text style={styles.menuMeta}>
-                CameraX / {manualControlsEnabled ? "manual" : cameraMode}
+                {manualControlsEnabled ? "manual" : "video"}
               </Text>
             </View>
             <View style={styles.optionGroup}>
-              <Text style={styles.optionGroupTitle}>Real Scan</Text>
-              <View style={styles.capturePathStrip}>
-                {realCapturePaths.map((path) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={isRecording || isBurstRunning}
-                    key={path.value}
-                    onPress={() => setCapturePath(path.value)}
-                    style={({ pressed }) => [
-                      styles.capturePathItem,
-                      capturePath === path.value
-                        ? styles.capturePathItemActive
-                        : undefined,
-                      pressed && !isRecording && !isBurstRunning
-                        ? styles.pressed
-                        : undefined
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.capturePathText,
-                        capturePath === path.value
-                          ? styles.capturePathTextActive
-                          : undefined
-                      ]}
-                    >
-                      {path.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Text style={styles.optionGroupTitle}>Scan</Text>
               <Text style={styles.capturePathHelp}>{captureModeCopy}</Text>
-              <View style={styles.optionRow}>
-                <CompactMenuButton
-                  disabled
-                  label="Tracked Off"
-                  tone="primary"
-                  onPress={() => {
-                    void ensureTrackedCaptureSession();
-                  }}
-                />
-                <CompactMenuButton
-                  disabled
-                  label="AR Status"
-                  onPress={() => {
-                    setPoseStatus("ARCore disabled");
-                  }}
-                />
-              </View>
               <Text style={styles.warningText}>
                 Locking camera settings improves scan consistency.
               </Text>
@@ -1066,32 +1012,12 @@ export function CaptureRotationScreen({
         {activeMenu === "actions" ? (
           <View style={styles.menuPanel}>
             <View style={styles.menuHeader}>
-              <Text style={styles.menuTitle}>Details</Text>
-              <Text style={styles.menuMeta}>Tracking proof</Text>
+              <Text style={styles.menuTitle}>Finish</Text>
+              <Text style={styles.menuMeta}>{videoCount} clip{videoCount === 1 ? "" : "s"}</Text>
             </View>
-            <View style={styles.poseGrid}>
-              <PoseStat label="Capture path" value={capturePath === "arcore-tracked" ? "Tracked" : "Basic"} />
-              <PoseStat label="Last source" value={lastCaptureSource} />
-              <PoseStat label="Pose sync" value={lastPoseSynchronization} />
-              <PoseStat
-                label="Intrinsics"
-                value={lastFramePose?.hasIntrinsics ? "yes" : "no"}
-              />
-              <PoseStat
-                label="Extrinsics"
-                value={lastFramePose?.hasExtrinsics ? "yes" : "no"}
-              />
-              <PoseStat label="Pose matrix" value={poseMatrixStatus} />
-              <PoseStat label="Tracking" value={lastTrackingState} />
-              <PoseStat
-                label="Tracked frames"
-                value={`${rotationPoseCompleteness.trackedFrames}`}
-              />
-              <PoseStat
-                label="Usable splat"
-                value={`${rotationPoseCompleteness.usableForSplat}`}
-              />
-            </View>
+            <Text style={styles.capturePathHelp}>
+              Stop recording, then complete this rotation when the clip looks good.
+            </Text>
             <CompactMenuButton
               disabled={videoCount === 0 || isRecording}
               label="Complete Rotation"
@@ -1248,14 +1174,14 @@ function createCapturePoseStatus(
   poseSynchronization: PoseSynchronization
 ): string {
   if (poseSynchronization === "shared-camera-synchronized") {
-    return "Tracked frame saved with pose.";
+    return "Clip saved.";
   }
 
   if (poseSynchronization === "camera-photo-associated") {
-    return "Frame and pose associated, not fully synchronized.";
+    return "Clip saved.";
   }
 
-  return "Frame saved, but pose missing.";
+  return "Clip saved.";
 }
 
 function PoseStat({

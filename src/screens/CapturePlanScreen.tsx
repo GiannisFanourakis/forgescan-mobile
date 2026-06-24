@@ -36,8 +36,7 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       <Section>
         <Text style={styles.title}>{project.project.title}</Text>
         <Text style={styles.meta}>
-          Record one smooth full-turn video for each required rotation.
-          ForgeScan extracts frames during processing.
+          Record one smooth full-turn clip for each required rotation.
         </Text>
       </Section>
 
@@ -90,7 +89,7 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       </Section>
 
       <Button
-        label={requiredCaptureComplete ? "Create .ksplat Preview" : "Review Capture"}
+        label={requiredCaptureComplete ? "Process Clip" : "Review Clips"}
         variant={requiredCaptureComplete ? "primary" : "secondary"}
         onPress={() =>
           navigation.navigate("ProjectReview", {

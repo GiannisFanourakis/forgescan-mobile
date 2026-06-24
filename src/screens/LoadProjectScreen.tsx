@@ -36,8 +36,8 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
         <View style={styles.header}>
           <ForgeScanLogo size={58} />
           <View style={styles.headerText}>
-            <Text style={styles.title}>Load scan</Text>
-            <Text style={styles.meta}>{projects.length} saved projects</Text>
+            <Text style={styles.title}>Load clip</Text>
+            <Text style={styles.meta}>{projects.length} saved</Text>
           </View>
         </View>
       </Section>
@@ -56,12 +56,12 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
         </View>
       ) : projects.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No saved scans</Text>
+          <Text style={styles.emptyTitle}>No saved clips</Text>
           <Text style={styles.emptyText}>
-            Start a capture to create the first local project.
+            Create a clip to start the first local scan.
           </Text>
           <Button
-            label="Start Capture"
+            label="Create Clip"
             onPress={() => navigation.navigate("NewProject")}
           />
         </View>

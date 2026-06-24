@@ -36,29 +36,24 @@ export function HomeScreen({ navigation }: Props): ReactElement {
             <ForgeScanLogo size={72} />
             <View style={styles.previewText}>
               <Text style={styles.title}>ForgeScan</Text>
-              <Text style={styles.subtitle}>Controlled Object Splatting</Text>
+              <Text style={styles.subtitle}>Create object scans from clips</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.actionGrid}>
           <ActionCard
-            label="Capture"
-            meta="New scan"
+            label="Create Clip"
+            meta="Record"
             tone="primary"
             onPress={() => navigation.navigate("NewProject")}
           />
           <ActionCard
-            label="Load"
+            label="Load Clip"
             meta={`${projects.length} saved`}
             tone="secondary"
             onPress={() => navigation.navigate("LoadProject")}
           />
-        </View>
-
-        <View style={styles.statusGrid}>
-          <Metric label="Format" value=".ksplat" />
-          <Metric label="Device" value="Android iOS" />
         </View>
 
         {recentProject ? (
