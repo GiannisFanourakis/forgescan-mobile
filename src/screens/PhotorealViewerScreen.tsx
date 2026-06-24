@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ReactElement, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
@@ -10,41 +10,80 @@ import {
   getPhotorealFileInfo,
   isGeneratedPhotorealFile
 } from "../reconstruction/splatting/photorealFile";
+import {
+  ParsedForgeScanKsplat,
+  ParsedForgeScanSplat,
+  parseForgeScanKsplat
+} from "../splatting/ForgeScanKsplatParser";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PhotorealViewer">;
 
-const previewDots = Array.from({ length: 42 }, (_, index) => index);
-
 export function PhotorealViewerScreen({ route }: Props): ReactElement {
   const { getProject } = useProjects();
   const project = getProject(route.params.projectId);
-  const spin = useRef(new Animated.Value(0)).current;
   const [exportMessage, setExportMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 9000,
-        easing: Easing.linear,
-        useNativeDriver: true
-      })
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [spin]);
+  const [angle, setAngle] = useState(0);
+  const [parsedKsplat, setParsedKsplat] =
+    useState<ParsedForgeScanKsplat | null>(null);
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const latestLoadUriRef = useRef<string | null>(null);
 
   const fileInfo = useMemo(
     () => project ? getPhotorealFileInfo(project, route.params.ksplatUri) : null,
     [project, route.params.ksplatUri]
   );
   const generated = fileInfo ? isGeneratedPhotorealFile(fileInfo) : false;
-  const rotate = spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"]
-  });
+
+  useEffect(() => {
+    if (!fileInfo || !generated) {
+      setParsedKsplat(null);
+      setViewerError(null);
+      return;
+    }
+
+    let cancelled = false;
+    latestLoadUriRef.current = fileInfo.uri;
+    setViewerError(null);
+
+    parseForgeScanKsplat(fileInfo.uri)
+      .then((parsed) => {
+        if (!cancelled && latestLoadUriRef.current === fileInfo.uri) {
+          setParsedKsplat(parsed);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setParsedKsplat(null);
+          setViewerError(
+            error instanceof Error
+              ? error.message
+              : "Unable to parse .ksplat preview."
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileInfo, generated]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setAngle((current) => (current + 0.025) % (Math.PI * 2));
+    }, 33);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const projectedSplats = useMemo(
+    () =>
+      parsedKsplat
+        ? projectSplats(parsedKsplat.renderedSplats, angle)
+        : [],
+    [angle, parsedKsplat]
+  );
 
   async function exportKsplat(): Promise<void> {
     if (!fileInfo || !generated) {
@@ -86,36 +125,34 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
       </Section>
 
       <View style={styles.viewer}>
-        <Animated.View
-          style={[
-            styles.dotField,
-            {
-              transform: [{ rotate }]
-            }
-          ]}
-        >
-          {previewDots.map((dot) => (
+        <View style={styles.dotField}>
+          {projectedSplats.map((dot) => (
             <View
-              key={dot}
+              key={dot.key}
               style={[
                 styles.dot,
                 {
-                  left: `${dotLeft(dot)}%`,
-                  top: `${dotTop(dot)}%`,
-                  opacity: 0.35 + (dot % 7) * 0.08,
-                  transform: [{ scale: 0.7 + (dot % 5) * 0.18 }]
+                  backgroundColor: `rgba(${dot.r}, ${dot.g}, ${dot.b}, ${dot.opacity})`,
+                  height: dot.size,
+                  left: `${dot.left}%`,
+                  opacity: dot.opacity,
+                  top: `${dot.top}%`,
+                  width: dot.size,
+                  zIndex: dot.zIndex
                 }
               ]}
             />
           ))}
-        </Animated.View>
+        </View>
         <View style={styles.viewerLabel}>
           <Text style={styles.viewerTitle}>
             {generated ? ".ksplat preview" : "No scan file"}
           </Text>
           <Text style={styles.viewerMeta}>
-            {generated
-              ? "Lightweight file preview. Native splat rasterizer comes next."
+            {generated && parsedKsplat
+              ? `${parsedKsplat.splatCount} splats loaded`
+              : generated
+                ? "Loading splats..."
               : "Run Process Clip to create the scan."}
           </Text>
         </View>
@@ -126,8 +163,21 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
           <Text style={styles.fileName}>{fileInfo.filename}</Text>
           <Text style={styles.fileMeta}>Status: {generated ? "Generated" : "Not available"}</Text>
           <Text style={styles.fileMeta}>Size: {formatBytes(fileInfo.size)}</Text>
+          {parsedKsplat ? (
+            <Text style={styles.fileMeta}>
+              Preview: {parsedKsplat.renderedSplats.length}/{parsedKsplat.splatCount} splats
+            </Text>
+          ) : null}
           <Text style={styles.fileMeta}>{fileInfo.path}</Text>
         </View>
+        {viewerError ? (
+          <Text style={styles.message}>{viewerError}</Text>
+        ) : null}
+        {parsedKsplat?.warnings.map((warning) => (
+          <Text key={warning} style={styles.message}>
+            {warning}
+          </Text>
+        ))}
         <Button
           disabled={!generated}
           label="Export .ksplat"
@@ -143,12 +193,47 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
   );
 }
 
-function dotLeft(index: number): number {
-  return 50 + Math.cos(index * 1.7) * (18 + (index % 4) * 6);
+interface ProjectedSplat {
+  key: string;
+  left: number;
+  top: number;
+  size: number;
+  r: number;
+  g: number;
+  b: number;
+  opacity: number;
+  zIndex: number;
 }
 
-function dotTop(index: number): number {
-  return 50 + Math.sin(index * 1.31) * (14 + (index % 5) * 5);
+function projectSplats(
+  splats: ParsedForgeScanSplat[],
+  angle: number
+): ProjectedSplat[] {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  return splats
+    .map((splat, index) => {
+      const viewX = splat.x * cos - splat.z * sin;
+      const viewZ = splat.x * sin + splat.z * cos;
+      const perspective = 1.05 / Math.max(0.35, 1.2 + viewZ * 0.35);
+      const left = clamp(50 + viewX * perspective * 55, 1, 99);
+      const top = clamp(50 - splat.y * perspective * 58, 1, 99);
+      const size = clamp(5 + splat.scale * 260 * perspective, 3, 18);
+
+      return {
+        key: `${index}-${splat.x.toFixed(3)}-${splat.y.toFixed(3)}`,
+        left,
+        top,
+        size,
+        r: splat.r,
+        g: splat.g,
+        b: splat.b,
+        opacity: clamp(splat.a / 255, 0.18, 0.95),
+        zIndex: Math.round((viewZ + 2) * 1000)
+      };
+    })
+    .sort((a, b) => a.zIndex - b.zIndex);
 }
 
 function formatBytes(bytes: number): string {
@@ -161,6 +246,10 @@ function formatBytes(bytes: number): string {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 const styles = StyleSheet.create({
@@ -188,11 +277,12 @@ const styles = StyleSheet.create({
     width: "86%"
   },
   dot: {
-    backgroundColor: "#dfece8",
     borderRadius: 999,
-    height: 9,
     position: "absolute",
-    width: 9
+    shadowColor: "#ffffff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5
   },
   viewerLabel: {
     alignItems: "center",
