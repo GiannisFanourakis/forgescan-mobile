@@ -247,7 +247,7 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
     }
 
     Bitmap rawMask = session.createMask(bitmap);
-    Bitmap refinedMask = refineMask(rawMask);
+    Bitmap refinedMask = refineMask(rawMask, bitmap);
     String frameName = "frame_" + String.format("%03d", frameIndex) + ".png";
     File rawFile = ForgeScanNativeFiles.resolveProjectFile(
       getReactApplicationContext(),
@@ -402,8 +402,44 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
     }
   }
 
-  private Bitmap refineMask(Bitmap rawMask) {
-    return rawMask.copy(Bitmap.Config.ARGB_8888, false);
+  private Bitmap refineMask(Bitmap rawMask, Bitmap source) {
+    Bitmap refined = rawMask.copy(Bitmap.Config.ARGB_8888, true);
+    int width = refined.getWidth();
+    int height = refined.getHeight();
+    int[] pixels = new int[width * height];
+    refined.getPixels(pixels, 0, width, 0, 0, width, height);
+
+    for (int y = 0; y < height; y += 1) {
+      for (int x = 0; x < width; x += 1) {
+        int index = y * width + x;
+        if (Color.alpha(pixels[index]) == 0) {
+          continue;
+        }
+
+        int sx = Math.min(source.getWidth() - 1, Math.max(0, Math.round((x / (float) width) * source.getWidth())));
+        int sy = Math.min(source.getHeight() - 1, Math.max(0, Math.round((y / (float) height) * source.getHeight())));
+        if (isLikelyTurntableSurface(source, sx, sy)) {
+          pixels[index] = Color.TRANSPARENT;
+        }
+      }
+    }
+
+    refined.setPixels(pixels, 0, width, 0, 0, width, height);
+    return refined;
+  }
+
+  private boolean isLikelyTurntableSurface(Bitmap source, int x, int y) {
+    float yNorm = y / (float) Math.max(1, source.getHeight() - 1);
+    if (yNorm < 0.52f) {
+      return false;
+    }
+
+    int color = source.getPixel(x, y);
+    int max = Math.max(Color.red(color), Math.max(Color.green(color), Color.blue(color)));
+    int min = Math.min(Color.red(color), Math.min(Color.green(color), Color.blue(color)));
+    int brightness = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3;
+    int chroma = max - min;
+    return brightness > 182 && chroma < 36;
   }
 
   private Bitmap createMlKitSubjectMask(Bitmap source) throws Exception {

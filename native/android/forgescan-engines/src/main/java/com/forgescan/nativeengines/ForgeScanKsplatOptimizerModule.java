@@ -434,9 +434,27 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
     int x,
     int y
   ) {
+    if (isLikelyTurntableSurface(sample.image, x, y)) {
+      return 0.0f;
+    }
+
     float maskConfidence = maskConfidence(sample.mask, sample.image, x, y);
     float imageConfidence = centralSubjectConfidence(sample.image, backgroundColor, x, y);
     return Math.max(maskConfidence, imageConfidence);
+  }
+
+  private boolean isLikelyTurntableSurface(Bitmap image, int x, int y) {
+    float yNorm = y / (float) Math.max(1, image.getHeight() - 1);
+    if (yNorm < 0.52f) {
+      return false;
+    }
+
+    int color = image.getPixel(x, y);
+    int max = Math.max(Color.red(color), Math.max(Color.green(color), Color.blue(color)));
+    int min = Math.min(Color.red(color), Math.min(Color.green(color), Color.blue(color)));
+    int brightness = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3;
+    int chroma = max - min;
+    return brightness > 182 && chroma < 36;
   }
 
   private float maskConfidence(Bitmap mask, Bitmap image, int x, int y) {
