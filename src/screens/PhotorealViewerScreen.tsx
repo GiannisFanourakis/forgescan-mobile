@@ -5,6 +5,10 @@ import { StyleSheet, Text, View } from "react-native";
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { shareNativeFile } from "../native/NativeFileExport";
+import {
+  isNativeKsplatViewAvailable,
+  NativeKsplatView
+} from "../native/NativeKsplatView";
 import { RootStackParamList } from "../navigation/types";
 import {
   getPhotorealFileInfo,
@@ -35,6 +39,7 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
     [project, route.params.ksplatUri]
   );
   const generated = fileInfo ? isGeneratedPhotorealFile(fileInfo) : false;
+  const nativeRendererAvailable = generated && isNativeKsplatViewAvailable();
 
   useEffect(() => {
     if (!fileInfo || !generated) {
@@ -125,25 +130,40 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
       </Section>
 
       <View style={styles.viewer}>
-        <View style={styles.dotField}>
-          {projectedSplats.map((dot) => (
-            <View
-              key={dot.key}
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: `rgba(${dot.r}, ${dot.g}, ${dot.b}, ${dot.opacity})`,
-                  height: dot.size,
-                  left: `${dot.left}%`,
-                  opacity: dot.opacity,
-                  top: `${dot.top}%`,
-                  width: dot.size,
-                  zIndex: dot.zIndex
-                }
-              ]}
-            />
-          ))}
-        </View>
+        {nativeRendererAvailable && NativeKsplatView ? (
+          <NativeKsplatView
+            autoRotate
+            collapsable={false}
+            ksplatUri={fileInfo.uri}
+            renderScale={1}
+            style={styles.nativeViewer}
+          />
+        ) : (
+          <View style={styles.dotField}>
+            {projectedSplats.map((dot) => (
+              <View
+                key={dot.key}
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor: `rgba(${dot.r}, ${dot.g}, ${dot.b}, ${dot.opacity})`,
+                    height: dot.size,
+                    left: `${dot.left}%`,
+                    opacity: dot.opacity,
+                    top: `${dot.top}%`,
+                    width: dot.size,
+                    zIndex: dot.zIndex
+                  }
+                ]}
+              />
+            ))}
+          </View>
+        )}
+        {nativeRendererAvailable ? (
+          <View style={styles.rendererBadge}>
+            <Text style={styles.rendererBadgeText}>Native depth-sorted preview</Text>
+          </View>
+        ) : null}
         <View style={styles.viewerLabel}>
           <Text style={styles.viewerTitle}>
             {generated ? ".ksplat preview" : "No scan file"}
@@ -168,6 +188,11 @@ export function PhotorealViewerScreen({ route }: Props): ReactElement {
               Preview: {parsedKsplat.renderedSplats.length}/{parsedKsplat.splatCount} splats
             </Text>
           ) : null}
+          <Text style={styles.fileMeta}>
+            Renderer: {nativeRendererAvailable
+              ? "Android native depth sorting + alpha blending"
+              : "JavaScript fallback"}
+          </Text>
           <Text style={styles.fileMeta}>{fileInfo.path}</Text>
         </View>
         {viewerError ? (
@@ -276,6 +301,9 @@ const styles = StyleSheet.create({
     position: "relative",
     width: "86%"
   },
+  nativeViewer: {
+    ...StyleSheet.absoluteFillObject
+  },
   dot: {
     borderRadius: 999,
     position: "absolute",
@@ -302,6 +330,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     textAlign: "center"
+  },
+  rendererBadge: {
+    backgroundColor: "rgba(217, 234, 223, 0.13)",
+    borderColor: "rgba(217, 234, 223, 0.3)",
+    borderRadius: 999,
+    borderWidth: 1,
+    left: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    position: "absolute",
+    top: spacing.md
+  },
+  rendererBadgeText: {
+    color: "#d9eadf",
+    fontSize: 11,
+    fontWeight: "900"
   },
   fileCard: {
     backgroundColor: colors.surface,

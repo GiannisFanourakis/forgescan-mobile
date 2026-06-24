@@ -24,6 +24,7 @@ public class ForgeScanEnginesPackage implements ReactPackage {
   public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
     List<ViewManager> viewManagers = new ArrayList<>();
     viewManagers.add(new ForgeScanCameraXViewManager());
+    viewManagers.add(new ForgeScanKsplatViewManager());
     return viewManagers;
   }
 }
