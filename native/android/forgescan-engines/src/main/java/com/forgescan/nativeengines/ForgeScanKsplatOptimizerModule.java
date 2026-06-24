@@ -17,6 +17,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -27,6 +29,7 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   private static final String COARSE_FALLBACK_NAME = "coarse-on-device-splat-v1";
   private static final String OPTIMIZER_VERSION = "0.3.0";
   private static final String WRITER_STATUS = "experimental-ksplat";
+  private final ExecutorService worker = Executors.newSingleThreadExecutor();
   private volatile boolean cancelled = false;
 
   public ForgeScanKsplatOptimizerModule(ReactApplicationContext reactContext) {
@@ -69,69 +72,71 @@ public class ForgeScanKsplatOptimizerModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void runKsplatOptimizer(String inputJson, Promise promise) {
     cancelled = false;
-    long startedAt = System.currentTimeMillis();
-    JSONObject input;
-    try {
-      input = new JSONObject(inputJson);
-    } catch (Exception error) {
-      promise.reject("FORGESCAN_KSPLAT_BAD_INPUT", error);
-      return;
-    }
-
-    try {
-      OptimizerConfig config = OptimizerConfig.fromInput(input);
-      List<TrainingSample> samples = loadTrainingSamples(input, config);
-      if (samples.isEmpty()) {
-        throw new IOException("No training frames could be decoded.");
-      }
-
-      List<Splat> splats = initializeSplats(samples, config);
-      if (splats.isEmpty()) {
-        throw new IOException("No masked foreground samples could initialize Gaussians.");
-      }
-
-      TrainingStats stats = trainSplats(splats, samples, config);
-      File output = resolveOutput(input);
-      writeKsplat(splats, output);
-      boolean validOutput = output.exists() && output.length() > 0;
-
-      JSONObject result = baseResult(input, startedAt, output, validOutput ? "generated" : "failed");
-      result.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
-      result.put("qualityTier", validOutput ? "trainable-v1" : "none");
-      result.put("ksplatEngineStatus", validOutput ? "generated" : "failed");
-      result.put("iterationCount", stats.iterations);
-      result.put("gaussianCount", splats.size());
-      result.put("finalLoss", stats.finalLoss);
-      result.put("optimizerRuntimeStatus", "trainable-loop-complete");
-      result.put("optimizerBlocker", "none");
-      putPoseDiagnostics(input, result);
-      result.put("warnings", new JSONArray()
-        .put("Generated experimental .ksplat from trainable Android V1.")
-        .put("This is Android V1 optimization, not final production 3DGS quality."));
-      result.put("errors", new JSONArray());
-      promise.resolve(result.toString());
-    } catch (Exception trainableError) {
+    worker.execute(() -> {
+      long startedAt = System.currentTimeMillis();
+      JSONObject input;
       try {
-        JSONObject fallback = runCoarseFallback(input, startedAt, trainableError);
-        promise.resolve(fallback.toString());
-      } catch (Exception fallbackError) {
+        input = new JSONObject(inputJson);
+      } catch (Exception error) {
+        promise.reject("FORGESCAN_KSPLAT_BAD_INPUT", error);
+        return;
+      }
+
+      try {
+        OptimizerConfig config = OptimizerConfig.fromInput(input);
+        List<TrainingSample> samples = loadTrainingSamples(input, config);
+        if (samples.isEmpty()) {
+          throw new IOException("No training frames could be decoded.");
+        }
+
+        List<Splat> splats = initializeSplats(samples, config);
+        if (splats.isEmpty()) {
+          throw new IOException("No masked foreground samples could initialize Gaussians.");
+        }
+
+        TrainingStats stats = trainSplats(splats, samples, config);
+        File output = resolveOutput(input);
+        writeKsplat(splats, output);
+        boolean validOutput = output.exists() && output.length() > 0;
+
+        JSONObject result = baseResult(input, startedAt, output, validOutput ? "generated" : "failed");
+        result.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
+        result.put("qualityTier", validOutput ? "trainable-v1" : "none");
+        result.put("ksplatEngineStatus", validOutput ? "generated" : "failed");
+        result.put("iterationCount", stats.iterations);
+        result.put("gaussianCount", splats.size());
+        result.put("finalLoss", stats.finalLoss);
+        result.put("optimizerRuntimeStatus", "trainable-loop-complete");
+        result.put("optimizerBlocker", "none");
+        putPoseDiagnostics(input, result);
+        result.put("warnings", new JSONArray()
+          .put("Generated experimental .ksplat from trainable Android V1.")
+          .put("This is Android V1 optimization, not final production 3DGS quality."));
+        result.put("errors", new JSONArray());
+        promise.resolve(result.toString());
+      } catch (Exception trainableError) {
         try {
-          JSONObject failed = baseResult(input, startedAt, null, "failed");
-          failed.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
-          failed.put("qualityTier", "none");
-          failed.put("ksplatEngineStatus", "failed");
-          failed.put("optimizerRuntimeStatus", "failed");
-          failed.put("optimizerBlocker", "trainable-loop-failed-and-coarse-fallback-failed");
-          failed.put("warnings", new JSONArray());
-          failed.put("errors", new JSONArray()
-            .put(trainableError.getMessage())
-            .put(fallbackError.getMessage()));
-          promise.resolve(failed.toString());
-        } catch (Exception jsonError) {
-          promise.reject("FORGESCAN_KSPLAT_FAILED", fallbackError);
+          JSONObject fallback = runCoarseFallback(input, startedAt, trainableError);
+          promise.resolve(fallback.toString());
+        } catch (Exception fallbackError) {
+          try {
+            JSONObject failed = baseResult(input, startedAt, null, "failed");
+            failed.put("optimizerName", TRAINABLE_OPTIMIZER_NAME);
+            failed.put("qualityTier", "none");
+            failed.put("ksplatEngineStatus", "failed");
+            failed.put("optimizerRuntimeStatus", "failed");
+            failed.put("optimizerBlocker", "trainable-loop-failed-and-coarse-fallback-failed");
+            failed.put("warnings", new JSONArray());
+            failed.put("errors", new JSONArray()
+              .put(trainableError.getMessage())
+              .put(fallbackError.getMessage()));
+            promise.resolve(failed.toString());
+          } catch (Exception jsonError) {
+            promise.reject("FORGESCAN_KSPLAT_FAILED", fallbackError);
+          }
         }
       }
-    }
+    });
   }
 
   @ReactMethod

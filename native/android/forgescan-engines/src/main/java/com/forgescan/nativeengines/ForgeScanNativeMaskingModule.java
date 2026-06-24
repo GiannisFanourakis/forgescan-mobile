@@ -21,6 +21,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.FloatBuffer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -32,6 +34,7 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
   private static final String MLKIT_ENGINE = "mlkit-subject-segmentation";
   private static final String FALLBACK_ENGINE = "fallback-local";
   private static final float MLKIT_FOREGROUND_THRESHOLD = 0.85f;
+  private final ExecutorService worker = Executors.newSingleThreadExecutor();
   private volatile boolean cancelled = false;
 
   public ForgeScanNativeMaskingModule(ReactApplicationContext reactContext) {
@@ -95,72 +98,74 @@ public class ForgeScanNativeMaskingModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void runMasking(String inputJson, Promise promise) {
     cancelled = false;
-    MaskingSession session = new MaskingSession(mlKitRuntimeAvailable());
-    try {
-      JSONObject input = new JSONObject(inputJson);
-      JSONArray frames = input.getJSONArray("frames");
-      JSONArray artifacts = new JSONArray();
-      JSONArray warnings = new JSONArray();
-      JSONArray errors = new JSONArray();
+    worker.execute(() -> {
+      MaskingSession session = new MaskingSession(mlKitRuntimeAvailable());
+      try {
+        JSONObject input = new JSONObject(inputJson);
+        JSONArray frames = input.getJSONArray("frames");
+        JSONArray artifacts = new JSONArray();
+        JSONArray warnings = new JSONArray();
+        JSONArray errors = new JSONArray();
 
-      if (!session.mlKitAvailable) {
-        warnings.put("ML Kit Subject Segmentation is unavailable. Fallback local masks were written for pipeline continuity only.");
-      }
-
-      for (int index = 0; index < frames.length(); index += 1) {
-        if (cancelled) {
-          throw new IOException("Native masking was cancelled.");
+        if (!session.mlKitAvailable) {
+          warnings.put("ML Kit Subject Segmentation is unavailable. Fallback local masks were written for pipeline continuity only.");
         }
 
-        JSONObject frame = frames.getJSONObject(index);
-        try {
-          JSONObject artifact = runMaskForFrame(input, frame, session);
-          appendAll(warnings, artifact.getJSONArray("warnings"));
-          appendAll(errors, artifact.getJSONArray("errors"));
-          artifacts.put(artifact);
-        } catch (Exception frameError) {
-          JSONObject failed = baseArtifact(frame);
-          failed.put("status", "failed");
-          failed.getJSONArray("errors").put(safeMessage(frameError));
-          artifacts.put(failed);
-          errors.put(safeMessage(frameError));
-        }
-      }
+        for (int index = 0; index < frames.length(); index += 1) {
+          if (cancelled) {
+            throw new IOException("Native masking was cancelled.");
+          }
 
-      JSONObject result = new JSONObject();
-      result.put("status", errors.length() == 0 ? "complete" : "failed");
-      result.put("maskArtifacts", artifacts);
-      result.put("engineName", session.engineName());
-      result.put("engineVersion", ENGINE_VERSION);
-      result.put("modelName", session.modelName());
-      result.put("mlKitAvailable", session.mlKitAvailable);
-      result.put("defaultMaskingEngine", MLKIT_ENGINE);
-      result.put("confidenceThreshold", MLKIT_FOREGROUND_THRESHOLD);
-      result.put("modelExists", session.mlKitAvailable);
-      result.put("modelTier", session.mlKitAvailable ? MLKIT_ENGINE : FALLBACK_ENGINE);
-      result.put("modelPreference", "auto-mobile");
-      result.put("modelAssetPath", session.mlKitAvailable ? "android-runtime:" + MLKIT_ENGINE : "");
-      result.put("modelFileSize", 0);
-      result.put("maskInputSize", 0);
-      result.put("inferenceTimeMs", session.lastInferenceTimeMs);
-      result.put("modelLoaded", session.mlKitAvailable);
-      result.put("inferenceRan", session.inferenceRan);
-      result.put("maskPngWritten", session.maskPngWritten);
-      result.put("modelStatus", session.mlKitAvailable ? "loaded" : "missing");
-      result.put("errorCode", "");
-      result.put("lastInferenceError", session.lastInferenceError);
-      result.put("memoryBeforeLoad", currentMemoryJson());
-      result.put("memoryAfterLoad", currentMemoryJson());
-      result.put("inferenceBackend", session.mlKitAvailable ? MLKIT_ENGINE : "none");
-      result.put("fallbackUsed", session.fallbackUsed);
-      result.put("activeMaskingEngine", session.engineName());
-      result.put("maskingEngineStatus", maskingEngineStatus(session));
-      result.put("warnings", warnings);
-      result.put("errors", errors);
-      promise.resolve(result.toString());
-    } catch (Throwable error) {
-      promise.resolve(maskingFailureJson(error));
-    }
+          JSONObject frame = frames.getJSONObject(index);
+          try {
+            JSONObject artifact = runMaskForFrame(input, frame, session);
+            appendAll(warnings, artifact.getJSONArray("warnings"));
+            appendAll(errors, artifact.getJSONArray("errors"));
+            artifacts.put(artifact);
+          } catch (Exception frameError) {
+            JSONObject failed = baseArtifact(frame);
+            failed.put("status", "failed");
+            failed.getJSONArray("errors").put(safeMessage(frameError));
+            artifacts.put(failed);
+            errors.put(safeMessage(frameError));
+          }
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("status", errors.length() == 0 ? "complete" : "failed");
+        result.put("maskArtifacts", artifacts);
+        result.put("engineName", session.engineName());
+        result.put("engineVersion", ENGINE_VERSION);
+        result.put("modelName", session.modelName());
+        result.put("mlKitAvailable", session.mlKitAvailable);
+        result.put("defaultMaskingEngine", MLKIT_ENGINE);
+        result.put("confidenceThreshold", MLKIT_FOREGROUND_THRESHOLD);
+        result.put("modelExists", session.mlKitAvailable);
+        result.put("modelTier", session.mlKitAvailable ? MLKIT_ENGINE : FALLBACK_ENGINE);
+        result.put("modelPreference", "auto-mobile");
+        result.put("modelAssetPath", session.mlKitAvailable ? "android-runtime:" + MLKIT_ENGINE : "");
+        result.put("modelFileSize", 0);
+        result.put("maskInputSize", 0);
+        result.put("inferenceTimeMs", session.lastInferenceTimeMs);
+        result.put("modelLoaded", session.mlKitAvailable);
+        result.put("inferenceRan", session.inferenceRan);
+        result.put("maskPngWritten", session.maskPngWritten);
+        result.put("modelStatus", session.mlKitAvailable ? "loaded" : "missing");
+        result.put("errorCode", "");
+        result.put("lastInferenceError", session.lastInferenceError);
+        result.put("memoryBeforeLoad", currentMemoryJson());
+        result.put("memoryAfterLoad", currentMemoryJson());
+        result.put("inferenceBackend", session.mlKitAvailable ? MLKIT_ENGINE : "none");
+        result.put("fallbackUsed", session.fallbackUsed);
+        result.put("activeMaskingEngine", session.engineName());
+        result.put("maskingEngineStatus", maskingEngineStatus(session));
+        result.put("warnings", warnings);
+        result.put("errors", errors);
+        promise.resolve(result.toString());
+      } catch (Throwable error) {
+        promise.resolve(maskingFailureJson(error));
+      }
+    });
   }
 
   @ReactMethod
