@@ -8,6 +8,7 @@ export type RootStackParamList = {
   CapturePlan: { projectId: string };
   CaptureRotation: { projectId: string; rotationId: RotationId };
   ProjectReview: { projectId: string; autoProcess?: boolean };
+  PhotorealViewer: { projectId: string; ksplatUri?: string };
   ReconstructionPlan: { projectId: string };
   FullReconstructionRun: { projectId: string };
 };

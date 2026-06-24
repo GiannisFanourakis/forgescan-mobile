@@ -11,6 +11,7 @@ import { FullReconstructionRunScreen } from "./src/screens/FullReconstructionRun
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { LoadProjectScreen } from "./src/screens/LoadProjectScreen";
 import { NewProjectScreen } from "./src/screens/NewProjectScreen";
+import { PhotorealViewerScreen } from "./src/screens/PhotorealViewerScreen";
 import { ProjectReviewScreen } from "./src/screens/ProjectReviewScreen";
 import { ReconstructionPlanScreen } from "./src/screens/ReconstructionPlanScreen";
 import { RootStackParamList } from "./src/navigation/types";
@@ -66,6 +67,11 @@ export default function App(): ReactElement {
             name="ProjectReview"
             component={ProjectReviewScreen}
             options={{ title: "Project Review" }}
+          />
+          <Stack.Screen
+            name="PhotorealViewer"
+            component={PhotorealViewerScreen}
+            options={{ title: "Photoreal Scan" }}
           />
           <Stack.Screen
             name="ReconstructionPlan"

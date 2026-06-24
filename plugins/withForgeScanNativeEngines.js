@@ -66,6 +66,31 @@ function copyModelAssets(projectRoot, platformProjectRoot) {
   }
 }
 
+function writeFileProviderPaths(platformProjectRoot) {
+  const xmlDirectory = path.join(
+    platformProjectRoot,
+    "app",
+    "src",
+    "main",
+    "res",
+    "xml"
+  );
+  const filePath = path.join(xmlDirectory, "forgescan_file_paths.xml");
+
+  fs.mkdirSync(xmlDirectory, { recursive: true });
+  fs.writeFileSync(
+    filePath,
+    [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      '<paths xmlns:android="http://schemas.android.com/apk/res/android">',
+      '  <files-path name="files" path="." />',
+      '  <cache-path name="cache" path="." />',
+      "</paths>",
+      ""
+    ].join("\n")
+  );
+}
+
 function addAndroidEngineDependencies(platformProjectRoot) {
   const buildGradlePath = path.join(platformProjectRoot, "app", "build.gradle");
 
@@ -205,6 +230,46 @@ function ensureApplicationMetaData(application, name, value) {
   });
 }
 
+function ensureFileProvider(application) {
+  application.provider = application.provider || [];
+  const providers = application.provider;
+  const authority = "${applicationId}.forgescan.fileprovider";
+  const existing = providers.find(
+    (provider) =>
+      provider.$?.["android:name"] === "androidx.core.content.FileProvider" &&
+      provider.$?.["android:authorities"] === authority
+  );
+
+  if (existing) {
+    existing["meta-data"] = [
+      {
+        $: {
+          "android:name": "android.support.FILE_PROVIDER_PATHS",
+          "android:resource": "@xml/forgescan_file_paths"
+        }
+      }
+    ];
+    return;
+  }
+
+  providers.push({
+    $: {
+      "android:name": "androidx.core.content.FileProvider",
+      "android:authorities": authority,
+      "android:exported": "false",
+      "android:grantUriPermissions": "true"
+    },
+    "meta-data": [
+      {
+        $: {
+          "android:name": "android.support.FILE_PROVIDER_PATHS",
+          "android:resource": "@xml/forgescan_file_paths"
+        }
+      }
+    ]
+  });
+}
+
 function withForgeScanNativeEngines(config) {
   config = withDangerousMod(config, [
     "android",
@@ -238,6 +303,7 @@ function withForgeScanNativeEngines(config) {
         modConfig.modRequest.platformProjectRoot
       );
       addAndroidEngineDependencies(modConfig.modRequest.platformProjectRoot);
+      writeFileProviderPaths(modConfig.modRequest.platformProjectRoot);
       return modConfig;
     }
   ]);
@@ -251,6 +317,7 @@ function withForgeScanNativeEngines(config) {
     ensureUsesFeature(androidManifest, "android.hardware.camera", false);
     ensureUsesFeature(androidManifest, "android.hardware.camera.ar", false);
     ensureApplicationMetaData(application, "com.google.ar.core", "optional");
+    ensureFileProvider(application);
 
     return modConfig;
   });

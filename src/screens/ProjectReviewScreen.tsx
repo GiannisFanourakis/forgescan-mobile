@@ -7,7 +7,12 @@ import { Screen, Section } from "../components/Screen";
 import { StatusPill } from "../components/StatusPill";
 import { validateProjectForReconstruction } from "../core/frameValidation";
 import { ForgeScanProjectManifest } from "../core/manifest";
+import { shareNativeFile } from "../native/NativeFileExport";
 import { RootStackParamList } from "../navigation/types";
+import {
+  getPhotorealFileInfo,
+  isGeneratedPhotorealFile
+} from "../reconstruction/splatting/photorealFile";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 import {
@@ -38,6 +43,7 @@ export function ProjectReviewScreen({
   const [progressSteps, setProgressSteps] = useState<string[]>([]);
   const [scanResult, setScanResult] =
     useState<CreatePhotorealScanPipelineResult | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const autoStartedRef = useRef(false);
 
   const validation = useMemo(
@@ -82,6 +88,19 @@ export function ProjectReviewScreen({
     : "Back to Capture";
   const normalExports = scanResult?.normalExports ?? [];
   const previewStatus = scanResult?.previewStatus ?? [];
+  const ksplatUri = normalExports.find((output) => output.type === "ksplat")?.uri;
+  const photorealFile = getPhotorealFileInfo(manifest, ksplatUri);
+  const generatedPhotorealFile = isGeneratedPhotorealFile(photorealFile);
+  const displayNormalExports =
+    normalExports.length > 0
+      ? normalExports.map((output) =>
+          output.type === "ksplat" && generatedPhotorealFile
+            ? { ...output, uri: photorealFile.uri, status: "Generated" as const }
+            : output
+        )
+      : generatedPhotorealFile
+        ? createGeneratedExportItems(photorealFile)
+        : [];
 
   async function runScanProcessing(manifest: ForgeScanProjectManifest): Promise<void> {
     setIsRunning(true);
@@ -113,6 +132,33 @@ export function ProjectReviewScreen({
     }
 
     void runScanProcessing(manifest);
+  }
+
+  async function handleExportKsplat(): Promise<void> {
+    if (!generatedPhotorealFile) {
+      setExportMessage("Process the clip before exporting the .ksplat.");
+      return;
+    }
+
+    const result = await shareNativeFile({
+      uri: photorealFile.uri,
+      filename: photorealFile.filename,
+      mimeType: "application/octet-stream",
+      title: "Export ForgeScan .ksplat"
+    });
+
+    setExportMessage(
+      result.status === "shared"
+        ? "Export sheet opened."
+        : result.errors[0] ?? "Unable to export .ksplat."
+    );
+  }
+
+  function handleViewKsplat(): void {
+    navigation.navigate("PhotorealViewer", {
+      projectId: manifest.project.id,
+      ...(generatedPhotorealFile ? { ksplatUri: photorealFile.uri } : {})
+    });
   }
 
   return (
@@ -210,7 +256,19 @@ export function ProjectReviewScreen({
             body="Process the scan to generate the preview/export status."
           />
         )}
-        {normalExports.length > 0 ? <NormalExports outputs={normalExports} /> : null}
+        {displayNormalExports.length > 0 ? (
+          <NormalExports
+            canOpenKsplat={generatedPhotorealFile}
+            onExportKsplat={() => {
+              void handleExportKsplat();
+            }}
+            onViewKsplat={handleViewKsplat}
+            outputs={displayNormalExports}
+          />
+        ) : null}
+        {exportMessage ? (
+          <Text style={styles.message}>{exportMessage}</Text>
+        ) : null}
       </Section>
 
       {scanResult?.advancedDetails.length ? (
@@ -257,10 +315,18 @@ function PreviewStatusCard({ item }: PreviewStatusCardProps): ReactElement {
 }
 
 interface NormalExportsProps {
+  canOpenKsplat: boolean;
+  onExportKsplat: () => void;
+  onViewKsplat: () => void;
   outputs: NormalExportItem[];
 }
 
-function NormalExports({ outputs }: NormalExportsProps): ReactElement {
+function NormalExports({
+  canOpenKsplat,
+  onExportKsplat,
+  onViewKsplat,
+  outputs
+}: NormalExportsProps): ReactElement {
   return (
     <>
       {outputs.map((output) => (
@@ -268,10 +334,54 @@ function NormalExports({ outputs }: NormalExportsProps): ReactElement {
           <Text style={styles.simpleRowTitle}>{output.label}</Text>
           <Text style={styles.simpleRowMeta}>{output.filename}</Text>
           <Text style={styles.simpleRowMeta}>Status: {output.status}</Text>
+          {output.type === "ksplat" ? (
+            <View style={styles.outputActions}>
+              <Button
+                disabled={!canOpenKsplat}
+                label="View"
+                onPress={onViewKsplat}
+                variant="secondary"
+              />
+              <Button
+                disabled={!canOpenKsplat}
+                label="Export"
+                onPress={onExportKsplat}
+              />
+            </View>
+          ) : null}
         </View>
       ))}
     </>
   );
+}
+
+function createGeneratedExportItems(
+  file: ReturnType<typeof getPhotorealFileInfo>
+): NormalExportItem[] {
+  return [
+    {
+      type: "ksplat",
+      label: "Photoreal 3D Scan",
+      filename: file.filename,
+      path: file.path,
+      uri: file.uri,
+      status: "Generated"
+    },
+    {
+      type: "mp4",
+      label: "Preview Video",
+      filename: "preview.mp4",
+      path: "preview/preview.mp4",
+      status: "Requires native preview rendering"
+    },
+    {
+      type: "gif",
+      label: "Preview GIF",
+      filename: "preview.gif",
+      path: "preview/preview.gif",
+      status: "Requires native preview rendering"
+    }
+  ];
 }
 
 function getUserFacingWarnings(warnings: string[]): string[] {
@@ -445,5 +555,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 4,
     padding: spacing.md
+  },
+  outputActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm
   }
 });
