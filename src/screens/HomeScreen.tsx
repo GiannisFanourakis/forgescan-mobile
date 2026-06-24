@@ -13,6 +13,11 @@ type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 export function HomeScreen({ navigation }: Props): ReactElement {
   const { projects } = useProjects();
   const recentProject = projects[0];
+  const recentVideoCount =
+    recentProject?.capture.rotations.reduce(
+      (sum, rotation) => sum + (rotation.videos?.length ?? 0),
+      0
+    ) ?? 0;
 
   return (
     <SafeAreaView style={styles.root}>
@@ -74,7 +79,7 @@ export function HomeScreen({ navigation }: Props): ReactElement {
               <Text style={styles.recentTitle}>{recentProject.project.title}</Text>
             </View>
             <Text style={styles.recentMeta}>
-              {recentProject.capture.targetFrameCount} frames
+              {recentVideoCount} clip{recentVideoCount === 1 ? "" : "s"}
             </Text>
           </Pressable>
         ) : null}

@@ -5,7 +5,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
 import { StatusPill } from "../components/StatusPill";
-import { getCoverageLabel, getCoverageWarning } from "../core/coverage";
 import { RootStackParamList } from "../navigation/types";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
@@ -29,7 +28,7 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       return true;
     }
 
-    return rotation.status === "complete" && rotation.frames.length > 0;
+    return rotation.status === "complete" && (rotation.videos?.length ?? 0) > 0;
   });
 
   return (
@@ -37,8 +36,8 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       <Section>
         <Text style={styles.title}>{project.project.title}</Text>
         <Text style={styles.meta}>
-          Recommended guide: {project.capture.targetFrameCount} frames per
-          rotation. Capture is unlimited.
+          Record one smooth full-turn video for each required rotation.
+          ForgeScan extracts frames during processing.
         </Text>
       </Section>
 
@@ -66,21 +65,19 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
                     {
                       width: `${Math.min(
                         100,
-                        (rotation.frames.length /
-                          project.capture.targetFrameCount) *
-                          100
+                        ((rotation.videos?.length ?? 0) > 0 ? 100 : 0)
                       )}%`
                     }
                   ]}
                 />
               </View>
               <Text style={styles.frameCount}>
-                {rotation.frames.length} frames /{" "}
-                {getCoverageLabel(rotation.frames.length)}
+                {(rotation.videos?.length ?? 0)} video
+                {(rotation.videos?.length ?? 0) === 1 ? "" : "s"}
               </Text>
-              {getCoverageWarning(rotation.frames.length) ? (
+              {(rotation.videos?.length ?? 0) === 0 ? (
                 <Text style={styles.coverageWarning}>
-                  {getCoverageWarning(rotation.frames.length)}
+                  Record one clip to complete this rotation.
                 </Text>
               ) : null}
             </View>

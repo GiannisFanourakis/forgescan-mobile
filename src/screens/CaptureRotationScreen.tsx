@@ -210,7 +210,6 @@ export function CaptureRotationScreen({
 
   const frameCount = rotation.frames.length;
   const videoCount = rotation.videos?.length ?? 0;
-  const recommendedFrameCount = project.capture.targetFrameCount;
   const lastFrame = rotation.frames[frameCount - 1];
   const lastVideo = rotation.videos?.[videoCount - 1];
   const lastFramePose = lastFrame ? getFramePoseReadiness(lastFrame) : null;

@@ -87,7 +87,10 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
                 <View style={styles.projectRowText}>
                   <Text style={styles.projectTitle}>{project.project.title}</Text>
                   <Text style={styles.projectMeta}>
-                    {project.capture.targetFrameCount} frames per rotation
+                    Video turntable scan · {project.capture.rotations.reduce(
+                      (sum, rotation) => sum + (rotation.videos?.length ?? 0),
+                      0
+                    )} clips
                   </Text>
                 </View>
                 <View style={styles.planBadge}>

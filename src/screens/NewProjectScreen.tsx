@@ -10,19 +10,17 @@ import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "NewProject">;
 
-const frameCounts = [24, 72, 120, 180] as const;
+const VIDEO_DERIVED_FRAME_GUIDE = 72;
 
 export function NewProjectScreen({ navigation }: Props): ReactElement {
   const { createProject } = useProjects();
   const [title, setTitle] = useState("Object scan");
-  const [targetFrameCount, setTargetFrameCount] = useState<number>(72);
-  const [customFrameCount, setCustomFrameCount] = useState("72");
   const [includeUnderside, setIncludeUnderside] = useState(false);
 
   function handleCreateProject(): void {
     const project = createProject(
       title,
-      Math.max(1, targetFrameCount),
+      VIDEO_DERIVED_FRAME_GUIDE,
       includeUnderside
     );
     navigation.replace("CapturePlan", { projectId: project.project.id });
@@ -40,38 +38,18 @@ export function NewProjectScreen({ navigation }: Props): ReactElement {
       </Section>
 
       <Section>
-        <Text style={styles.label}>Recommended frame guidance</Text>
+        <Text style={styles.label}>Capture method</Text>
         <Text style={styles.helperText}>
-          This is not a limit. You can keep capturing until you tap Complete
-          Rotation.
+          ForgeScan now uses video-only turntable capture. Record one smooth
+          full-turn clip for each rotation; processing extracts evenly spaced
+          frames automatically.
         </Text>
-        <View style={styles.optionGrid}>
-          {frameCounts.map((count) => (
-            <Choice
-              key={count}
-              label={`${count}`}
-              selected={targetFrameCount === count}
-              onPress={() => {
-                setTargetFrameCount(count);
-                setCustomFrameCount(String(count));
-              }}
-            />
-          ))}
+        <View style={styles.captureSummary}>
+          <Text style={styles.captureSummaryTitle}>Video scan</Text>
+          <Text style={styles.captureSummaryText}>
+            1 clip per rotation · turntable pose math · ARCore off
+          </Text>
         </View>
-        <TextInput
-          keyboardType="number-pad"
-          onChangeText={(value) => {
-            setCustomFrameCount(value);
-            const parsedValue = Number.parseInt(value, 10);
-            if (Number.isFinite(parsedValue) && parsedValue > 0) {
-              setTargetFrameCount(parsedValue);
-            }
-          }}
-          placeholder="Custom recommended frames"
-          placeholderTextColor={colors.mutedText}
-          style={styles.input}
-          value={customFrameCount}
-        />
       </Section>
 
       <Section>
@@ -90,7 +68,7 @@ export function NewProjectScreen({ navigation }: Props): ReactElement {
         </View>
       </Section>
 
-      <Button label="Create Project" onPress={handleCreateProject} />
+      <Button label="Create Scan" onPress={handleCreateProject} />
     </Screen>
   );
 }
@@ -146,10 +124,24 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 1
   },
-  optionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
+  captureSummary: {
+    backgroundColor: "#dfece8",
+    borderColor: colors.accent,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: spacing.md
+  },
+  captureSummaryTitle: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  captureSummaryText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
   },
   planOptions: {
     gap: spacing.sm
