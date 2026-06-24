@@ -124,8 +124,33 @@ public class ForgeScanKsplatView extends View {
         continue;
       }
 
-      paint.setColor(Color.argb(splat.a, splat.r, splat.g, splat.b));
-      canvas.drawCircle(splat.screenX, splat.screenY, splat.screenRadius, paint);
+      int softAlpha = Math.max(10, Math.min(96, Math.round(splat.a * 0.34f)));
+      paint.setColor(Color.argb(
+        softAlpha,
+        shadeChannel(splat.r, splat.viewDepth, 0.9f),
+        shadeChannel(splat.g, splat.viewDepth, 0.9f),
+        shadeChannel(splat.b, splat.viewDepth, 0.9f)
+      ));
+      canvas.drawCircle(splat.screenX, splat.screenY, splat.screenRadius * 2.25f, paint);
+    }
+
+    for (RenderSplat splat : localSplats) {
+      if (
+        splat.screenX < -32f ||
+        splat.screenY < -32f ||
+        splat.screenX > width + 32f ||
+        splat.screenY > height + 32f
+      ) {
+        continue;
+      }
+
+      paint.setColor(Color.argb(
+        Math.max(28, Math.min(245, splat.a)),
+        shadeChannel(splat.r, splat.viewDepth, 1.05f),
+        shadeChannel(splat.g, splat.viewDepth, 1.05f),
+        shadeChannel(splat.b, splat.viewDepth, 1.05f)
+      ));
+      canvas.drawCircle(splat.screenX, splat.screenY, Math.max(1.1f, splat.screenRadius * 0.72f), paint);
     }
 
     if (autoRotate) {
@@ -149,6 +174,11 @@ public class ForgeScanKsplatView extends View {
 
   private String getFallbackLabel() {
     return errorMessage == null ? "No native .ksplat loaded" : errorMessage;
+  }
+
+  private int shadeChannel(int channel, float depth, float boost) {
+    float shade = Math.max(0.58f, Math.min(1.22f, (0.92f + depth * 0.18f) * boost));
+    return Math.max(0, Math.min(255, Math.round(channel * shade)));
   }
 
   private void drawCenteredText(Canvas canvas, String label) {

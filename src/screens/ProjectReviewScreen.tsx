@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ReactElement, useEffect, useMemo, useRef, useState } from "react";
-import { Modal, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { Screen, Section } from "../components/Screen";
@@ -120,7 +120,7 @@ export function ProjectReviewScreen({
 
     const timer = setInterval(() => {
       setProcessingNow(Date.now());
-    }, 500);
+    }, 250);
 
     return () => clearInterval(timer);
   }, [isRunning]);
@@ -184,6 +184,7 @@ export function ProjectReviewScreen({
     ]);
 
     try {
+      await waitForUiFrame();
       const result = await createPhotorealScan(manifest);
       setScanResult(result);
       setStatusMessage(result.userMessage);
@@ -357,6 +358,7 @@ export function ProjectReviewScreen({
       ) : null}
       <ProcessingOverlay
         elapsedSeconds={elapsedProcessingSeconds}
+        estimatedSeconds={estimatedProcessingSeconds}
         etaSeconds={Math.max(
           0,
           Math.ceil(estimatedProcessingSeconds - elapsedProcessingSeconds)
@@ -482,6 +484,7 @@ function getUserFacingWarnings(warnings: string[]): string[] {
 
 interface ProcessingOverlayProps {
   elapsedSeconds: number;
+  estimatedSeconds: number;
   etaSeconds: number;
   progress: number;
   stage: (typeof processingStages)[number];
@@ -490,20 +493,38 @@ interface ProcessingOverlayProps {
 
 function ProcessingOverlay({
   elapsedSeconds,
+  estimatedSeconds,
   etaSeconds,
   progress,
   stage,
   visible
 }: ProcessingOverlayProps): ReactElement {
   const percent = Math.max(1, Math.round(progress * 100));
+  const pulseIndex = Math.floor(elapsedSeconds * 3) % 4;
 
   return (
     <Modal animationType="fade" transparent visible={visible}>
       <View style={styles.processingBackdrop}>
         <View style={styles.processingPanel}>
-          <Text style={styles.processingTitle}>Processing scan</Text>
-          <Text style={styles.processingStage}>{stage.label}</Text>
+          <View style={styles.processingHeader}>
+            <View>
+              <Text style={styles.processingTitle}>Processing scan</Text>
+              <Text style={styles.processingStage}>{stage.label}</Text>
+            </View>
+            <ActivityIndicator color={colors.accent} size="large" />
+          </View>
           <Text style={styles.processingDetail}>{stage.detail}</Text>
+          <View style={styles.liveRail}>
+            {[0, 1, 2, 3].map((index) => (
+              <View
+                key={index}
+                style={[
+                  styles.liveRailSegment,
+                  index === pulseIndex ? styles.liveRailSegmentActive : undefined
+                ]}
+              />
+            ))}
+          </View>
           <View style={styles.progressTrackLarge}>
             <View
               style={[
@@ -523,6 +544,10 @@ function ProcessingOverlay({
               {formatDuration(elapsedSeconds)} elapsed
             </Text>
           </View>
+          <Text style={styles.processingEstimate}>
+            Estimated workload: {formatDuration(estimatedSeconds)}. The phone is still
+            processing while this moves.
+          </Text>
           <View style={styles.stageList}>
             {processingStages.map((candidate) => {
               const completed = progress >= candidate.start;
@@ -596,6 +621,12 @@ function formatDuration(seconds: number): string {
   }
 
   return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+}
+
+function waitForUiFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 80);
+  });
 }
 
 const styles = StyleSheet.create({
@@ -767,17 +798,26 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(16, 24, 23, 0.72)",
     flex: 1,
     justifyContent: "center",
-    padding: spacing.lg
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl
   },
   processingPanel: {
+    alignSelf: "center",
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     gap: spacing.md,
     maxWidth: 420,
+    minHeight: 360,
     padding: spacing.lg,
     width: "100%"
+  },
+  processingHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
   },
   processingTitle: {
     color: colors.text,
@@ -794,16 +834,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18
   },
+  liveRail: {
+    flexDirection: "row",
+    gap: 6
+  },
+  liveRailSegment: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    flex: 1,
+    height: 6
+  },
+  liveRailSegmentActive: {
+    backgroundColor: colors.accent
+  },
   progressTrackLarge: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 999,
-    height: 12,
+    height: 16,
     overflow: "hidden"
   },
   progressFillLarge: {
     backgroundColor: colors.accent,
     borderRadius: 999,
-    height: 12
+    height: 16
   },
   processingStats: {
     flexDirection: "row",
@@ -815,6 +868,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: "800"
+  },
+  processingEstimate: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
   },
   stageList: {
     gap: spacing.sm
