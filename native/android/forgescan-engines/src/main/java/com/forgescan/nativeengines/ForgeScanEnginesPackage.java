@@ -15,6 +15,7 @@ public class ForgeScanEnginesPackage implements ReactPackage {
     modules.add(new ForgeScanAdvancedCameraModule(reactContext));
     modules.add(new ForgeScanARCaptureModule(reactContext));
     modules.add(new ForgeScanKsplatOptimizerModule(reactContext));
+    modules.add(new ForgeScanMediaPickerModule(reactContext));
     return modules;
   }
 

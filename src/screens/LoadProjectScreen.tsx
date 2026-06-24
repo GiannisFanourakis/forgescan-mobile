@@ -1,19 +1,68 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import type { ReactElement } from "react";
+import { ReactElement, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../components/Button";
 import { ForgeScanLogo } from "../components/ForgeScanLogo";
 import { Screen, Section } from "../components/Screen";
 import { RootStackParamList } from "../navigation/types";
+import { pickNativeVideo } from "../native/NativeMediaPicker";
 import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoadProject">;
 
 export function LoadProjectScreen({ navigation }: Props): ReactElement {
-  const { deleteProject, isLoadingProjects, projects, storageError } =
+  const {
+    deleteProject,
+    importClipProject,
+    isLoadingProjects,
+    projects,
+    storageError
+  } =
     useProjects();
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  async function loadClipFromDevice(): Promise<void> {
+    setImportError(null);
+    setIsImporting(true);
+
+    try {
+      const pickedVideo = await pickNativeVideo();
+
+      if (pickedVideo.status === "cancelled") {
+        return;
+      }
+
+      if (pickedVideo.status !== "selected" || !pickedVideo.uri) {
+        setImportError(
+          pickedVideo.errors[0] ??
+            "The selected clip could not be loaded from this device."
+        );
+        return;
+      }
+
+      const project = await importClipProject(
+        createProjectTitleFromFilename(pickedVideo.filename),
+        {
+          uri: pickedVideo.uri
+        }
+      );
+
+      navigation.navigate("CapturePlan", {
+        projectId: project.project.id
+      });
+    } catch (error) {
+      setImportError(
+        error instanceof Error
+          ? error.message
+          : "The clip could not be imported."
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  }
 
   function confirmDeleteProject(projectId: string, title: string): void {
     Alert.alert(
@@ -40,6 +89,21 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
             <Text style={styles.meta}>{projects.length} saved</Text>
           </View>
         </View>
+        <View style={styles.importActions}>
+          <Button
+            disabled={isImporting}
+            label={isImporting ? "Loading..." : "Load Clip from Device"}
+            onPress={() => {
+              void loadClipFromDevice();
+            }}
+          />
+          <Text style={styles.importHint}>
+            Pick a video already captured with your phone camera.
+          </Text>
+          {importError ? (
+            <Text style={styles.errorText}>{importError}</Text>
+          ) : null}
+        </View>
       </Section>
 
       {storageError ? (
@@ -58,11 +122,19 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>No saved clips</Text>
           <Text style={styles.emptyText}>
-            Create a clip to start the first local scan.
+            Load a video from your device or create a new clip.
           </Text>
           <Button
-            label="Create Clip"
+            disabled={isImporting}
+            label={isImporting ? "Loading..." : "Load Clip from Device"}
+            onPress={() => {
+              void loadClipFromDevice();
+            }}
+          />
+          <Button
+            label="Create New Clip"
             onPress={() => navigation.navigate("NewProject")}
+            variant="secondary"
           />
         </View>
       ) : (
@@ -122,6 +194,16 @@ export function LoadProjectScreen({ navigation }: Props): ReactElement {
   );
 }
 
+function createProjectTitleFromFilename(filename: string | undefined): string {
+  if (!filename) {
+    return "Imported clip";
+  }
+
+  const withoutExtension = filename.replace(/\.[^/.]+$/, "");
+  const readableTitle = withoutExtension.replace(/[_-]+/g, " ").trim();
+  return readableTitle.length > 0 ? readableTitle : "Imported clip";
+}
+
 const styles = StyleSheet.create({
   header: {
     alignItems: "center",
@@ -146,6 +228,21 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontSize: 14,
     fontWeight: "700"
+  },
+  importActions: {
+    gap: spacing.sm,
+    marginTop: spacing.md
+  },
+  importHint: {
+    color: colors.mutedText,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18
   },
   emptyState: {
     backgroundColor: colors.surface,

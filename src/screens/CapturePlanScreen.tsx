@@ -23,20 +23,23 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
     );
   }
 
-  const requiredCaptureComplete = project.capture.rotations.every((rotation) => {
+  const fullCoverageComplete = project.capture.rotations.every((rotation) => {
     if (!rotation.required) {
       return true;
     }
 
     return rotation.status === "complete" && (rotation.videos?.length ?? 0) > 0;
   });
+  const hasAnyClip = project.capture.rotations.some(
+    (rotation) => (rotation.videos?.length ?? 0) > 0
+  );
 
   return (
     <Screen>
       <Section>
         <Text style={styles.title}>{project.project.title}</Text>
         <Text style={styles.meta}>
-          Record one smooth full-turn clip for each required rotation.
+          One smooth full-turn clip is enough to start. More angles improve coverage.
         </Text>
       </Section>
 
@@ -76,7 +79,9 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
               </Text>
               {(rotation.videos?.length ?? 0) === 0 ? (
                 <Text style={styles.coverageWarning}>
-                  Record one clip to complete this rotation.
+                  {hasAnyClip
+                    ? "Optional: add this angle for better coverage."
+                    : "Record or load one clip to start."}
                 </Text>
               ) : null}
             </View>
@@ -89,12 +94,12 @@ export function CapturePlanScreen({ navigation, route }: Props): ReactElement {
       </Section>
 
       <Button
-        label={requiredCaptureComplete ? "Process Clip" : "Review Clips"}
-        variant={requiredCaptureComplete ? "primary" : "secondary"}
+        label={hasAnyClip ? "Process Clip" : "Review Clips"}
+        variant={hasAnyClip ? "primary" : "secondary"}
         onPress={() =>
           navigation.navigate("ProjectReview", {
             projectId: project.project.id,
-            autoProcess: requiredCaptureComplete
+            autoProcess: hasAnyClip
           })
         }
       />

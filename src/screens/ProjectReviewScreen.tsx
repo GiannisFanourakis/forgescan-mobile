@@ -120,7 +120,7 @@ export function ProjectReviewScreen({
       <Section>
         <Text style={styles.title}>{manifest.project.title}</Text>
         <Text style={styles.meta}>
-          Capture complete, process once, then preview and export the .ksplat.
+          One clip can process. More angles improve the preview and .ksplat.
         </Text>
       </Section>
 
@@ -151,7 +151,7 @@ export function ProjectReviewScreen({
         <Text style={styles.sectionTitle}>{stepLabels[activeStep]}</Text>
         <Text style={styles.messageText}>
           {activeStep === "capture"
-            ? "Finish the required upright and tilted rotations first."
+            ? "Capture or load at least one clip first."
             : activeStep === "process"
               ? "One tap runs background removal and splatting."
               : "Your .ksplat status and export target are ready below."}

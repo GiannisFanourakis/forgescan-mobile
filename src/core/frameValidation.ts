@@ -105,15 +105,18 @@ export function validateProjectForReconstruction(
   const errors: string[] = [];
   const warnings: string[] = [];
   const rotationResults: RotationFrameValidation[] = [];
+  const rotationsWithMedia = manifest.capture.rotations.filter(hasRotationMedia);
 
   for (const rotation of manifest.capture.rotations) {
     if (rotation.required && rotation.status !== "complete") {
-      errors.push(`${rotation.label} is required and is not complete.`);
+      warnings.push(
+        `${rotation.label} has not been captured. Add another angle for better coverage.`
+      );
       continue;
     }
 
     if (!rotation.required && rotation.status !== "complete") {
-      warnings.push(`${rotation.label} is optional and has not been captured.`);
+      warnings.push(`${rotation.label} has not been captured.`);
       continue;
     }
 
@@ -126,6 +129,13 @@ export function validateProjectForReconstruction(
     warnings.push(...result.warnings);
   }
 
+  if (rotationsWithMedia.length === 0) {
+    errors.push("Capture or load at least one video clip first.");
+  }
+
+  const missingRequiredRotation = manifest.capture.rotations.some(
+    (rotation) => rotation.required && !hasRotationMedia(rotation)
+  );
   const quality = {
     frameContinuity: stateFromNoMatchingErrors(errors, "missing frame indexes"),
     expectedFrameCount: stateFromNoMatchingErrors(errors, "expected frames"),
@@ -133,11 +143,13 @@ export function validateProjectForReconstruction(
       errors,
       "inconsistent known image dimensions"
     ),
-    requiredRotationsComplete: stateFromNoMatchingErrors(
-      errors,
-      "required and is not complete"
-    ),
-    optionalCoverage: warnings.some((warning) => warning.includes("optional"))
+    requiredRotationsComplete:
+      rotationsWithMedia.length === 0
+        ? "fail"
+        : missingRequiredRotation
+          ? "warning"
+          : "pass",
+    optionalCoverage: warnings.some((warning) => warning.includes("coverage"))
       ? "warning"
       : "pass"
   } satisfies ProjectValidationResult["quality"];
@@ -195,6 +207,10 @@ function hasConsistentKnownDimensions(rotation: CaptureRotation): boolean {
   }
 
   return new Set(dimensions).size === 1;
+}
+
+function hasRotationMedia(rotation: CaptureRotation): boolean {
+  return rotation.frames.length > 0 || (rotation.videos?.length ?? 0) > 0;
 }
 
 function stateFromNoMatchingErrors(

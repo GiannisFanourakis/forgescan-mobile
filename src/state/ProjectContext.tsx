@@ -73,6 +73,10 @@ interface ProjectContextValue {
     targetFrameCount: number,
     includeUnderside: boolean
   ) => ForgeScanProjectManifest;
+  importClipProject: (
+    title: string,
+    video: CapturedVideoInput
+  ) => Promise<ForgeScanProjectManifest>;
   deleteProject: (projectId: string) => void;
   getProject: (projectId: string) => ForgeScanProjectManifest | undefined;
   startRotation: (projectId: string, rotationId: RotationId) => void;
@@ -182,6 +186,42 @@ export function ProjectProvider({
         return updatedProjects;
       });
       return manifest;
+    },
+    []
+  );
+
+  const importClipProject = useCallback(
+    async (
+      title: string,
+      video: CapturedVideoInput
+    ): Promise<ForgeScanProjectManifest> => {
+      const manifest = createNewProjectManifest({
+        title,
+        targetFrameCount: 72,
+        includeUnderside: false
+      });
+
+      ensureProjectStorage(manifest);
+      const storedUri = await copyCapturedVideoToProject(
+        manifest,
+        "upright",
+        video.uri,
+        1
+      );
+      const withVideo = addVideoToRotation(manifest, "upright", {
+        uri: storedUri,
+        ...(video.durationMs !== undefined
+          ? { durationMs: video.durationMs }
+          : {})
+      });
+      const importedProject = markRotationComplete(withVideo, "upright");
+
+      persistProjectManifest(importedProject);
+      const updatedProjects = [importedProject, ...projectsRef.current];
+      projectsRef.current = updatedProjects;
+      setProjects(updatedProjects);
+
+      return importedProject;
     },
     []
   );
@@ -423,6 +463,7 @@ export function ProjectProvider({
       isLoadingProjects,
       storageError,
       createProject,
+      importClipProject,
       deleteProject,
       getProject,
       startRotation,
@@ -439,6 +480,7 @@ export function ProjectProvider({
       isLoadingProjects,
       storageError,
       createProject,
+      importClipProject,
       deleteProject,
       getProject,
       startRotation,
