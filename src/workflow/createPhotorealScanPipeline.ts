@@ -51,9 +51,27 @@ export interface CreatePhotorealScanPipelineResult {
   advancedDetails: WorkflowAdvancedDetail[];
 }
 
+export type PhotorealScanProgressStage =
+  | "checking"
+  | "masking"
+  | "splatting"
+  | "preview"
+  | "finishing";
+
+export interface PhotorealScanProgress {
+  stage: PhotorealScanProgressStage;
+  message: string;
+}
+
 export async function createPhotorealScan(
-  manifest: ForgeScanProjectManifest
+  manifest: ForgeScanProjectManifest,
+  onProgress?: (progress: PhotorealScanProgress) => void
 ): Promise<CreatePhotorealScanPipelineResult> {
+  onProgress?.({
+    stage: "checking",
+    message: "Checking clip and native engines."
+  });
+
   const progressSteps = [
     "Checking capture",
     "Preparing object",
@@ -103,14 +121,29 @@ export async function createPhotorealScan(
     "exports/export-targets.json",
     JSON.stringify(createExportTargetPlan(manifest), null, 2)
   );
+
+  onProgress?.({
+    stage: "masking",
+    message: "Removing background and sampling video frames."
+  });
   const masking = await runMaskingForProject(manifest);
   const maskCoverage = validateMaskCoverage(manifest, masking.artifacts);
   const maskingSummary = createMaskingSummary(manifest, masking.artifacts);
+
+  onProgress?.({
+    stage: "splatting",
+    message: "Building the dense .ksplat from masks and frames."
+  });
   const reconstruction = await runReconstructionJob(manifest);
   const optimizerResult = await runKsplatGeneration(
     manifest,
     masking.artifacts
   );
+
+  onProgress?.({
+    stage: "preview",
+    message: "Preparing preview and validating output."
+  });
   const viewerUri = writeViewerHtml(manifest.project.id, manifest);
   const photorealAsset = createPhotorealAsset(
     manifest,
@@ -119,6 +152,11 @@ export async function createPhotorealScan(
   );
   const normalExports = createNormalExportItems(manifest, photorealAsset);
   const previewStatus = createPreviewStatus(optimizerResult);
+
+  onProgress?.({
+    stage: "finishing",
+    message: "Finishing scan package."
+  });
 
   warnings.push(
     ...validation.warnings,

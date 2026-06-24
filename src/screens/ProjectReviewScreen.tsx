@@ -17,6 +17,7 @@ import { useProjects } from "../state/ProjectContext";
 import { colors, spacing } from "../ui/theme";
 import {
   CreatePhotorealScanPipelineResult,
+  PhotorealScanProgressStage,
   PreviewStatusItem,
   createPhotorealScan
 } from "../workflow/createPhotorealScanPipeline";
@@ -30,6 +31,7 @@ type ProcessingStageId =
   | "splatting"
   | "preview"
   | "finishing";
+type ProcessingPhaseEstimate = Record<ProcessingStageId, number>;
 
 const stepOrder: SimpleStep[] = ["capture", "process", "preview"];
 const stepLabels: Record<SimpleStep, string> = {
@@ -91,6 +93,11 @@ export function ProjectReviewScreen({
     null
   );
   const [processingNow, setProcessingNow] = useState(Date.now());
+  const [processingStageId, setProcessingStageId] =
+    useState<ProcessingStageId>("checking");
+  const [processingStageStartedAt, setProcessingStageStartedAt] = useState<
+    number | null
+  >(null);
   const autoStartedRef = useRef(false);
 
   const validation = useMemo(
@@ -161,21 +168,40 @@ export function ProjectReviewScreen({
         ? createGeneratedExportItems(photorealFile)
         : [];
   const estimatedProcessingSeconds = estimateProcessingSeconds(manifest);
+  const processingPhaseEstimate = estimateProcessingPhaseSeconds(manifest);
   const elapsedProcessingSeconds =
     processingStartedAt === null
       ? 0
       : Math.max(0, (processingNow - processingStartedAt) / 1000);
+  const elapsedStageSeconds =
+    processingStageStartedAt === null
+      ? elapsedProcessingSeconds
+      : Math.max(0, (processingNow - processingStageStartedAt) / 1000);
   const processingProgress = isRunning
-    ? Math.min(0.94, elapsedProcessingSeconds / estimatedProcessingSeconds)
+    ? getPhaseProgress(
+        processingStageId,
+        elapsedStageSeconds,
+        processingPhaseEstimate
+      )
     : scanResult
       ? 1
       : 0;
-  const currentProcessingStage = getProcessingStage(processingProgress);
+  const currentProcessingStage = getProcessingStageById(processingStageId);
+  const remainingProcessingSeconds = isRunning
+    ? estimateRemainingProcessingSeconds(
+        processingStageId,
+        elapsedStageSeconds,
+        processingPhaseEstimate
+      )
+    : 0;
 
   async function runScanProcessing(manifest: ForgeScanProjectManifest): Promise<void> {
+    const startedAt = Date.now();
     setIsRunning(true);
-    setProcessingStartedAt(Date.now());
-    setProcessingNow(Date.now());
+    setProcessingStartedAt(startedAt);
+    setProcessingStageStartedAt(startedAt);
+    setProcessingStageId("checking");
+    setProcessingNow(startedAt);
     setStatusMessage("Processing scan");
     setProgressSteps([
       "Removing background",
@@ -185,10 +211,18 @@ export function ProjectReviewScreen({
 
     try {
       await waitForUiFrame();
-      const result = await createPhotorealScan(manifest);
+      const result = await createPhotorealScan(manifest, (progress) => {
+        const stage = toProcessingStageId(progress.stage);
+        const now = Date.now();
+        setProcessingStageId(stage);
+        setProcessingStageStartedAt(now);
+        setProcessingNow(now);
+        setStatusMessage(progress.message);
+      });
       setScanResult(result);
       setStatusMessage(result.userMessage);
       setProgressSteps(result.progressSteps);
+      await waitForMilliseconds(550);
     } catch (error: unknown) {
       setStatusMessage(
         error instanceof Error ? error.message : "Unable to process scan."
@@ -359,10 +393,7 @@ export function ProjectReviewScreen({
       <ProcessingOverlay
         elapsedSeconds={elapsedProcessingSeconds}
         estimatedSeconds={estimatedProcessingSeconds}
-        etaSeconds={Math.max(
-          0,
-          Math.ceil(estimatedProcessingSeconds - elapsedProcessingSeconds)
-        )}
+        etaSeconds={remainingProcessingSeconds}
         progress={processingProgress}
         stage={currentProcessingStage}
         visible={isRunning}
@@ -581,6 +612,13 @@ function ProcessingOverlay({
 }
 
 function estimateProcessingSeconds(manifest: ForgeScanProjectManifest): number {
+  const estimates = estimateProcessingPhaseSeconds(manifest);
+  return Object.values(estimates).reduce((sum, value) => sum + value, 0);
+}
+
+function estimateProcessingPhaseSeconds(
+  manifest: ForgeScanProjectManifest
+): ProcessingPhaseEstimate {
   const videoCount = manifest.capture.rotations.reduce(
     (sum, rotation) => sum + (rotation.videos?.length ?? 0),
     0
@@ -591,15 +629,61 @@ function estimateProcessingSeconds(manifest: ForgeScanProjectManifest): number {
   );
   const maskUnits = Math.max(frameCount, videoCount * 96, 96);
 
-  return Math.max(28, Math.min(180, 12 + maskUnits * 0.7 + videoCount * 8));
+  return {
+    checking: 3,
+    masking: Math.max(24, Math.min(160, maskUnits * 0.9 + videoCount * 10)),
+    splatting: Math.max(32, Math.min(220, maskUnits * 1.15 + videoCount * 18)),
+    preview: 5,
+    finishing: 3
+  };
 }
 
-function getProcessingStage(
-  progress: number
+function getPhaseProgress(
+  stageId: ProcessingStageId,
+  elapsedStageSeconds: number,
+  estimates: ProcessingPhaseEstimate
+): number {
+  const stage = getProcessingStageById(stageId);
+  const nextStage = getNextProcessingStage(stageId);
+  const end = nextStage?.start ?? 0.99;
+  const stageSpan = Math.max(0.01, end - stage.start);
+  const stageEstimate = Math.max(1, estimates[stageId]);
+  const stageRatio = Math.min(0.92, elapsedStageSeconds / stageEstimate);
+  return Math.min(0.985, stage.start + stageSpan * stageRatio);
+}
+
+function estimateRemainingProcessingSeconds(
+  stageId: ProcessingStageId,
+  elapsedStageSeconds: number,
+  estimates: ProcessingPhaseEstimate
+): number {
+  const currentIndex = processingStages.findIndex((stage) => stage.id === stageId);
+  const currentRemaining = Math.max(1, estimates[stageId] - elapsedStageSeconds);
+  const laterRemaining = processingStages
+    .slice(Math.max(0, currentIndex + 1))
+    .reduce((sum, stage) => sum + estimates[stage.id], 0);
+  return Math.ceil(currentRemaining + laterRemaining);
+}
+
+function getProcessingStageById(
+  id: ProcessingStageId
 ): (typeof processingStages)[number] {
-  return [...processingStages]
-    .reverse()
-    .find((stage) => progress >= stage.start) ?? getDefaultProcessingStage();
+  return (
+    processingStages.find((stage) => stage.id === id) ?? getDefaultProcessingStage()
+  );
+}
+
+function getNextProcessingStage(
+  id: ProcessingStageId
+): (typeof processingStages)[number] | undefined {
+  const currentIndex = processingStages.findIndex((stage) => stage.id === id);
+  return currentIndex < 0 ? undefined : processingStages[currentIndex + 1];
+}
+
+function toProcessingStageId(
+  stage: PhotorealScanProgressStage
+): ProcessingStageId {
+  return stage;
 }
 
 function getDefaultProcessingStage(): (typeof processingStages)[number] {
@@ -624,8 +708,12 @@ function formatDuration(seconds: number): string {
 }
 
 function waitForUiFrame(): Promise<void> {
+  return waitForMilliseconds(80);
+}
+
+function waitForMilliseconds(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, 80);
+    setTimeout(resolve, durationMs);
   });
 }
 
