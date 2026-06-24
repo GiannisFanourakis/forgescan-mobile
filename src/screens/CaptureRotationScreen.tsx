@@ -4,7 +4,6 @@ import { StatusBar } from "expo-status-bar";
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
-  Image,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -20,10 +19,6 @@ import {
   getFramePoseReadiness,
   getPoseCompletenessForRotation
 } from "../capture/trackedCaptureReadiness";
-import {
-  getCoverageLabel,
-  getCoverageWarning
-} from "../core/coverage";
 import { PoseSynchronization } from "../core/manifest";
 import { RootStackParamList } from "../navigation/types";
 import {
@@ -51,20 +46,19 @@ import { getProjectStoragePaths } from "../storage/projectStorage";
 import { colors, spacing } from "../ui/theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CaptureRotation">;
-type CameraMode = "photo" | "burst" | "video";
-type ToolbarMenu = "camera" | "frames" | "actions";
+type CameraMode = "video";
+type ToolbarMenu = "camera" | "clips" | "actions";
 type BurstIntervalMs = 500 | 1000 | 2000;
 type CaptureTimerSeconds = 0 | 3 | 10;
 type RealCapturePath = "arcore-tracked" | "basic-untracked";
 
 const toolbarMenus: { label: string; value: ToolbarMenu }[] = [
   { label: "Settings", value: "camera" },
+  { label: "Clips", value: "clips" },
   { label: "Details", value: "actions" }
 ];
 
 const cameraModes: { label: string; value: CameraMode }[] = [
-  { label: "Photo", value: "photo" },
-  { label: "Burst", value: "burst" },
   { label: "Video", value: "video" }
 ];
 
@@ -137,7 +131,7 @@ export function CaptureRotationScreen({
   const pinchStartZoomRef = useRef(0);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [activeMenu, setActiveMenu] = useState<ToolbarMenu | null>(null);
-  const [cameraMode, setCameraMode] = useState<CameraMode>("photo");
+  const [cameraMode, setCameraMode] = useState<CameraMode>("video");
   const [cameraZoom, setCameraZoom] = useState(0);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [gridEnabled, setGridEnabled] = useState(true);
@@ -236,11 +230,9 @@ export function CaptureRotationScreen({
   const lastPoseSynchronization =
     lastFramePose?.poseSynchronization ?? "missing";
   const lastTrackingState = lastFramePose?.trackingState ?? "unknown";
-  const coverageWarning = getCoverageWarning(frameCount);
-  const progressPercent =
-    recommendedFrameCount > 0
-      ? Math.min(100, (frameCount / recommendedFrameCount) * 100)
-      : 0;
+  const coverageWarning =
+    videoCount === 0 ? "Record one steady full-turn video for this rotation." : null;
+  const progressPercent = videoCount > 0 ? 100 : 0;
   const projectId = project.project.id;
   const projectTitle = project.project.title;
   const rotationId = rotation.id;
@@ -279,20 +271,6 @@ export function CaptureRotationScreen({
   }
 
   async function handlePrimaryCapture(): Promise<void> {
-    if (cameraMode === "photo") {
-      const timerCompleted = await runCaptureTimer();
-      if (!timerCompleted) {
-        return;
-      }
-      await captureSinglePhoto();
-      return;
-    }
-
-    if (cameraMode === "burst") {
-      await startBurstCapture();
-      return;
-    }
-
     if (isRecording) {
       await stopNativeCameraXVideo();
       return;
@@ -607,22 +585,14 @@ export function CaptureRotationScreen({
   }
 
   function getPrimaryButtonLabel(): string {
-    if (cameraMode === "photo") {
-      return isCapturing ? "Capturing" : "Take Photo";
-    }
-
-    if (cameraMode === "burst") {
-      return isBurstRunning ? "Stop Burst" : "Start Timed Burst";
-    }
-
     return isRecording ? "Stop Recording" : "Record Video";
   }
 
   const primaryActionDisabled =
     !canUseCamera ||
     countdownSeconds !== null ||
-    (isCapturing && !(cameraMode === "burst" && isBurstRunning)) ||
-    (cameraMode !== "burst" && isBurstRunning);
+    isCapturing ||
+    isBurstRunning;
   const shutterDisabled = hasCameraPermission ? primaryActionDisabled : false;
 
   return (
@@ -699,8 +669,8 @@ export function CaptureRotationScreen({
             <Text style={styles.title}>{rotation.label}</Text>
           </View>
           <View style={styles.frameBadge}>
-            <Text style={styles.frameBadgeValue}>{frameCount}</Text>
-            <Text style={styles.frameBadgeLabel}>Frames</Text>
+            <Text style={styles.frameBadgeValue}>{videoCount}</Text>
+            <Text style={styles.frameBadgeLabel}>Videos</Text>
           </View>
         </View>
 
@@ -716,14 +686,6 @@ export function CaptureRotationScreen({
               active={gridEnabled}
               label={gridEnabled ? "Grid On" : "Grid"}
               onPress={() => setGridEnabled((current) => !current)}
-            />
-            <QuickControlButton
-              active={captureTimerSeconds > 0}
-              disabled={isRecording || isBurstRunning}
-              label={
-                captureTimerSeconds === 0 ? "Timer" : `${captureTimerSeconds}s`
-              }
-              onPress={cycleCaptureTimer}
             />
           </View>
           <View style={styles.quickZoomRow}>
@@ -748,7 +710,7 @@ export function CaptureRotationScreen({
           <View style={styles.captureReadout}>
             <View style={styles.readoutText}>
               <Text style={styles.previewStatusLabel}>
-                {captureStatus ?? `Frame ${nextFrameNumber}`}
+                {captureStatus ?? `Video ${videoCount + 1}`}
               </Text>
               <Text style={styles.previewStatusValue} numberOfLines={1}>
                 {capturePath === "arcore-tracked"
@@ -757,8 +719,12 @@ export function CaptureRotationScreen({
               </Text>
             </View>
             <View style={styles.coverageBadge}>
-              <Text style={styles.coverageValue}>{getCoverageLabel(frameCount)}</Text>
-              <Text style={styles.coverageLabel}>{frameCount} captured</Text>
+              <Text style={styles.coverageValue}>
+                {videoCount > 0 ? "Ready" : "Needed"}
+              </Text>
+              <Text style={styles.coverageLabel}>
+                {videoCount} video{videoCount === 1 ? "" : "s"}
+              </Text>
             </View>
           </View>
 
@@ -766,57 +732,26 @@ export function CaptureRotationScreen({
             <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
           </View>
 
-          {frameCount >= 180 ? (
-            <Text style={styles.warningText}>
-              Large project: very high frame counts make larger local files.
-            </Text>
-          ) : coverageWarning ? (
+          {coverageWarning ? (
             <Text style={styles.warningText}>{coverageWarning}</Text>
           ) : null}
-
-          <View style={styles.modeStrip}>
-            {cameraModes.map((mode) => (
-              <Pressable
-                accessibilityRole="button"
-                disabled={isRecording || isBurstRunning}
-                key={mode.value}
-                onPress={() => setCameraMode(mode.value)}
-                style={({ pressed }) => [
-                  styles.modeItem,
-                  cameraMode === mode.value ? styles.modeItemActive : undefined,
-                  pressed && !isRecording && !isBurstRunning
-                    ? styles.pressed
-                    : undefined
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.modeText,
-                    cameraMode === mode.value ? styles.modeTextActive : undefined
-                  ]}
-                >
-                  {mode.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
 
           <View style={styles.shutterRow}>
             <Pressable
               accessibilityRole="button"
               disabled={isRecording || isBurstRunning}
               onPress={() =>
-                setActiveMenu(activeMenu === "frames" ? null : "frames")
+                setActiveMenu(activeMenu === "clips" ? null : "clips")
               }
               style={({ pressed }) => [
                 styles.sideControl,
-                activeMenu === "frames" ? styles.sideControlActive : undefined,
+                activeMenu === "clips" ? styles.sideControlActive : undefined,
                 pressed && !isRecording && !isBurstRunning
                   ? styles.pressed
                   : undefined
               ]}
             >
-              <Text style={styles.sideControlText}>Frames</Text>
+              <Text style={styles.sideControlText}>Clips</Text>
             </Pressable>
 
             <Pressable
@@ -828,16 +763,11 @@ export function CaptureRotationScreen({
                   return;
                 }
 
-                if (isBurstRunning) {
-                  stopBurstCapture();
-                  return;
-                }
-
                 void handlePrimaryCapture();
               }}
               style={({ pressed }) => [
                 styles.shutterButton,
-                isRecording || isBurstRunning ? styles.shutterButtonStop : undefined,
+                isRecording ? styles.shutterButtonStop : undefined,
                 shutterDisabled ? styles.shutterButtonDisabled : undefined,
                 pressed && !shutterDisabled ? styles.pressed : undefined
               ]}
@@ -845,7 +775,7 @@ export function CaptureRotationScreen({
               <View
                 style={[
                   styles.shutterButtonInner,
-                  isRecording || isBurstRunning
+                  isRecording
                     ? styles.shutterButtonInnerStop
                     : undefined
                 ]}
@@ -854,15 +784,15 @@ export function CaptureRotationScreen({
 
             <Pressable
               accessibilityRole="button"
-              disabled={frameCount === 0 || isRecording || isBurstRunning}
+              disabled={videoCount === 0 || isRecording}
               onPress={handleCompleteRotation}
               style={({ pressed }) => [
                 styles.sideControl,
                 styles.doneControl,
-                pressed && frameCount > 0 && !isRecording && !isBurstRunning
+                pressed && videoCount > 0 && !isRecording
                   ? styles.pressed
                   : undefined,
-                frameCount === 0 || isRecording || isBurstRunning
+                videoCount === 0 || isRecording
                   ? styles.sideControlDisabled
                   : undefined
               ]}
@@ -1053,108 +983,63 @@ export function CaptureRotationScreen({
                 </View>
               ) : null}
             </View>
-            {cameraMode === "burst" ? (
-              <View style={styles.optionGroup}>
-                <Text style={styles.optionGroupTitle}>Burst</Text>
-                <View style={styles.optionRow}>
-                  {burstIntervalOptions.map((option) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={isBurstRunning}
-                      key={option.value}
-                      onPress={() => setBurstIntervalMs(option.value)}
-                      style={({ pressed }) => [
-                        styles.optionChip,
-                        burstIntervalMs === option.value
-                          ? styles.optionChipActive
-                          : undefined,
-                        pressed && !isBurstRunning ? styles.pressed : undefined
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.optionChipText,
-                          burstIntervalMs === option.value
-                            ? styles.optionChipTextActive
-                            : undefined
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-            {cameraMode === "video" ? (
-              <View style={styles.optionGroup}>
-                <Text style={styles.optionGroupTitle}>Video</Text>
-                <View style={styles.optionRow}>
-                  {videoQualityOptions.map((option) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={isRecording}
-                      key={option.value}
-                      onPress={() => setVideoQuality(option.value)}
-                      style={({ pressed }) => [
-                        styles.optionChip,
+            <View style={styles.optionGroup}>
+              <Text style={styles.optionGroupTitle}>Video</Text>
+              <View style={styles.optionRow}>
+                {videoQualityOptions.map((option) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isRecording}
+                    key={option.value}
+                    onPress={() => setVideoQuality(option.value)}
+                    style={({ pressed }) => [
+                      styles.optionChip,
+                      videoQuality === option.value
+                        ? styles.optionChipActive
+                        : undefined,
+                      pressed && !isRecording ? styles.pressed : undefined
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.optionChipText,
                         videoQuality === option.value
-                          ? styles.optionChipActive
-                          : undefined,
-                        pressed && !isRecording ? styles.pressed : undefined
+                          ? styles.optionChipTextActive
+                          : undefined
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.optionChipText,
-                          videoQuality === option.value
-                            ? styles.optionChipTextActive
-                            : undefined
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
-            ) : null}
+              <Text style={styles.capturePathHelp}>
+                Record one smooth full turn per rotation. ForgeScan will derive
+                turntable poses from the video timeline.
+              </Text>
+            </View>
             {!hasCameraPermission ? (
               <CompactMenuButton
                 label="Grant Camera"
                 onPress={requestCameraPermission}
               />
             ) : null}
-            <CompactMenuButton
-              disabled={isRecording || isBurstRunning || isCapturing}
-              label="Sim Frame"
-              onPress={() => addSimulatedFrame(projectId, rotationId)}
-            />
           </View>
         ) : null}
 
-        {activeMenu === "frames" ? (
+        {activeMenu === "clips" ? (
           <View style={styles.menuPanel}>
             <View style={styles.menuHeader}>
-              <Text style={styles.menuTitle}>Frames</Text>
+              <Text style={styles.menuTitle}>Clips</Text>
               <Text style={styles.menuMeta}>
-                {frameCount} photos / {videoCount} videos
+                {videoCount} video{videoCount === 1 ? "" : "s"}
               </Text>
             </View>
-            {rotation.frames.length === 0 ? (
+            {videoCount === 0 ? (
               <View style={styles.emptyFrameList}>
-                <Text style={styles.emptyFrameText}>No frames captured</Text>
+                <Text style={styles.emptyFrameText}>No video captured</Text>
               </View>
-            ) : (
-              <View style={styles.frameStrip}>
-                {rotation.frames.slice(-4).map((frame) => (
-                  <View key={frame.filename} style={styles.frameTile}>
-                    <Image source={{ uri: frame.uri }} style={styles.frameTileImage} />
-                    <Text style={styles.frameTileLabel}>{frame.index}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
+            ) : null}
             {lastVideo ? (
               <View style={styles.videoRow}>
                 <View>
@@ -1169,12 +1054,6 @@ export function CaptureRotationScreen({
               </View>
             ) : null}
             <View style={styles.twoButtonRow}>
-              <CompactMenuButton
-                disabled={frameCount === 0 || isCapturing || isRecording}
-                label="Delete Photo"
-                tone="danger"
-                onPress={() => retakeLastFrame(projectId, rotationId)}
-              />
               <CompactMenuButton
                 disabled={videoCount === 0 || isRecording}
                 label="Delete Video"
@@ -1215,7 +1094,7 @@ export function CaptureRotationScreen({
               />
             </View>
             <CompactMenuButton
-              disabled={frameCount === 0 || isRecording || isBurstRunning}
+              disabled={videoCount === 0 || isRecording}
               label="Complete Rotation"
               tone="primary"
               onPress={handleCompleteRotation}

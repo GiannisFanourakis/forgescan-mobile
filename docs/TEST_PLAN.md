@@ -37,7 +37,7 @@ preview.gif
 
 ## Android Stable Camera Capture Test
 
-Current POCO X7 Pro test status: ARCore tracked capture is disabled in this build after a native ARCore runtime crash. Use this test to verify the app stays stable while capturing photos/video through the native camera path.
+Current POCO X7 Pro test status: ARCore tracked capture is disabled in this build after a native ARCore runtime crash. Use this test to verify the app stays stable while capturing video through the native camera path.
 
 1. Run `npm install`.
 2. Run `npm run typecheck`.
@@ -46,13 +46,13 @@ Current POCO X7 Pro test status: ARCore tracked capture is disabled in this buil
 5. Create a project.
 6. Open a capture rotation.
 7. Confirm the camera preview covers the full screen.
-8. Confirm the capture mode is `Basic capture / ARCore off`.
-9. Capture one photo.
+8. Confirm the capture mode is video-only and says `Basic capture / ARCore off`.
+9. Record one short video.
 10. Confirm the app does not crash.
-11. Switch to video mode.
+11. Stop recording and confirm the clip appears under `Clips`.
 12. Confirm the app does not return to a black preview.
 13. Pinch the preview and confirm zoom changes.
-14. Capture additional photos or a short video.
+14. Record a smooth full-turn video.
 15. Complete the rotation.
 
 ## Android Real Tracked Scan Test
@@ -89,7 +89,7 @@ Phone flow:
 7. Create a project.
 8. Open the first capture rotation.
 9. Confirm the camera preview covers the full screen.
-10. Confirm the capture mode is `Basic capture / ARCore off`.
+10. Confirm the capture mode is video-only and says `Basic capture / ARCore off`.
 11. Pinch on the preview and confirm zoom changes.
 12. Confirm `Start Tracked` is unavailable or reports ARCore disabled.
 13. Capture one Basic frame.
@@ -104,9 +104,9 @@ Phone flow:
    - Tracking state
    - Rotation tracked frame count
    - Rotation usable-for-splat count
-16. Capture 40-60 upright keyframes with photo/timed burst.
-17. Capture 40-60 tilted keyframes.
-18. Optional: capture underside rotation.
+16. Record one smooth upright full-turn video.
+17. Record one smooth tilted full-turn video.
+18. Optional: record one underside full-turn video.
 19. Complete the rotations manually.
 20. Tap `Create .ksplat Preview`.
 21. Confirm Project Review shows:
@@ -114,7 +114,7 @@ Phone flow:
    - `2 Process`
    - `3 Preview & Export`
 22. Confirm `Tracked Capture Readiness` appears with status, total frames, usable tracked frames, and per-rotation usable frame counts.
-23. Confirm pose synchronization is `camera-photo-associated` or `shared-camera-synchronized`.
+23. Confirm video-only rotations warn that processing will extract frames and use turntable pose assumptions.
 24. Confirm processing starts automatically, or tap `Process Scan`.
 25. Confirm object/background removal runs through ML Kit Subject Segmentation.
 26. Confirm mask PNG files are written and size is greater than 0.

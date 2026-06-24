@@ -29,18 +29,19 @@ Everything else is internal project data.
 - Android dev build is the first real engine target.
 - Expo Go is UI-only for camera capture now; the capture screen reports that a native Android build is required.
 - Android dev build currently defaults to Basic Camera Capture because ARCore native tracking crashed on the POCO X7 Pro test device. ARCore tracked capture is disabled from JavaScript in this build so the phone cannot enter the crashing native path.
+- The main capture UI is video-only: record one smooth full-turn clip per rotation, then processing extracts evenly spaced frames and assigns turntable poses from the video timeline.
 - The real scan path does not launch the Android stock camera app. Stock camera intents/plain MP4 are unsuitable for Gaussian Splat training because they do not provide synchronized camera pose matrices.
 - ARCore Tracked Capture code remains in the native module, but normal capture and diagnostics now return a clear disabled result instead of starting ARCore on the affected device path.
 - The current verified Android keyframe path pairs CameraX still frames with ARCore pose metadata and marks those frames as `camera-photo-associated`.
 - `shared-camera-synchronized` is reserved for a future verified Camera2/SharedCamera image stream. The app records `poseSynchronization` so diagnostics and optimizer input never confuse the two modes.
 - Basic Camera Capture is the working stable capture path for the current phone test. It is untracked and uses turntable assumptions for splat processing.
-- Android dev build uses a native CameraX full-screen preview for ForgeScan controls, pinch/toolbar zoom, timed keyframes, photo fallback, and video fallback.
-- Video mode requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
+- Android dev build uses a native CameraX full-screen preview for ForgeScan controls, pinch/toolbar zoom, and video capture.
+- Video capture requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
 - Native Camera2 hardware diagnostics inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, native zoom, ISO range, shutter range, and focus distance.
 - Manual ISO/shutter/focus locks run through Camera2 interop on Android devices that expose `MANUAL_SENSOR`.
 - Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
 - Android masking is ML Kit-first with confidence threshold `0.85`.
-- With ARCore disabled, ForgeScan warns and uses fallback turntable assumptions. It does not silently treat untracked frames as tracked.
+- With ARCore disabled, ForgeScan uses video-derived turntable assumptions. It does not silently treat untracked frames as tracked.
 - Android Gaussian Splat V1 is local/on-phone and limited.
 - The Android local splat optimizer receives camera intrinsics/extrinsics when available and uses ARCore pose-derived angles instead of turntable assumptions.
 - The `.ksplat` writer status is `experimental-ksplat`; it writes a real non-empty file and validates existence/size, but broad viewer compatibility is not claimed.
@@ -53,8 +54,9 @@ No fake `.ksplat` is created. `.ksplat` is marked Generated only when the file e
 
 ```text
 validate capture
--> ARCore Tracked Capture frames + camera poses when available
--> warn and use turntable pose assumptions when frames are untracked
+-> record rotation video clips
+-> extract evenly spaced frames from video
+-> generate turntable pose assumptions from frame index and rotation metadata
 -> ML Kit Subject Segmentation masks at confidence >= 0.85
 -> fallback-local only if ML Kit is unavailable/fails
 -> verify mask file exists and size > 0

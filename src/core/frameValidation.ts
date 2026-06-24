@@ -14,6 +14,7 @@ export interface RotationFrameValidation {
   rotationId: CaptureRotation["id"];
   label: string;
   frameCount: number;
+  videoCount: number;
   expectedFrameCount: number;
   coverageTier: CoverageTier;
   valid: boolean;
@@ -45,17 +46,20 @@ export function validateRotationFrames(
   const sortedFrames = [...rotation.frames].sort((a, b) => a.index - b.index);
   const indexes = sortedFrames.map((frame) => frame.index);
   const uniqueIndexes = new Set(indexes);
+  const videoCount = rotation.videos?.length ?? 0;
+  const hasFrames = rotation.frames.length > 0;
+  const hasVideo = videoCount > 0;
 
-  if (rotation.frames.length === 0) {
-    errors.push(`${rotation.label} has no captured frames.`);
+  if (!hasFrames && !hasVideo) {
+    errors.push(`${rotation.label} has no captured video.`);
   }
 
-  if (uniqueIndexes.size !== indexes.length) {
+  if (hasFrames && uniqueIndexes.size !== indexes.length) {
     errors.push(`${rotation.label} has duplicate frame indexes.`);
   }
 
   const missingIndexes = findMissingIndexes(indexes);
-  if (missingIndexes.length > 0) {
+  if (hasFrames && missingIndexes.length > 0) {
     errors.push(
       `${rotation.label} is missing frame indexes ${missingIndexes.join(", ")}.`
     );
@@ -63,7 +67,7 @@ export function validateRotationFrames(
 
   const coverageWarning = getCoverageWarning(rotation.frames.length);
   if (
-    rotation.frames.length > 0 &&
+    hasFrames &&
     rotation.frames.length < RECOMMENDED_MINIMUM_FRAMES
   ) {
     warnings.push(
@@ -72,7 +76,13 @@ export function validateRotationFrames(
     );
   }
 
-  if (!hasConsistentKnownDimensions(rotation)) {
+  if (!hasFrames && hasVideo) {
+    warnings.push(
+      `${rotation.label} is video-only. Processing will extract evenly spaced frames and use turntable pose assumptions.`
+    );
+  }
+
+  if (hasFrames && !hasConsistentKnownDimensions(rotation)) {
     errors.push(`${rotation.label} has inconsistent known image dimensions.`);
   }
 
@@ -80,6 +90,7 @@ export function validateRotationFrames(
     rotationId: rotation.id,
     label: rotation.label,
     frameCount: rotation.frames.length,
+    videoCount,
     expectedFrameCount,
     coverageTier: getCoverageTier(rotation.frames.length),
     valid: errors.length === 0,
