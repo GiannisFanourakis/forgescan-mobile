@@ -30,8 +30,19 @@ suspend fun runReconstructionPipeline(
     require(ringSilhouettes.isNotEmpty()) { "Masking did not produce usable silhouettes." }
 
     onStatus("Carving shape...")
-    val carvedGrid = carveVoxelGrid(ringSilhouettes, onProgress = onProgress)
-    val grid = openVoxelGrid(carvedGrid)
+    // Requiring literal unanimous agreement across every frame is fragile
+    // for thin real features (a handle's silhouette failing in even one
+    // frame - motion blur, anti-aliasing at a thin edge, mask downsampling -
+    // carves it away entirely, independent of any downstream connectivity
+    // filtering). Tolerating a small minority of disagreeing frames trades a
+    // little carving precision for not losing genuine thin geometry to
+    // occasional per-frame segmentation noise.
+    val carvedGrid = carveVoxelGrid(ringSilhouettes, onProgress = onProgress, agreementThreshold = 0.97f)
+    val filteredGrid = keepLargestComponent(carvedGrid)
+
+    onStatus("Measuring cap geometry...")
+    val capFractions = estimateCapRadiusFractions(context, populatedRings)
+    val grid = flattenCaps(filteredGrid, capFractions?.top, capFractions?.bottom)
 
     onStatus("Building mesh...")
     val rawMesh = meshFromVoxelGrid(grid)

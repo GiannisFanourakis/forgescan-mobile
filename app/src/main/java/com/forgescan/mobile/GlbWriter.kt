@@ -13,16 +13,22 @@ private const val ChunkTypeJson = 0x4E4F534A
 private const val ChunkTypeBin = 0x004E4942
 
 // Hand-rolled binary glTF (.glb) writer tailored to exactly the one mesh
-// shape this pipeline produces (positions, normals, per-vertex color,
+// shape this pipeline produces (positions, normals, per-vertex color, UVs,
 // indices). Color travels as a COLOR_0 vertex attribute, barycentric-
-// interpolated directly by the rasterizer across each triangle - not baked
-// into a lookup texture. A texture-based attempt was tried first (to sidestep
-// a theoretical concern about vertex-color shader-variant availability) but
-// produced visible speckled noise: a "one texel per vertex" texture has zero
-// spatial coherence as an image, so any GPU-side filtering/mip-level
-// selection blends together unrelated neighboring vertices' colors. COLOR_0
-// has no such interpolation surface to go wrong on, and needs an explicit
-// material (still included below) to render reliably.
+// interpolated directly by the rasterizer, rather than as a baseColorTexture
+// referencing the UV-mapped atlas MeshColorizer.kt bakes (that atlas is real,
+// and used both by the OBJ export's map_Kd texture and by MeshPreviewScreen's
+// own manually-bound Filament Texture). This app's actual SceneView/Filament
+// build logs "Missing texture provider for image/png" and never binds
+// embedded PNG textures via glTF's baseColorTexture, regardless of glTF-side
+// correctness (verified against Filament 1.71.5's own source and decompiled
+// bytecode - the Java ResourceLoader constructor unconditionally registers
+// an STB provider for image/png, yet the registration provably isn't taking
+// effect at runtime here). COLOR_0 sidesteps that gap entirely for a
+// reliable fallback appearance; TEXCOORD_0 is still included so
+// MeshPreviewScreen can bind its own manually-loaded texture on top (that
+// path needs real UV data even though this writer never references an
+// embedded image itself).
 fun writeGlb(mesh: ForgeScanMesh, outputFile: File) {
     val bin = ByteArrayOutputStream()
     fun align4() { while (bin.size() % 4 != 0) bin.write(0) }
@@ -35,6 +41,9 @@ fun writeGlb(mesh: ForgeScanMesh, outputFile: File) {
     align4()
     val colorsOffset = bin.size()
     writeFloats(bin, mesh.colors)
+    align4()
+    val uvsOffset = bin.size()
+    writeFloats(bin, mesh.uvs)
     align4()
     val indicesOffset = bin.size()
     writeUInts(bin, mesh.indices)
@@ -63,9 +72,10 @@ fun writeGlb(mesh: ForgeScanMesh, outputFile: File) {
                                         put("POSITION", 0)
                                         put("NORMAL", 1)
                                         put("COLOR_0", 2)
+                                        put("TEXCOORD_0", 3)
                                     },
                                 )
-                                put("indices", 3)
+                                put("indices", 4)
                                 put("mode", 4)
                                 put("material", 0)
                             },
@@ -104,7 +114,8 @@ fun writeGlb(mesh: ForgeScanMesh, outputFile: File) {
                 )
                 put(JSONObject().apply { put("bufferView", 1); put("componentType", 5126); put("count", vertexCount); put("type", "VEC3") })
                 put(JSONObject().apply { put("bufferView", 2); put("componentType", 5126); put("count", vertexCount); put("type", "VEC3") })
-                put(JSONObject().apply { put("bufferView", 3); put("componentType", 5125); put("count", mesh.indices.size); put("type", "SCALAR") })
+                put(JSONObject().apply { put("bufferView", 3); put("componentType", 5126); put("count", vertexCount); put("type", "VEC2") })
+                put(JSONObject().apply { put("bufferView", 4); put("componentType", 5125); put("count", mesh.indices.size); put("type", "SCALAR") })
             },
         )
         put(
@@ -113,6 +124,7 @@ fun writeGlb(mesh: ForgeScanMesh, outputFile: File) {
                 put(JSONObject().apply { put("buffer", 0); put("byteOffset", positionsOffset); put("byteLength", mesh.positions.size * 4) })
                 put(JSONObject().apply { put("buffer", 0); put("byteOffset", normalsOffset); put("byteLength", mesh.normals.size * 4) })
                 put(JSONObject().apply { put("buffer", 0); put("byteOffset", colorsOffset); put("byteLength", mesh.colors.size * 4) })
+                put(JSONObject().apply { put("buffer", 0); put("byteOffset", uvsOffset); put("byteLength", mesh.uvs.size * 4) })
                 put(JSONObject().apply { put("buffer", 0); put("byteOffset", indicesOffset); put("byteLength", mesh.indices.size * 4) })
             },
         )

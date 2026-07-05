@@ -2,6 +2,20 @@ package com.forgescan.mobile
 
 import kotlin.math.sqrt
 
+// Smoothed, welded geometry plus the original per-face corner grouping,
+// still expressed as welded-vertex indices. Geometry (position/normal
+// smoothing) needs vertices shared across adjacent faces to average
+// correctly; texture baking (TextureBaker.kt) needs the opposite - each
+// face's own independent set of 4 corners, since a UV atlas gives every face
+// its own tile and a shared vertex can't carry two different UVs at once.
+// Keeping both derived from the same welded/smoothed arrays means texture
+// baking never has to re-derive or approximate the smoothed geometry.
+internal class RawMesh(
+    val weldedPositions: FloatArray,
+    val weldedNormals: FloatArray,
+    val faces: List<IntArray>,
+)
+
 // Builds a mesh from the carved occupancy grid using exposed-face quads (a
 // face is emitted wherever an occupied voxel borders an empty one), then
 // applies Laplacian smoothing to soften the resulting blocky look. This is
@@ -10,12 +24,12 @@ import kotlin.math.sqrt
 // validate against on real data, while exposed-face meshing is trivially
 // correct for any binary occupancy field. It can be upgraded to true marching
 // cubes later once there's known-good captured data to validate against.
-internal fun meshFromVoxelGrid(grid: VoxelGrid): ForgeScanMesh {
+internal fun meshFromVoxelGrid(grid: VoxelGrid): RawMesh {
     val size = grid.size
     val half = size / 2f
     val voxelSize = 1f / half
     val positions = ArrayList<Float>()
-    val indices = ArrayList<Int>()
+    val rawFaces = ArrayList<IntArray>()
 
     fun world(gx: Int, gy: Int, gz: Int): FloatArray =
         floatArrayOf((gx - half) / half, (gy - half) / half, (gz - half) / half)
@@ -23,8 +37,7 @@ internal fun meshFromVoxelGrid(grid: VoxelGrid): ForgeScanMesh {
     fun addFace(corners: List<FloatArray>) {
         val start = positions.size / 3
         corners.forEach { c -> positions += c[0]; positions += c[1]; positions += c[2] }
-        indices += start; indices += start + 1; indices += start + 2
-        indices += start; indices += start + 2; indices += start + 3
+        rawFaces += intArrayOf(start, start + 1, start + 2, start + 3)
     }
 
     for (x in 0 until size) {
@@ -101,11 +114,19 @@ internal fun meshFromVoxelGrid(grid: VoxelGrid): ForgeScanMesh {
         }
     }
 
-    val (weldedPositions, weldedIndices) = weldVertices(positions.toFloatArray(), indices.toIntArray(), voxelSize)
+    val rawIndices = IntArray(rawFaces.size * 6)
+    for (i in rawFaces.indices) {
+        val f = rawFaces[i]
+        val base = i * 6
+        rawIndices[base] = f[0]; rawIndices[base + 1] = f[1]; rawIndices[base + 2] = f[2]
+        rawIndices[base + 3] = f[0]; rawIndices[base + 4] = f[2]; rawIndices[base + 5] = f[3]
+    }
+
+    val (weldedPositions, remap, weldedIndices) = weldVertices(positions.toFloatArray(), rawIndices, voxelSize)
     val smoothed = smoothPositions(weldedPositions, weldedIndices, iterations = 12)
     val normals = recomputeNormals(smoothed, weldedIndices)
-    val colors = FloatArray(smoothed.size) { 0.8f }
-    return ForgeScanMesh(smoothed, normals, colors, weldedIndices)
+    val weldedFaces = rawFaces.map { face -> IntArray(4) { c -> remap[face[c]] } }
+    return RawMesh(smoothed, normals, weldedFaces)
 }
 
 // Every exposed face is emitted with 4 brand-new vertices, even where it
@@ -117,8 +138,10 @@ internal fun meshFromVoxelGrid(grid: VoxelGrid): ForgeScanMesh {
 // fragments instead of a connected mesh. Welding coincident corners first
 // (they sit on the exact same voxel-grid lattice, so equality after rounding
 // is exact, not approximate) gives smoothing a real neighbor graph that spans
-// across adjacent faces.
-private fun weldVertices(positions: FloatArray, indices: IntArray, voxelSize: Float): Pair<FloatArray, IntArray> {
+// across adjacent faces. The remap array is returned too so callers can map
+// their own per-face raw-vertex groupings onto the same welded indices
+// without redoing the spatial lookup.
+private fun weldVertices(positions: FloatArray, indices: IntArray, voxelSize: Float): Triple<FloatArray, IntArray, IntArray> {
     val tolerance = voxelSize * 0.01f
     val cellSize = maxOf(tolerance, 1e-6f)
     fun key(x: Float, y: Float, z: Float): Long {
@@ -148,7 +171,7 @@ private fun weldVertices(positions: FloatArray, indices: IntArray, voxelSize: Fl
         }
     }
     val weldedIndices = IntArray(indices.size) { i -> remap[indices[i]] }
-    return weldedPositions.toFloatArray() to weldedIndices
+    return Triple(weldedPositions.toFloatArray(), remap, weldedIndices)
 }
 
 // Taubin (lambda|mu) smoothing: alternating a "shrink" pass (positive factor)

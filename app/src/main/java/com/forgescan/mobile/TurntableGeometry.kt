@@ -20,7 +20,14 @@ private val RingElevationDegrees: Map<String, Float> = mapOf(
 )
 private const val DefaultElevationDegrees = 10f
 
-internal const val SilhouetteGridSize = 256
+// Higher than the 128^3 voxel grid actually needs for carving accuracy
+// itself (sampleSilhouette does a lookup, not a scan, so carving cost is
+// independent of this). What it buys is not losing a thin real feature - a
+// handle's cross-section - to the mask's own downsample before carving ever
+// sees it: at some rotation angles a thin handle projects to only a handful
+// of pixels, and aggressively downsampling the mask first can anti-alias
+// that away before the "unanimous frames" carving rule even gets a chance.
+internal const val SilhouetteGridSize = 512
 
 // Precomputed per-frame projection: dot (x,y,z) with (ux,uy,uz) and
 // (vx,vy,vz) to get the frame's orthographic image-plane (u,v), avoiding any
@@ -59,11 +66,39 @@ internal fun loadRingSilhouettes(context: Context, project: ForgeScanProject, ri
     }
     if (silhouettes.size != frameCount) return null
 
-    val elevationRad = Math.toRadians((RingElevationDegrees[ring.ringId] ?: DefaultElevationDegrees).toDouble())
+    // The measurement is a magnitude in [0, 90] (how face-on vs. top-down the
+    // camera was for this ring's own footage); the "underside" ring is the
+    // object physically flipped over, so a successful measurement is placed
+    // past 180 in the canonical frame, mirroring what the old hardcoded 190
+    // (180 + 10) encoded, but using this ring's own measured shallowness
+    // instead of assuming it matches the upright ring's. A failed measurement
+    // (too little texture/too few frames) falls back to the old hardcoded
+    // per-ring constant, already expressed in final canonical-frame terms.
+    val measuredMagnitude = estimateRingElevationDegrees(context, ring)
+    val elevationDegrees = if (measuredMagnitude != null) {
+        if (ring.ringId == "underside") 180f + measuredMagnitude else measuredMagnitude
+    } else {
+        RingElevationDegrees[ring.ringId] ?: DefaultElevationDegrees
+    }
+    val elevationRad = Math.toRadians(elevationDegrees.toDouble())
     val cosE = cos(elevationRad).toFloat()
     val sinE = sin(elevationRad).toFloat()
+    // Tried measuring the actual cumulative rotation angle per frame
+    // (epipolar geometry between real frame pairs, same idea as the
+    // elevation measurement above) instead of assuming perfectly even
+    // spacing. Reverted: unlike elevation - a median across ~16 independent
+    // measurements, where noise doesn't compound - the angle measurement
+    // summed ~16-17 sequential segments into a running total, so any small
+    // per-segment bias accumulated linearly across the sequence. On the
+    // capture this was tested against, later frames' assumed angle drifted
+    // enough to over-carve real geometry that should have survived (the
+    // turntable's true width and the handle both visibly shrank versus a
+    // capture with identical masks run through the uniform assumption).
+    // Simple uniform spacing is a weaker model of the real turntable, but
+    // it doesn't have a failure mode that gets worse the longer the ring is.
     val projections = (0 until frameCount).map { i ->
-        val angleRad = Math.toRadians((i.toFloat() / frameCount * 360f).toDouble())
+        val angleDegrees = i.toFloat() / frameCount * 360f
+        val angleRad = Math.toRadians(angleDegrees.toDouble())
         val cosA = cos(angleRad).toFloat()
         val sinA = sin(angleRad).toFloat()
         FrameProjection(
@@ -116,7 +151,40 @@ private fun decodeSilhouette(file: File, targetSize: Int): BooleanArray {
     val pixels = IntArray(targetSize * targetSize)
     scaled.getPixels(pixels, 0, targetSize, 0, 0, targetSize, targetSize)
     scaled.recycle()
-    return BooleanArray(targetSize * targetSize) { i -> (pixels[i] and 0xFF) > 127 }
+    val raw = BooleanArray(targetSize * targetSize) { i -> (pixels[i] and 0xFF) > 127 }
+    return dilateSilhouette(raw, targetSize, MaskDilationPasses)
+}
+
+// Generic subject-segmentation models systematically under-include thin
+// protruding features - a handle's cross-section commonly erodes to a
+// couple of pixels, or drops out entirely, at whatever rotation angles view
+// it edge-on - and carving's "every frame must agree" rule only needs ONE
+// frame to miss a feature for it to vanish from the model permanently, no
+// matter how many other frames captured it fine. Growing the mask by a
+// couple of pixels trades a little precision at the object's true
+// silhouette boundary (now slightly generous) for not losing real thin
+// geometry to segmentation noise before carving ever gets a chance to see
+// it - single-ring captures can't afford to lose more information than
+// they already inherently have to.
+private const val MaskDilationPasses = 2
+
+private fun dilateSilhouette(source: BooleanArray, size: Int, passes: Int): BooleanArray {
+    var current = source
+    repeat(passes) {
+        val next = BooleanArray(size * size)
+        for (y in 0 until size) {
+            for (x in 0 until size) {
+                val idx = y * size + x
+                next[idx] = current[idx] ||
+                    (x > 0 && current[idx - 1]) ||
+                    (x < size - 1 && current[idx + 1]) ||
+                    (y > 0 && current[idx - size]) ||
+                    (y < size - 1 && current[idx + size])
+            }
+        }
+        current = next
+    }
+    return current
 }
 
 // Orthographic silhouette test: no calibrated camera distance is available,
