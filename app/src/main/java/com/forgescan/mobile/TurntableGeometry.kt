@@ -12,13 +12,16 @@ import kotlin.math.sin
 // object's sides, a steep ring constrains its top, and a flipped-object ring
 // is the only way to constrain the true base. There is no calibrated camera
 // distance available (capture is a hand-off to whatever camera app the user
-// has), so these are fixed assumptions rather than measured values.
-private val RingElevationDegrees: Map<String, Float> = mapOf(
+// has), so these are fixed assumptions rather than measured values. Internal
+// (not private): GaussianSplatExporter.kt falls back to the same constants
+// when estimateRingElevationDegrees can't measure a ring, rather than
+// guessing a second, possibly-inconsistent default.
+internal val RingElevationDegrees: Map<String, Float> = mapOf(
     "upright" to 10f,
     "tilted" to 60f,
     "underside" to 190f,
 )
-private const val DefaultElevationDegrees = 10f
+internal const val DefaultElevationDegrees = 10f
 
 // Higher than the 128^3 voxel grid actually needs for carving accuracy
 // itself (sampleSilhouette does a lookup, not a scan, so carving cost is
@@ -55,7 +58,12 @@ internal class RingSilhouettes(
     val halfExtent: Float,
 )
 
-internal fun loadRingSilhouettes(context: Context, project: ForgeScanProject, ring: ForgeScanRing): RingSilhouettes? {
+internal fun loadRingSilhouettes(
+    context: Context,
+    project: ForgeScanProject,
+    ring: ForgeScanRing,
+    azimuthPhaseOffsetDegrees: Float = 0f,
+): RingSilhouettes? {
     val frameCount = ring.frames.size
     if (frameCount == 0) return null
     val maskDir = ringMaskDir(context, project.projectId, ring.ringId)
@@ -74,7 +82,7 @@ internal fun loadRingSilhouettes(context: Context, project: ForgeScanProject, ri
     // instead of assuming it matches the upright ring's. A failed measurement
     // (too little texture/too few frames) falls back to the old hardcoded
     // per-ring constant, already expressed in final canonical-frame terms.
-    val measuredMagnitude = estimateRingElevationDegrees(context, ring)
+    val measuredMagnitude = estimateRingElevationDegrees(context, project.projectId, ring)
     val elevationDegrees = if (measuredMagnitude != null) {
         if (ring.ringId == "underside") 180f + measuredMagnitude else measuredMagnitude
     } else {
@@ -96,8 +104,17 @@ internal fun loadRingSilhouettes(context: Context, project: ForgeScanProject, ri
     // capture with identical masks run through the uniform assumption).
     // Simple uniform spacing is a weaker model of the real turntable, but
     // it doesn't have a failure mode that gets worse the longer the ring is.
+    //
+    // azimuthPhaseOffsetDegrees shifts this ring's whole azimuth track by a
+    // constant - the relative phase RingRegistration.kt's registerRings
+    // solved for, when this ring is being combined with another one for
+    // carving. Zero for a single-ring carve (the default) or for whichever
+    // ring in a combined carve is being treated as the reference; carving
+    // multiple rings together without this correction silently assumes
+    // every ring's frame 0 landed on the same real-world azimuth, which two
+    // independently-captured rings have no reason to satisfy.
     val projections = (0 until frameCount).map { i ->
-        val angleDegrees = i.toFloat() / frameCount * 360f
+        val angleDegrees = i.toFloat() / frameCount * 360f + azimuthPhaseOffsetDegrees
         val angleRad = Math.toRadians(angleDegrees.toDouble())
         val cosA = cos(angleRad).toFloat()
         val sinA = sin(angleRad).toFloat()
