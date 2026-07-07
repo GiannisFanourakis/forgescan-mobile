@@ -9,8 +9,25 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 internal fun exportsDir(context: Context): File = File(context.cacheDir, "exports").apply { mkdirs() }
+
+// GaussianSplatExporter.kt writes a loose self-contained folder (images/ +
+// transforms.json + points.ply) since that's the shape a desktop trainer
+// expects to unzip and load, but the app's own share/save actions only take
+// a single File - this bridges the two.
+internal fun zipDirectory(sourceDir: File, outputZipFile: File) {
+    ZipOutputStream(outputZipFile.outputStream()).use { zip ->
+        sourceDir.walkTopDown().filter { it.isFile }.forEach { file ->
+            val relativePath = file.relativeTo(sourceDir).path.replace(File.separatorChar, '/')
+            zip.putNextEntry(ZipEntry(relativePath))
+            file.inputStream().use { it.copyTo(zip) }
+            zip.closeEntry()
+        }
+    }
+}
 
 fun exportMeshToGlb(context: Context, mesh: ForgeScanMesh, fileName: String = "ForgeScan.glb"): File {
     val file = File(exportsDir(context), fileName)

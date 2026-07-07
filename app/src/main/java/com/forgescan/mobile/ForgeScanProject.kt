@@ -13,6 +13,13 @@ data class ForgeScanProject(
     val createdAt: String,
     val updatedAt: String,
     val rings: List<ForgeScanRing>,
+    // Ring-ID groups detected by detectRingGroups (RingRegistration.kt),
+    // cached here so the export UI doesn't need to re-run cross-ring
+    // registration on every screen render - it's recomputed once per
+    // Process tap, not once per recomposition. Defaults to empty for
+    // projects saved before this existed; the UI treats "no cached groups"
+    // the same as "every populated ring is its own singleton group".
+    val detectedRingGroups: List<List<String>> = emptyList(),
 )
 
 data class ForgeScanRing(
@@ -57,6 +64,10 @@ fun ForgeScanProject.addRing(ringId: String, label: String): ForgeScanProject {
 
 fun ForgeScanProject.removeRing(ringId: String): ForgeScanProject {
     return copy(rings = rings.filterNot { it.ringId == ringId }, updatedAt = Instant.now().toString())
+}
+
+fun ForgeScanProject.withDetectedRingGroups(groups: List<List<String>>): ForgeScanProject {
+    return copy(detectedRingGroups = groups, updatedAt = Instant.now().toString())
 }
 
 fun validateProject(project: ForgeScanProject): List<String> = buildList {
@@ -129,6 +140,14 @@ private fun ForgeScanProject.toJson(): JSONObject = JSONObject().apply {
             }
         },
     )
+    put(
+        "detectedRingGroups",
+        JSONArray().apply {
+            detectedRingGroups.forEach { group ->
+                put(JSONArray().apply { group.forEach { put(it) } })
+            }
+        },
+    )
 }
 
 private fun forgeScanProjectFromJson(json: JSONObject): ForgeScanProject {
@@ -147,11 +166,21 @@ private fun forgeScanProjectFromJson(json: JSONObject): ForgeScanProject {
         }
         ForgeScanRing(ringId = ringJson.getString("ringId"), label = ringJson.getString("label"), frames = frames)
     }
+    val groupsJson = json.optJSONArray("detectedRingGroups")
+    val detectedRingGroups = if (groupsJson == null) {
+        emptyList()
+    } else {
+        (0 until groupsJson.length()).map { i ->
+            val groupJson = groupsJson.getJSONArray(i)
+            (0 until groupJson.length()).map { j -> groupJson.getString(j) }
+        }
+    }
     return ForgeScanProject(
         projectId = json.getString("projectId"),
         title = json.getString("title"),
         createdAt = json.getString("createdAt"),
         updatedAt = json.getString("updatedAt"),
         rings = rings,
+        detectedRingGroups = detectedRingGroups,
     )
 }

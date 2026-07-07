@@ -52,6 +52,11 @@ private fun ForgeScanApp() {
     var activeRingId by remember { mutableStateOf<String?>(null) }
     var previewGlbFile by remember { mutableStateOf<File?>(null) }
     var previewMesh by remember { mutableStateOf<ForgeScanMesh?>(null) }
+    // Which ring(s) previewMesh was actually carved from - GS export can only
+    // reuse it as a seed cloud (GaussianSplatExporter.kt's meshSeedPoints)
+    // for a request whose ring set matches this exactly; any other group has
+    // no mesh in its own frame and must fall back to the sparse SfM cloud.
+    var carvedRingIds by remember { mutableStateOf<List<String>>(emptyList()) }
     val photoPickLimit = remember { safePhotoPickLimit() }
 
     LaunchedEffect(Unit) {
@@ -141,9 +146,11 @@ private fun ForgeScanApp() {
                         },
                     )
                 }
-            }.onSuccess { mesh ->
-                previewMesh = mesh
-                val glb = withContext(Dispatchers.IO) { exportMeshToGlb(context, mesh) }
+            }.onSuccess { result ->
+                project = result.updatedProject
+                previewMesh = result.mesh
+                carvedRingIds = result.carvedRingIds
+                val glb = withContext(Dispatchers.IO) { exportMeshToGlb(context, result.mesh) }
                 previewGlbFile = glb
                 statusMessage = "Reconstruction complete."
                 screen = Screen.Preview
@@ -187,6 +194,56 @@ private fun ForgeScanApp() {
                 statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
             }.onFailure {
                 statusMessage = "OBJ export failed: ${it.message ?: "Unknown error"}"
+            }
+            busyMessage = null
+        }
+    }
+
+    fun exportGsDataset(ringId: String) {
+        val current = project ?: return
+        val ring = current.rings.firstOrNull { it.ringId == ringId } ?: return
+        val meshForSeed = if (carvedRingIds == listOf(ringId)) previewMesh else null
+        scope.launch {
+            busyMessage = "Exporting Gaussian-splat dataset..."
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val datasetDir = File(exportsDir(context), "gs-dataset-$ringId")
+                    exportGaussianSplatDataset(context, current, ring, datasetDir, meshForSeed)
+                    val zip = File(exportsDir(context), "ForgeScan-gs-$ringId.zip")
+                    zipDirectory(datasetDir, zip)
+                    zip
+                }
+            }.onSuccess { zip ->
+                withContext(Dispatchers.IO) { saveFileToDownloads(context, zip, zip.name, "application/zip") }
+                statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
+            }.onFailure {
+                statusMessage = "GS dataset export failed: ${it.message ?: "Unknown error"}"
+            }
+            busyMessage = null
+        }
+    }
+
+    fun exportFusedGsDataset(ringIds: List<String>) {
+        val current = project ?: return
+        val rings = ringIds.mapNotNull { id -> current.rings.firstOrNull { it.ringId == id } }
+        if (rings.isEmpty()) return
+        val groupName = ringIds.joinToString("-")
+        val meshForSeed = if (carvedRingIds.toSet() == ringIds.toSet()) previewMesh else null
+        scope.launch {
+            busyMessage = "Exporting fused Gaussian-splat dataset..."
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val datasetDir = File(exportsDir(context), "gs-dataset-$groupName")
+                    exportFusedGaussianSplatDataset(context, current, rings, datasetDir, meshForSeed)
+                    val zip = File(exportsDir(context), "ForgeScan-gs-$groupName.zip")
+                    zipDirectory(datasetDir, zip)
+                    zip
+                }
+            }.onSuccess { zip ->
+                withContext(Dispatchers.IO) { saveFileToDownloads(context, zip, zip.name, "application/zip") }
+                statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
+            }.onFailure {
+                statusMessage = "Fused GS dataset export failed: ${it.message ?: "Unknown error"}"
             }
             busyMessage = null
         }
@@ -250,11 +307,15 @@ private fun ForgeScanApp() {
             currentProject == null -> Text("Loading...", color = MaterialTheme.colorScheme.onBackground)
             screen == Screen.Preview && previewGlbFile != null -> MeshPreviewScreen(
                 glbFile = previewGlbFile!!,
+                rings = currentProject.rings,
+                detectedRingGroups = currentProject.detectedRingGroups,
                 busyMessage = busyMessage,
                 statusMessage = statusMessage,
                 onSaveGlb = ::saveGlb,
                 onShareGlb = ::shareGlb,
                 onExportObj = ::exportObj,
+                onExportGsDataset = ::exportGsDataset,
+                onExportFusedGsDataset = ::exportFusedGsDataset,
                 onBack = { screen = Screen.Capture },
             )
             else -> RingCaptureScreen(

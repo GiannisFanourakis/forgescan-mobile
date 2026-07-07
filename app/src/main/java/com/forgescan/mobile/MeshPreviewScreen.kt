@@ -26,11 +26,15 @@ import java.io.File
 @Composable
 internal fun MeshPreviewScreen(
     glbFile: File,
+    rings: List<ForgeScanRing>,
+    detectedRingGroups: List<List<String>>,
     busyMessage: String?,
     statusMessage: String?,
     onSaveGlb: () -> Unit,
     onShareGlb: () -> Unit,
     onExportObj: () -> Unit,
+    onExportGsDataset: (ringId: String) -> Unit,
+    onExportFusedGsDataset: (ringIds: List<String>) -> Unit,
     onBack: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
@@ -99,6 +103,21 @@ internal fun MeshPreviewScreen(
         ActionButton(text = "Save GLB to Downloads", onClick = onSaveGlb, enabled = busyMessage == null)
         ActionButton(text = "Share GLB", onClick = onShareGlb, enabled = busyMessage == null, secondary = true)
         ActionButton(text = "Export OBJ (.zip)", onClick = onExportObj, enabled = busyMessage == null, secondary = true)
+        // GS export lives here, not on the capture screen: Process (which is
+        // what detects ring groups - RingRegistration.kt) always lands the
+        // user here on success, so this is where the freshly-detected groups
+        // are actually relevant, not a screen they'd have to back out to.
+        detectedRingGroups.forEachIndexed { index, ringIds ->
+            val labels = ringIds.mapNotNull { id -> rings.firstOrNull { it.ringId == id }?.label }
+            if (labels.isEmpty()) return@forEachIndexed
+            val kind = if (ringIds.size > 1) "aligned" else "standalone"
+            ActionButton(
+                text = "Export GS Dataset - Group ${index + 1}: ${labels.joinToString(" + ")} ($kind)",
+                onClick = { if (ringIds.size > 1) onExportFusedGsDataset(ringIds) else onExportGsDataset(ringIds.first()) },
+                enabled = busyMessage == null,
+                secondary = true,
+            )
+        }
         ActionButton(text = "Back", onClick = onBack, enabled = busyMessage == null, secondary = true)
         loadError?.let { Text("Preview load failed: $it", color = AppSecondary) }
         busyMessage?.let { Text(it, color = AppSecondary) }

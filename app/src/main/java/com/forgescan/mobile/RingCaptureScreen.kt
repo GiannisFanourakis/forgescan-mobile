@@ -1,17 +1,8 @@
 package com.forgescan.mobile
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-
-private val RingPresets = listOf("Upright" to "upright", "Tilted" to "tilted", "Underside" to "underside")
 
 @Composable
 internal fun RingCaptureScreen(
@@ -40,47 +31,46 @@ internal fun RingCaptureScreen(
                     enabled = busyMessage == null,
                     secondary = true,
                 )
-                if (project.rings.size > 1) {
-                    ActionButton(
-                        text = "Remove Ring",
-                        onClick = { onRemoveRing(ring.ringId) },
-                        enabled = busyMessage == null,
-                        secondary = true,
-                    )
-                }
-            }
-        }
-
-        Panel {
-            Text("Add Ring", style = MaterialTheme.typography.titleMedium)
-            val existingIds = project.rings.map { it.ringId }.toSet()
-            RingPresets.filter { (_, id) -> id !in existingIds }.forEach { (label, id) ->
+                // GS export lives on the Preview screen, not here - Process
+                // (which detects ring groups) always lands the user on
+                // Preview on success, so that's where the export options
+                // are actually relevant, not a screen they'd have to
+                // navigate back to find.
+                //
+                // Always available, even as the only ring - "Add Ring"
+                // below is unconditional too, so there's no risk of getting
+                // stuck without a way back to zero rings, and there's no
+                // reason removing the last one should need a workaround
+                // (add a second ring, then remove the first) to fix a
+                // mistaken capture.
                 ActionButton(
-                    text = "Add $label",
-                    onClick = { onAddRing(id, label) },
+                    text = "Remove Ring",
+                    onClick = { onRemoveRing(ring.ringId) },
                     enabled = busyMessage == null,
                     secondary = true,
                 )
             }
-            var customLabel by remember { mutableStateOf("") }
-            OutlinedTextField(
-                value = customLabel,
-                onValueChange = { customLabel = it },
-                label = { Text("Custom ring name") },
-                modifier = Modifier.fillMaxWidth(),
-            )
+        }
+
+        Panel {
+            // Ring identity used to double as an elevation assumption
+            // ("Upright" -> 10deg, "Tilted" -> 60deg, etc. -
+            // TurntableGeometry.kt's RingElevationDegrees) before this
+            // session's SfM work started measuring the real elevation from
+            // the footage instead. The name doesn't drive anything
+            // functional anymore, so there's no reason to make the user
+            // pick one - a plain auto-numbered ring is exactly as
+            // meaningful as a hand-picked name now.
+            val existingIds = project.rings.map { it.ringId }.toSet()
             ActionButton(
-                text = "Add Custom Ring",
+                text = "Add Ring",
                 onClick = {
-                    val label = customLabel.trim()
-                    if (label.isNotEmpty()) {
-                        val slug = label.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-                            .ifEmpty { "ring-${existingIds.size + 1}" }
-                        onAddRing(slug, label)
-                        customLabel = ""
-                    }
+                    var n = existingIds.size + 1
+                    while ("ring-$n" in existingIds) n++
+                    onAddRing("ring-$n", "Ring $n")
                 },
-                enabled = busyMessage == null && customLabel.isNotBlank(),
+                enabled = busyMessage == null,
+                secondary = true,
             )
         }
 
