@@ -1,146 +1,98 @@
 # ForgeScan Mobile
 
-ForgeScan Mobile is a controlled object splatting app with turntable-style capture.
+ForgeScan Mobile turns a turntable capture of an object into a textured 3D
+model, entirely on-device (Android, Kotlin + Jetpack Compose). Reconstruction
+is visual-hull (shape-from-silhouette) voxel carving, not Gaussian Splatting
+or NeRF - there is no cloud or AI dependency anywhere in the pipeline.
 
 ```text
-Capture -> Splatting -> Preview -> Export
+Capture -> Process -> Preview -> Export
 ```
 
-Normal user flow:
+## User flow
 
-```text
-1. Capture
-2. Process Scan
-3. Preview & Export
-```
+1. **Capture** - for each "ring" (a named turntable pass at one camera
+   elevation - e.g. "Upright", "Underside", or a custom name), either:
+   - tap **Capture** to hand off to the phone's stock Camera app, then return
+     to ForgeScan and import the photos/video it produced, or
+   - **Import** existing photos or a video directly from the system picker.
 
-Normal user-facing exports are only:
+   A video import auto-extracts up to 120 evenly-spaced frames. A single ring
+   is enough to produce a model - multiple rings are supported but not
+   required.
+2. **Process** - runs the full reconstruction pipeline (below) and moves
+   straight to the preview; no manual steps in between.
+3. **Preview & Export** - orbitable 3D viewer, then Save GLB to Downloads,
+   Share GLB, or Export OBJ (zipped, with its own texture).
 
-```text
-ForgeScan_{projectName}.ksplat
-preview.mp4
-preview.gif
-```
+## Pipeline (`app/src/main/java/com/forgescan/mobile/`)
 
-Everything else is internal project data.
+| Stage | File(s) | What it does |
+|---|---|---|
+| Masking | `BackgroundRemoval.kt` | ML Kit Subject Segmentation per frame produces a binary silhouette + soft alpha mask. A brightness/chroma heuristic also tries to exclude the turntable plate itself (imperfectly - it often still ends up fused into the model). |
+| Geometry calibration | `TurntableSfm.kt` | OpenCV-based: measures each ring's *real* camera elevation and the object's real top/bottom cap radius from the footage itself (ORB feature matching, essential matrix, triangulation), instead of assuming fixed angles. |
+| Carving | `TurntableGeometry.kt`, `VoxelCarver.kt` | 192³ voxel grid carved by silhouette-cone intersection across every populated ring/frame. Tolerates 97% frame agreement (not unanimous) and dilates masks before carving, both to avoid losing thin features to segmentation noise. 26-connectivity component filtering drops carving noise without eating genuine thin geometry; cap-flattening uses the measured cap radius instead of leaving the top/bottom to an unconstrained silhouette guess. |
+| Meshing | `VoxelMesher.kt` | Exposed-face quad extraction, vertex welding, Taubin (λ/μ) smoothing. |
+| Texturing | `MeshColorizer.kt` | Per-vertex color blended from the top-4 best-matching camera views (weighted by normal alignment), welded/averaged across shared vertices for a smoother result. Also bakes a UV-mapped texture atlas, used by the OBJ export's real texture. |
+| Export | `GlbWriter.kt`, `ObjWriter.kt`, `ProjectExporter.kt` | GLB (vertex-colored) and OBJ+MTL+PNG (zipped). |
+| Preview | `MeshPreviewScreen.kt` | SceneView/Filament-based orbit viewer. |
 
-## Current Android Truth
+`ReconstructionPipeline.kt` runs all of this behind the single "Process" button.
 
-- Android dev build is the first real engine target.
-- Expo Go is UI-only for camera capture now; the capture screen reports that a native Android build is required.
-- Android dev build defaults to fixed-camera turntable video capture. This is the primary ForgeScan production path.
-- The main capture UI is video-only: keep the camera still, record one smooth full-turn clip per rotation, then processing extracts evenly spaced frames and assigns object rotation poses from the video timeline.
-- The real scan path does not launch the Android stock camera app. The app controls capture so it can keep project metadata, extract frames deterministically, and process the clip locally.
-- ARCore Tracked Capture code remains in the native module, but normal capture and diagnostics now return a clear disabled result instead of starting ARCore on the affected device path.
-- The current verified Android keyframe path pairs CameraX still frames with ARCore pose metadata and marks those frames as `camera-photo-associated`.
-- `shared-camera-synchronized` is reserved for a future verified Camera2/SharedCamera image stream. The app records `poseSynchronization` so diagnostics and optimizer input never confuse the two modes.
-- Basic Camera Capture is the working stable capture path for the current phone test. It is fixed-camera turntable capture and uses frame-order object rotation for splat processing.
-- Android dev build uses a native CameraX full-screen preview for ForgeScan controls, pinch/toolbar zoom, and video capture.
-- Video capture requests CameraX UHD/2160p when selected; actual 4K/60 availability depends on the phone's CameraX quality profiles.
-- Native Camera2 hardware diagnostics inspect manual control, RAW, OIS/video stabilization, logical multi-camera, physical lenses, focal lengths, native zoom, ISO range, shutter range, and focus distance.
-- Manual ISO/shutter/focus locks run through Camera2 interop on Android devices that expose `MANUAL_SENSOR`.
-- Android V1 defaults to Google ML Kit Subject Segmentation for on-phone object/background masking.
-- Android masking is ML Kit-first with confidence threshold `0.85`.
-- With ARCore disabled, ForgeScan uses video-derived fixed-camera turntable poses. It does not need free-camera AR poses for the normal turntable workflow.
-- Android fixed-camera turntable Gaussian Splat V1 is local/on-phone.
-- The Android local splat optimizer uses frame-order object rotation as the primary production path, and uses camera intrinsics/extrinsics only when a future free-camera tracked capture path is available.
-- The `.ksplat` writer status is `experimental-ksplat`; it writes a real non-empty file and validates existence/size, but broad viewer compatibility is not claimed.
-- `preview.mp4` and `preview.gif` require future native preview rendering.
-- React Native New Architecture is disabled to avoid Windows long-path native C++ build failures.
+## Current known problem
 
-No fake `.ksplat` is created. `.ksplat` is marked Generated only when the file exists and size is greater than 0.
+The in-app GLB preview renders **vertex colors only**, not the real UV
+texture atlas `MeshColorizer.kt` bakes. This build's SceneView/Filament
+dependency (`io.github.sceneview:sceneview:4.18.0`, pinning Filament
+`1.71.5`) never binds embedded glTF `baseColorTexture` images. Confirmed by
+decompiling the actual resolved `ResourceLoader.class`: its constructor's own
+bytecode registers an STB texture provider for `image/png` - matching
+Filament's upstream source at this exact version - yet `Missing texture
+provider for image/png` still fires at runtime for every approach tried
+(embedded GLB texture via glTF materials, and a manually-constructed
+`Texture`/`MaterialInstance` via Filament's core API directly, with and
+without mipmaps). Root cause not yet found. The OBJ export's texture is
+unaffected, since that path never touches `ResourceLoader` - `map_Kd`
+references a plain external PNG file.
 
-## Android Processing Order
+Separately, a single-ring capture still loses thin protruding features (a
+handle, on the current test object) more often than not. Masks are now
+dilated before carving and the carving rule tolerates some per-frame
+disagreement, both aimed at this specifically, but neither has yet been
+confirmed to reliably recover a real handle from real device footage.
 
-```text
-validate capture
--> record rotation video clips
--> extract evenly spaced frames from video
--> generate fixed-camera turntable object poses from frame index and rotation metadata
--> ML Kit Subject Segmentation masks at confidence >= 0.85
--> fallback-local only if ML Kit is unavailable/fails
--> verify mask file exists and size > 0
--> fixed-camera-turntable-3dgs-android-v1
--> trainable-3dgs-android-v1 fallback if turntable production V1 cannot initialize
--> coarse-on-device-splat-v1 fallback if trainable V1 fails
--> write ForgeScan_{projectName}.ksplat
--> validate extension, existence, and size > 0
--> register/export .ksplat
-```
-
-Internal masks are written to:
-
-```text
-advanced/masks/raw/{rotation}/frame_001.png
-advanced/masks/refined/{rotation}/frame_001.png
-```
-
-Internal camera and optimizer data are written to:
-
-```text
-advanced/camera/keyframes.json
-advanced/camera/keyframe-summary.json
-advanced/splatting/ksplat-optimizer-input.json
-```
-
-## Native Engine Diagnostics
-
-`Native Engine Diagnostics` remains a developer troubleshooting route.
-It is not shown in the normal home flow.
-
-Buttons:
-
-- `Test Android Camera Hardware`
-- `Test ARCore Availability`
-- `Start ARCore Session Test`
-- `Capture One Tracked Keyframe`
-- `Run Timed Keyframe Capture Test`
-- `Validate Current Tracked Capture`
-- `Export Keyframe Metadata Summary`
-- `Show Last Pose Matrix`
-- `Test ML Kit Availability`
-- `Run One-Frame ML Kit Mask Test`
-- `Test Gaussian Splat Optimizer`
-- `Run Tiny Gaussian Training Test`
-- `Run Tiny .ksplat Writer Test`
-- `Run Full Android Scan Test`
-
-Diagnostics show Android camera hardware support, ARCore/SharedCamera status, Camera2 session availability, intrinsics/extrinsics capture, pose synchronization mode, lock support, ML Kit status, mask threshold, optimizer pose source, `.ksplat` writer status, last output paths/sizes, and native errors.
-
-## Commands
+## Build
 
 ```bash
-npm install
-npm run typecheck
-npx expo prebuild
-npx expo run:android
+./gradlew :app:installDebug
 ```
 
-Metro:
+Requires a connected device/emulator (`adb devices`). `OpenCVLoader.initLocal()`
+(used for the elevation/cap measurements in `TurntableSfm.kt`) loads a native
+library bundled by `org.opencv:opencv` for Android; there is no desktop/JVM
+equivalent, so those measurements can't be exercised from a plain
+`./gradlew test` run on a dev machine - only on-device.
 
-```bash
-npm run start
-```
+## Repo layout note
 
-There is no `npm test` script yet.
+Only `:app` (this Kotlin/Compose module) is listed in `settings.gradle.kts`
+and actively built. `native/`, `docs/`, and the root-level `assets/` predate
+a full rewrite (see git history: "Rewrite ForgeScan Mobile as native
+Kotlin/Compose visual-hull pipeline") away from an older React Native/Expo +
+Gaussian-Splatting architecture, and aren't referenced by the current build -
+`docs/` in particular describes that old design, not this one.
 
-Windows SDK/JDK environment example:
+## Known limitations
 
-```powershell
-$env:JAVA_HOME="$env:LOCALAPPDATA\Programs\Temurin\jdk-17"
-$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
-$env:ANDROID_SDK_ROOT="$env:LOCALAPPDATA\Android\Sdk"
-$env:Path="$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\emulator;$env:ANDROID_HOME\cmdline-tools\latest\bin;$env:Path"
-```
-
-## Known Limitations
-
-- ARCore SharedCamera session/keyframe APIs are implemented for Android dev builds, but ARCore start/capture is disabled in this build after a native `libarcore_c.so` crash on the POCO X7 Pro test device.
-- The current tracked keyframe flow pairs the native CameraX still frame with ARCore pose metadata and is marked `camera-photo-associated`, not `shared-camera-synchronized`.
-- A deeper Camera2 SharedCamera synchronized image stream is still future hardening.
-- Manual ISO/shutter/focus depends on the device exposing Camera2 `MANUAL_SENSOR`; otherwise the capture menu keeps auto mode.
-- Fixed-camera turntable 3DGS V1 is the production target for the current Android app. It is phone-safe and lower quality than desktop CUDA-class 3DGS.
-- GPU/Vulkan compute is prepared only; CPU/local V1 is the working path.
-- `.ksplat` writer is experimental.
-- MP4/GIF preview rendering is not implemented yet.
-- iOS native engines remain secondary.
+- Visual hull cannot carve true concavities (e.g. the inside of a handle's
+  gap) - only silhouette-consistent solid shapes. A thin *solid* protrusion
+  should still be recoverable from a single ring in principle; a true hollow
+  would need photo-consistency ("space") carving instead, which this app
+  does not implement.
+- No traditional camera calibration (no checkerboard/marker) - relies on an
+  assumed field of view plus the measured elevation.
+- The turntable surface is not reliably excluded from the model yet.
+- A single elevation ring leaves the very top/bottom cap shape under-
+  constrained by silhouettes alone; the measured cap-radius fix approximates
+  it but doesn't replace real coverage from a second ring at a different
+  elevation.
