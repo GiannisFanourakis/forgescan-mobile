@@ -49,6 +49,16 @@ private class MaskResult(val alpha: Bitmap, val silhouette: BooleanArray, val wi
 // different elevations/backgrounds. Writes both a soft-alpha cutout (for
 // later texture edge blending) and a binary silhouette (for visual hull
 // carving) per frame.
+//
+// Skips entirely (no segmenter load, no per-frame work) when every frame
+// already has both output files on disk - masking is the slowest part of
+// Process (a full ML Kit pass per frame), and re-running it on unchanged
+// frames every single Process tap wastes real time for no different result.
+// Existence-only check: doesn't try to detect "masking logic changed since
+// these were written" (e.g. correctConfidenceAgainstBackgroundPlate's fix) -
+// that would need a version stamp this doesn't have yet, so a mask-logic
+// change requires manually clearing rings/<id>/masks/ once to force a
+// fresh pass, same as clearing any other cache.
 suspend fun maskRing(
     context: Context,
     project: ForgeScanProject,
@@ -59,11 +69,15 @@ suspend fun maskRing(
     val ring = project.rings.first { it.ringId == ringId }
     val frames = ring.frames
     if (frames.isEmpty()) return
+    val maskDir = ringMaskDir(context, project.projectId, ringId)
+    if (isRingAlreadyMasked(maskDir, frames.size)) {
+        onProgress(frames.size, frames.size)
+        return
+    }
     val segmenter = SubjectSegmentation.getClient(SubjectSegmenterOptionsInstance)
     try {
         ensureSubjectSegmentationModelReady(context, segmenter, onPreparing)
         val total = frames.size
-        val maskDir = ringMaskDir(context, project.projectId, ringId)
         val backgroundPlate = buildBackgroundPlate(context, frames)
         val adjacentSimilarity = computeAdjacentSimilarity(context, frames)
 
@@ -116,6 +130,15 @@ suspend fun maskRing(
     } finally {
         segmenter.close()
     }
+}
+
+private fun isRingAlreadyMasked(maskDir: File, frameCount: Int): Boolean {
+    for (index in 0 until frameCount) {
+        val alphaFile = File(maskDir, "frame-${index.toFrameNumber()}-alpha.png")
+        val silhouetteFile = File(maskDir, "frame-${index.toFrameNumber()}-silhouette.png")
+        if (!alphaFile.exists() || !silhouetteFile.exists()) return false
+    }
+    return true
 }
 
 private fun writeSilhouettePng(silhouette: BooleanArray, width: Int, height: Int, file: File) {
@@ -227,6 +250,43 @@ private fun buildBackgroundPlate(context: Context, frames: List<ForgeScanFrame>)
     return BackgroundPlate(width, height, plate)
 }
 
+// Corrects ML Kit's per-pixel confidence against the ring's own temporal
+// background plate (buildBackgroundPlate) in BOTH directions, not just the
+// one this originally shipped with:
+// - Ambiguous confidence AND matches the background plate -> push to
+//   background. Original behavior: resolves a genuinely uncertain
+//   prediction using color evidence.
+// - Confidently "background" (below AmbiguousLow) but does NOT match the
+//   background plate -> push to foreground. New: catches ML Kit being
+//   confidently WRONG, not just uncertain. Confirmed on a real capture that
+//   the ambiguous-only version let real defects through - a ring's
+//   rock-and-pole mount missing entirely in one frame, a hole cut clean
+//   through the subject's body in another - because ML Kit's wrong
+//   prediction there wasn't uncertain, it was a confident 0. A pixel that
+//   looks nothing like the modeled background is strong evidence it's real
+//   foreground regardless of what a single frame's segmentation guessed in
+//   isolation, and false positives this rescues are exactly the kind of
+//   noise carving already tolerates (97% agreement, keepLargestComponent) -
+//   whereas the false negatives it fixes were carving away real geometry
+//   with high, uncontested confidence.
+internal fun correctConfidenceAgainstBackgroundPlate(
+    pixels: IntArray,
+    confidence: FloatArray,
+    backgroundPlatePixels: IntArray,
+): FloatArray {
+    val corrected = confidence.copyOf()
+    for (i in confidence.indices) {
+        val c = confidence[i]
+        val matchesBackground = colorsClose(pixels[i], backgroundPlatePixels[i], BackgroundMatchTolerance)
+        if (c in AmbiguousLow..AmbiguousHigh && matchesBackground) {
+            corrected[i] = 0f
+        } else if (c < AmbiguousLow && !matchesBackground) {
+            corrected[i] = 1f
+        }
+    }
+    return corrected
+}
+
 private fun colorsClose(a: Int, b: Int, tolerance: Int): Boolean {
     val dr = ((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)
     val dg = ((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)
@@ -242,15 +302,10 @@ private fun cutoutForeground(
     backgroundPlate: BackgroundPlate?,
 ): MaskResult {
     val pixelCount = width * height
-    val confidenceValues = confidence.copyOf()
-
-    if (backgroundPlate != null && backgroundPlate.width == width && backgroundPlate.height == height) {
-        for (i in 0 until pixelCount) {
-            val c = confidenceValues[i]
-            if (c in AmbiguousLow..AmbiguousHigh && colorsClose(pixels[i], backgroundPlate.pixels[i], BackgroundMatchTolerance)) {
-                confidenceValues[i] = 0f
-            }
-        }
+    val confidenceValues = if (backgroundPlate != null && backgroundPlate.width == width && backgroundPlate.height == height) {
+        correctConfidenceAgainstBackgroundPlate(pixels, confidence, backgroundPlate.pixels)
+    } else {
+        confidence.copyOf()
     }
 
     val rawForeground = BooleanArray(pixelCount) { confidenceValues[it] >= 0.5f }
