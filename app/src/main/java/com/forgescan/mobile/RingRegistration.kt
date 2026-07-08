@@ -6,18 +6,12 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.sin
-import org.opencv.android.Utils
 import org.opencv.calib3d.Calib3d
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.MatOfDMatch
-import org.opencv.core.MatOfKeyPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
-import org.opencv.features2d.DescriptorMatcher
-import org.opencv.features2d.ORB
-import org.opencv.imgproc.Imgproc
 
 // Detects whether two of a project's rings observe the SAME physical
 // turntable session closely enough to be fused into one Gaussian-splat
@@ -43,6 +37,14 @@ internal class RingRegistration(
     val pairsAttempted: Int,
     val pairsSucceeded: Int,
     val phaseResidualDegrees: Double,
+    // True when verticalOffset came from real silhouette-hull agreement
+    // (RingPhaseSearch.kt - safe to feed into carving), false when it's only
+    // this file's coarse sin(eA)-sin(eB) elevation-gap approximation - good
+    // enough for GS export's forgiving photometric refinement, never
+    // validated for carving's precision needs. registerRingsRobust
+    // (RingPhaseSearch.kt) re-measures this whenever the feature path below
+    // succeeds, rather than trusting the approximation for carving.
+    val verticalOffsetMeasured: Boolean = false,
 )
 
 // The relative azimuth phase between two independently-started recordings
@@ -220,7 +222,7 @@ internal fun solveAzimuthPhaseCandidates(
 // substantially more work). Good enough to seed a fused point cloud without
 // a visible split between the two rings' contributions - not a claim of
 // precise alignment.
-private fun estimateVerticalOffset(elevationADegrees: Double, elevationBDegrees: Double): Double {
+internal fun estimateVerticalOffset(elevationADegrees: Double, elevationBDegrees: Double): Double {
     val elevationA = Math.toRadians(elevationADegrees)
     val elevationB = Math.toRadians(elevationBDegrees)
     return sin(elevationA) - sin(elevationB)
@@ -273,17 +275,27 @@ internal fun clusterPhaseSolutions(
     return best
 }
 
-// Mirrors TurntableSfm.kt's attemptMeasurePair almost exactly (masked ORB,
-// ratio test, disparity filter, essential matrix, recoverPose, axis+angle
-// extraction) but pulls its two frames from two DIFFERENT rings' mask
-// directories instead of two indices into one ring - kept as a separate
-// function rather than a generalized shared one to avoid touching the
-// already-tuned within-ring pipeline for a same-shape-but-different-purpose
-// caller. No full-frame fallback here (unlike the within-ring version):
-// cross-ring frames come from genuinely different viewpoints/elevations, so
-// static-background contamination is less dominant, and a failed masked
-// attempt across rings is just as informative logged as a failure as
-// retried unmasked.
+// Learned-matcher counterpart of TurntableSfm.kt's attemptMeasurePair
+// (LearnedMatcher.kt's SuperPoint+LightGlue pipeline instead of masked ORB +
+// BFMatcher, everything downstream of matching - disparity filter, essential
+// matrix, recoverPose, axis+angle extraction - unchanged). ORB was tried
+// here first and replaced: cross-ring frames span a much larger viewpoint
+// change than within-ring consecutive frames (a large elevation gap between
+// rings is the NORMAL case, not an edge case - rings are deliberately
+// captured far apart in elevation for hull coverage), and ORB's hand-crafted
+// descriptor collapses under exactly that change. Confirmed on a real
+// capture: ORB found a usable match in only 4/64 sampled pairs (3
+// geometrically impossible), while this matcher found many more raw matches
+// per pair and, critically, multiple independently-plausible pairs whose
+// implied phase offsets actually clustered - real corroborating evidence
+// clusterPhaseSolutions (below) needs, not a lucky single match.
+//
+// The model runs on the FULL frame, not a masked cutout: it was trained on
+// natural images, and feeding it an artificially-blacked-out background is
+// out-of-distribution input, not a help. Restricting to on-object
+// correspondences happens as a post-filter against the same silhouette mask
+// ORB used directly, discarding rather than never detecting matches on the
+// background/turntable.
 private fun attemptCrossRingPair(
     context: Context,
     projectId: String,
@@ -295,44 +307,15 @@ private fun attemptCrossRingPair(
     val bitmapA = openScaledFrameBitmap(context, ringA.frames[indexA].uri, FeatureImageMaxSide)
     val bitmapB = openScaledFrameBitmap(context, ringB.frames[indexB].uri, FeatureImageMaxSide)
     try {
-        val matA = Mat()
-        val matB = Mat()
-        Utils.bitmapToMat(bitmapA, matA)
-        Utils.bitmapToMat(bitmapB, matB)
-        Imgproc.cvtColor(matA, matA, Imgproc.COLOR_RGBA2GRAY)
-        Imgproc.cvtColor(matB, matB, Imgproc.COLOR_RGBA2GRAY)
+        val maskA = loadFeatureMask(context, projectId, ringA, indexA, bitmapA.width, bitmapA.height) ?: return null
+        val maskB = loadFeatureMask(context, projectId, ringB, indexB, bitmapB.width, bitmapB.height) ?: return null
 
-        val maskA = loadFeatureMask(context, projectId, ringA, indexA, matA.width(), matA.height()) ?: return null
-        val maskB = loadFeatureMask(context, projectId, ringB, indexB, matB.width(), matB.height()) ?: return null
+        val rawMatches = LearnedMatcher.match(context, bitmapA, bitmapB)
+        val onObject = rawMatches.filter { m -> maskContains(maskA, m.ax, m.ay) && maskContains(maskB, m.bx, m.by) }
+        if (onObject.size < MinInlierMatches) return null
 
-        val orb = ORB.create(800)
-        val keypointsA = MatOfKeyPoint()
-        val keypointsB = MatOfKeyPoint()
-        val descriptorsA = Mat()
-        val descriptorsB = Mat()
-        orb.detectAndCompute(matA, maskA, keypointsA, descriptorsA)
-        orb.detectAndCompute(matB, maskB, keypointsB, descriptorsB)
-        val listA = keypointsA.toList()
-        val listB = keypointsB.toList()
-        if (descriptorsA.empty() || descriptorsB.empty()) return null
-
-        val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
-        val knn = ArrayList<MatOfDMatch>()
-        matcher.knnMatch(descriptorsA, descriptorsB, knn, 2)
-
-        val ptsA = ArrayList<Point>()
-        val ptsB = ArrayList<Point>()
-        for (m in knn) {
-            val candidates = m.toArray()
-            if (candidates.size < 2) continue
-            val best = candidates[0]
-            val second = candidates[1]
-            if (best.distance < 0.75f * second.distance) {
-                ptsA += listA[best.queryIdx].pt
-                ptsB += listB[best.trainIdx].pt
-            }
-        }
-        if (ptsA.size < MinInlierMatches) return null
+        val ptsA = onObject.map { Point(it.ax.toDouble(), it.ay.toDouble()) }
+        val ptsB = onObject.map { Point(it.bx.toDouble(), it.by.toDouble()) }
 
         val disparities = ptsA.indices.map { i -> disparityPx(ptsA[i], ptsB[i]) }
         val keptIndices = ptsA.indices.filter { i -> disparities[i] >= MinMatchDisparityPx }
@@ -340,8 +323,8 @@ private fun attemptCrossRingPair(
         val filteredPtsB = keptIndices.map { ptsB[it] }
         if (filteredPtsA.size < MinInlierMatches) return null
 
-        val focal = estimateFocalLengthPixels(matA.width(), matA.height())
-        val principalPoint = Point(matA.width() / 2.0, matA.height() / 2.0)
+        val focal = estimateFocalLengthPixels(bitmapA.width, bitmapA.height)
+        val principalPoint = Point(bitmapA.width / 2.0, bitmapA.height / 2.0)
         val cameraMatrix = Mat.eye(3, 3, CvType.CV_64F)
         cameraMatrix.put(0, 0, focal)
         cameraMatrix.put(1, 1, focal)
@@ -350,6 +333,7 @@ private fun attemptCrossRingPair(
 
         val points1 = MatOfPoint2f(*filteredPtsA.toTypedArray())
         val points2 = MatOfPoint2f(*filteredPtsB.toTypedArray())
+        Core.setRNGSeed(OpenCvRansacSeed)
         val essential = Calib3d.findEssentialMat(points1, points2, cameraMatrix, Calib3d.RANSAC, 0.999, 1.0)
         if (essential.empty() || essential.rows() != 3) return null
 
@@ -367,9 +351,18 @@ private fun attemptCrossRingPair(
     }
 }
 
+private fun maskContains(mask: Mat, x: Float, y: Float): Boolean {
+    val xi = x.toInt()
+    val yi = y.toInt()
+    if (xi < 0 || yi < 0 || xi >= mask.width() || yi >= mask.height()) return false
+    return mask.get(yi, xi)[0] > 0.0
+}
+
 // Union-find over every populated, masked ring in the project: an edge
-// exists wherever registerRings succeeds, and the final groups are the
-// connected components - so a chain of pairwise-successful alignments
+// exists wherever registerRingsRobust succeeds (feature-based registration
+// first, silhouette phase search fallback - RingPhaseSearch.kt), and the
+// final groups are the connected components - so a chain of
+// pairwise-successful alignments
 // transitively fuses into one group even if the two end rings never overlap
 // directly (e.g. an "upright" ring might register against a "tilted" ring
 // that itself registers against an "underside" ring, fusing all three, even
@@ -409,9 +402,9 @@ internal fun detectRingGroups(context: Context, project: ForgeScanProject): List
         for (j in i + 1 until populated.size) {
             val ringA = populated[i]
             val ringB = populated[j]
-            val registration = registerRings(
+            val registration = registerRingsRobust(
                 context,
-                project.projectId,
+                project,
                 ringA,
                 elevations.getValue(ringA.ringId),
                 ringB,

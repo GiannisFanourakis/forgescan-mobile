@@ -80,6 +80,13 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     implementation("io.github.sceneview:sceneview:4.18.0")
     implementation("org.opencv:opencv:4.9.0")
+    // Runs the SuperPoint+LightGlue learned matcher (LearnedMatcher.kt) -
+    // ORB collapses on cross-ring pairs (a large elevation gap is a much
+    // wider viewpoint change than ORB's hand-crafted descriptor tolerates;
+    // confirmed on a real capture where 60/64 sampled cross-ring pairs found
+    // no usable match at all). CPU-only build: no GPU/NNAPI execution
+    // provider complexity for this first pass.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

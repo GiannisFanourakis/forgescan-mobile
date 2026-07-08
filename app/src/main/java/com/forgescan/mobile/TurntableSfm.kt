@@ -62,6 +62,15 @@ private const val MaxPairsPerRing = 16
 // held to the exact same matching standard as within-ring pairs are.
 internal const val FeatureImageMaxSide = 640
 internal const val MinInlierMatches = 12
+// findEssentialMat/recoverPose are RANSAC-based and read from OpenCV's
+// global RNG (Core.setRNGSeed), which is otherwise seeded from wall-clock
+// time - reprocessing the exact same frames/matches could recover a
+// different rotation on a different run for no reason a log could explain.
+// Seeding it before every essential-matrix estimation (this file and
+// RingRegistration.kt) makes a measurement reproducible: same input, same
+// output, every time - a precondition for trusting any single run's result
+// at all, separate from whether that result is itself correct.
+internal const val OpenCvRansacSeed = 42
 
 // Typical rear-camera horizontal field of view for a modern phone main lens,
 // i.e. the lens's native WIDE axis - a phone's camera module is physically
@@ -488,6 +497,7 @@ private fun attemptMeasurePair(
 
         val points1 = MatOfPoint2f(*filteredPtsA.toTypedArray())
         val points2 = MatOfPoint2f(*filteredPtsB.toTypedArray())
+        Core.setRNGSeed(OpenCvRansacSeed)
         val essential = Calib3d.findEssentialMat(points1, points2, cameraMatrix, Calib3d.RANSAC, 0.999, 1.0)
         if (essential.empty() || essential.rows() != 3) {
             Log.d(
