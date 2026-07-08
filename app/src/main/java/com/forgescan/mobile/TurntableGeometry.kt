@@ -63,6 +63,7 @@ internal fun loadRingSilhouettes(
     project: ForgeScanProject,
     ring: ForgeScanRing,
     azimuthPhaseOffsetDegrees: Float = 0f,
+    verticalOffsetWorld: Float = 0f,
 ): RingSilhouettes? {
     val frameCount = ring.frames.size
     if (frameCount == 0) return null
@@ -74,55 +75,17 @@ internal fun loadRingSilhouettes(
     }
     if (silhouettes.size != frameCount) return null
 
-    // The measurement is a magnitude in [0, 90] (how face-on vs. top-down the
-    // camera was for this ring's own footage); the "underside" ring is the
-    // object physically flipped over, so a successful measurement is placed
-    // past 180 in the canonical frame, mirroring what the old hardcoded 190
-    // (180 + 10) encoded, but using this ring's own measured shallowness
-    // instead of assuming it matches the upright ring's. A failed measurement
-    // (too little texture/too few frames) falls back to the old hardcoded
-    // per-ring constant, already expressed in final canonical-frame terms.
-    val measuredMagnitude = estimateRingElevationDegrees(context, project.projectId, ring)
-    val elevationDegrees = if (measuredMagnitude != null) {
-        if (ring.ringId == "underside") 180f + measuredMagnitude else measuredMagnitude
-    } else {
-        RingElevationDegrees[ring.ringId] ?: DefaultElevationDegrees
-    }
-    val elevationRad = Math.toRadians(elevationDegrees.toDouble())
-    val cosE = cos(elevationRad).toFloat()
-    val sinE = sin(elevationRad).toFloat()
-    // Tried measuring the actual cumulative rotation angle per frame
-    // (epipolar geometry between real frame pairs, same idea as the
-    // elevation measurement above) instead of assuming perfectly even
-    // spacing. Reverted: unlike elevation - a median across ~16 independent
-    // measurements, where noise doesn't compound - the angle measurement
-    // summed ~16-17 sequential segments into a running total, so any small
-    // per-segment bias accumulated linearly across the sequence. On the
-    // capture this was tested against, later frames' assumed angle drifted
-    // enough to over-carve real geometry that should have survived (the
-    // turntable's true width and the handle both visibly shrank versus a
-    // capture with identical masks run through the uniform assumption).
-    // Simple uniform spacing is a weaker model of the real turntable, but
-    // it doesn't have a failure mode that gets worse the longer the ring is.
-    //
+    val elevationDegrees = resolveRingElevationDegrees(context, project.projectId, ring)
     // azimuthPhaseOffsetDegrees shifts this ring's whole azimuth track by a
-    // constant - the relative phase RingRegistration.kt's registerRings
-    // solved for, when this ring is being combined with another one for
-    // carving. Zero for a single-ring carve (the default) or for whichever
-    // ring in a combined carve is being treated as the reference; carving
-    // multiple rings together without this correction silently assumes
-    // every ring's frame 0 landed on the same real-world azimuth, which two
-    // independently-captured rings have no reason to satisfy.
-    val projections = (0 until frameCount).map { i ->
-        val angleDegrees = i.toFloat() / frameCount * 360f + azimuthPhaseOffsetDegrees
-        val angleRad = Math.toRadians(angleDegrees.toDouble())
-        val cosA = cos(angleRad).toFloat()
-        val sinA = sin(angleRad).toFloat()
-        FrameProjection(
-            ux = cosA, uy = 0f, uz = sinA,
-            vx = sinA * sinE, vy = cosE, vz = -cosA * sinE,
-        )
-    }
+    // constant - the relative phase cross-ring registration solved for
+    // (RingRegistration.kt / RingPhaseSearch.kt), when this ring is being
+    // combined with another one for carving. Zero for a single-ring carve
+    // (the default) or for whichever ring in a combined carve is being
+    // treated as the reference; carving multiple rings together without
+    // this correction silently assumes every ring's frame 0 landed on the
+    // same real-world azimuth, which two independently-captured rings have
+    // no reason to satisfy.
+    val projections = buildRingProjections(frameCount, elevationDegrees, azimuthPhaseOffsetDegrees)
 
     // Union bounding box across every frame in this ring (not per-frame -
     // that would rescale the object to fill each shot and destroy the width
@@ -154,7 +117,67 @@ internal fun loadRingSilhouettes(
     // grid boundary, which could clip thin protruding parts right at the edge.
     val halfExtent = if (hasSilhouette) maxOf(maxU - minU, maxV - minV) / 2f * 1.08f else 1f
 
-    return RingSilhouettes(ring.ringId, projections, silhouettes, SilhouetteGridSize, centerU, centerV, halfExtent)
+    // verticalOffsetWorld lifts this ring's whole sampling window so its
+    // object lines up in height with another ring it's being carved
+    // together with (RingPhaseSearch.kt measures the value jointly with the
+    // azimuth phase). Each ring centers on its own silhouette union bbox,
+    // and the turntable disk inflates that bbox differently at different
+    // elevations, so two rings' "v=0" don't refer to the same physical
+    // height. Sampling world point (x, y+dy, z) shifts rawV by dy*cos(E)
+    // (V's y component is cos(E) and U's is 0), which folds into a constant
+    // centerV adjustment of dy*cos(E)*halfExtent - identical math to how
+    // the phase search scored the offset, so carve and search agree by
+    // construction.
+    val adjustedCenterV = centerV +
+        verticalOffsetWorld * cos(Math.toRadians(elevationDegrees.toDouble())).toFloat() * halfExtent
+
+    return RingSilhouettes(ring.ringId, projections, silhouettes, SilhouetteGridSize, centerU, adjustedCenterV, halfExtent)
+}
+
+// The measurement is a magnitude in [0, 90] (how face-on vs. top-down the
+// camera was for this ring's own footage); the "underside" ring is the
+// object physically flipped over, so a successful measurement is placed
+// past 180 in the canonical frame, mirroring what the old hardcoded 190
+// (180 + 10) encoded, but using this ring's own measured shallowness
+// instead of assuming it matches the upright ring's. A failed measurement
+// (too little texture/too few frames) falls back to the old hardcoded
+// per-ring constant, already expressed in final canonical-frame terms.
+internal fun resolveRingElevationDegrees(context: Context, projectId: String, ring: ForgeScanRing): Float {
+    val measuredMagnitude = estimateRingElevationDegrees(context, projectId, ring)
+    return if (measuredMagnitude != null) {
+        if (ring.ringId == "underside") 180f + measuredMagnitude else measuredMagnitude
+    } else {
+        RingElevationDegrees[ring.ringId] ?: DefaultElevationDegrees
+    }
+}
+
+// Tried measuring the actual cumulative rotation angle per frame (epipolar
+// geometry between real frame pairs, same idea as the elevation
+// measurement) instead of assuming perfectly even spacing. Reverted: unlike
+// elevation - a median across ~16 independent measurements, where noise
+// doesn't compound - the angle measurement summed ~16-17 sequential
+// segments into a running total, so any small per-segment bias accumulated
+// linearly across the sequence. On the capture this was tested against,
+// later frames' assumed angle drifted enough to over-carve real geometry
+// that should have survived (the turntable's true width and the handle both
+// visibly shrank versus a capture with identical masks run through the
+// uniform assumption). Simple uniform spacing is a weaker model of the real
+// turntable, but it doesn't have a failure mode that gets worse the longer
+// the ring is.
+internal fun buildRingProjections(frameCount: Int, elevationDegrees: Float, azimuthPhaseOffsetDegrees: Float): List<FrameProjection> {
+    val elevationRad = Math.toRadians(elevationDegrees.toDouble())
+    val cosE = cos(elevationRad).toFloat()
+    val sinE = sin(elevationRad).toFloat()
+    return (0 until frameCount).map { i ->
+        val angleDegrees = i.toFloat() / frameCount * 360f + azimuthPhaseOffsetDegrees
+        val angleRad = Math.toRadians(angleDegrees.toDouble())
+        val cosA = cos(angleRad).toFloat()
+        val sinA = sin(angleRad).toFloat()
+        FrameProjection(
+            ux = cosA, uy = 0f, uz = sinA,
+            vx = sinA * sinE, vy = cosE, vz = -cosA * sinE,
+        )
+    }
 }
 
 private fun decodeSilhouette(file: File, targetSize: Int): BooleanArray {

@@ -180,8 +180,10 @@ suspend fun exportFusedGaussianSplatDataset(context: Context, project: ForgeScan
             // could, rarely, fail to re-register at export time. Excluding
             // it then (rather than exporting with a stale/guessed offset) is
             // the same "honest null over a confident guess" policy as
-            // everywhere else in this pipeline.
-            val registration = registerRings(context, project.projectId, reference, referenceElevation, ring, elevationDegrees)
+            // everywhere else in this pipeline. (The silhouette phase-search
+            // fallback inside registerRingsRobust is deterministic, so a
+            // group formed by that path always re-registers identically.)
+            val registration = registerRingsRobust(context, project, reference, referenceElevation, ring, elevationDegrees)
             if (registration == null) {
                 Log.d(
                     "ForgeScan",

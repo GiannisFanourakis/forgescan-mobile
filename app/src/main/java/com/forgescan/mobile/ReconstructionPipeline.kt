@@ -71,6 +71,7 @@ suspend fun runReconstructionPipeline(
     val carvingRings = carvingGroup.mapNotNull { id -> populatedRings.firstOrNull { it.ringId == id } }
     val carvingReference = carvingRings.firstOrNull()
     val azimuthOffsetDegrees = HashMap<String, Float>()
+    val verticalOffsetWorld = HashMap<String, Float>()
     if (carvingReference != null) {
         azimuthOffsetDegrees[carvingReference.ringId] = 0f
         val referenceElevation = (estimateRingElevationDegrees(context, project.projectId, carvingReference)
@@ -79,12 +80,25 @@ suspend fun runReconstructionPipeline(
             if (ring.ringId == carvingReference.ringId) continue
             val ringElevation = (estimateRingElevationDegrees(context, project.projectId, ring)
                 ?: ringElevationFallbackDegrees(ring.ringId)).toDouble()
-            val registration = registerRings(context, project.projectId, carvingReference, referenceElevation, ring, ringElevation)
+            val registration = registerRingsRobust(context, project, carvingReference, referenceElevation, ring, ringElevation)
             azimuthOffsetDegrees[ring.ringId] = (registration?.azimuthPhaseOffsetDegrees ?: 0.0).toFloat()
+            // verticalOffsetMeasured is false only if registerRingsRobust
+            // somehow returned the feature path's raw, un-refined result -
+            // shouldn't happen (it refines or returns null), but this is the
+            // same "don't steer carving with an unvalidated number" guard
+            // either way.
+            verticalOffsetWorld[ring.ringId] =
+                if (registration?.verticalOffsetMeasured == true) registration.verticalOffset.toFloat() else 0f
         }
     }
     val ringSilhouettes = carvingRings.mapNotNull { ring ->
-        loadRingSilhouettes(context, project, ring, azimuthOffsetDegrees[ring.ringId] ?: 0f)
+        loadRingSilhouettes(
+            context,
+            project,
+            ring,
+            azimuthOffsetDegrees[ring.ringId] ?: 0f,
+            verticalOffsetWorld[ring.ringId] ?: 0f,
+        )
     }
     require(ringSilhouettes.isNotEmpty()) { "Masking did not produce usable silhouettes." }
 
@@ -100,9 +114,15 @@ suspend fun runReconstructionPipeline(
     val filteredGrid = keepLargestComponent(carvedGrid)
 
     onStatus("Measuring cap geometry...")
+    // Cap shaping (flattenCaps) was removed on request: it stamped a
+    // measured cap-to-body radius onto the top/bottom taper zone rather than
+    // leaving a single-elevation ring's raw, unconstrained silhouette taper
+    // (which points to a cone regardless of the object's real cap shape,
+    // since grazing rays there can't distinguish flat from rounded). Only
+    // heightToBodyRadius (turntable-base removal) still uses this
+    // measurement now.
     val capFractions = estimateCapRadiusFractions(context, project.projectId, populatedRings)
-    val strippedGrid = stripTurntableBase(filteredGrid, capFractions?.heightToBodyRadius)
-    val grid = flattenCaps(strippedGrid, capFractions?.top, capFractions?.bottom)
+    val grid = stripTurntableBase(filteredGrid, capFractions?.heightToBodyRadius)
 
     onStatus("Building mesh...")
     val rawMesh = meshFromVoxelGrid(grid)
