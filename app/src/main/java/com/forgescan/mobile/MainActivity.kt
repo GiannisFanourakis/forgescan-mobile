@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -48,7 +47,6 @@ private fun ForgeScanApp() {
     var screen by remember { mutableStateOf(Screen.Capture) }
     var busyMessage by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
-    var showCameraImportPrompt by remember { mutableStateOf(false) }
     var activeRingId by remember { mutableStateOf<String?>(null) }
     var previewGlbFile by remember { mutableStateOf<File?>(null) }
     var previewMesh by remember { mutableStateOf<ForgeScanMesh?>(null) }
@@ -257,20 +255,7 @@ private fun ForgeScanApp() {
         val ringId = activeRingId
         if (ringId == null || uri == null) statusMessage = "No video selected." else importVideoToRing(ringId, uri)
     }
-    val cameraApp = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        showCameraImportPrompt = true
-        statusMessage = "Camera closed. Select the captures to import."
-    }
 
-    val onCapture: (String) -> Unit = { ringId ->
-        activeRingId = ringId
-        runCatching {
-            statusMessage = "Use Camera, then return to ForgeScan to import the captures."
-            cameraApp.launch(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA))
-        }.onFailure {
-            Toast.makeText(context, "No Camera app is available.", Toast.LENGTH_SHORT).show()
-        }
-    }
     val onImportPhotos: (String) -> Unit = { ringId ->
         activeRingId = ringId
         runCatching {
@@ -295,13 +280,6 @@ private fun ForgeScanApp() {
     }
 
     Surface(modifier = Modifier.fillMaxSize().systemBarsPadding(), color = MaterialTheme.colorScheme.background) {
-        if (showCameraImportPrompt) {
-            CameraImportDialog(
-                onDismiss = { showCameraImportPrompt = false },
-                onPhotos = { activeRingId?.let(onImportPhotos) },
-                onVideo = { activeRingId?.let(onImportVideo) },
-            )
-        }
         val currentProject = project
         when {
             currentProject == null -> Text("Loading...", color = MaterialTheme.colorScheme.onBackground)
@@ -322,7 +300,6 @@ private fun ForgeScanApp() {
                 project = currentProject,
                 busyMessage = busyMessage,
                 statusMessage = statusMessage,
-                onCapture = onCapture,
                 onImportPhotos = onImportPhotos,
                 onImportVideo = onImportVideo,
                 onAddRing = onAddRing,

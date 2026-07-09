@@ -9,25 +9,35 @@ internal fun RingCaptureScreen(
     project: ForgeScanProject,
     busyMessage: String?,
     statusMessage: String?,
-    onCapture: (ringId: String) -> Unit,
     onImportPhotos: (ringId: String) -> Unit,
     onImportVideo: (ringId: String) -> Unit,
     onAddRing: (ringId: String, label: String) -> Unit,
     onRemoveRing: (ringId: String) -> Unit,
     onProcess: () -> Unit,
 ) {
-    Page(title = project.title, subtitle = "Fill each ring by capturing or importing a turntable pass.") {
+    Page(title = project.title, subtitle = "Fill each ring with a steady turntable video pass.") {
         project.rings.forEach { ring ->
             Panel {
                 Text(ring.label, style = MaterialTheme.typography.titleMedium)
                 Text("${ring.frames.size} frames", color = AppMuted, style = MaterialTheme.typography.bodySmall)
-                ActionButton(text = "Capture", onClick = { onCapture(ring.ringId) }, enabled = busyMessage == null)
-                MenuActionButton(
-                    text = "Import",
-                    options = listOf(
-                        "Import Photos" to { onImportPhotos(ring.ringId) },
-                        "Import Video" to { onImportVideo(ring.ringId) },
-                    ),
+                // Video is the primary path, not just one option among equals:
+                // the backend's registration pairing (registration.py's
+                // build_pair_list) assumes frames are evenly spread across
+                // the ring's rotation to size its matching window correctly -
+                // true by construction for frames extracted from a video shot
+                // at constant rotation speed, but not guaranteed at all for
+                // arbitrary picked photos (uneven spacing silently weakens
+                // registration and was confirmed to produce a holier,
+                // fragmented mesh on a real capture).
+                Text(
+                    "Record one steady, constant-speed rotation per ring - even spacing between frames is what makes registration reliable.",
+                    color = AppMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                ActionButton(text = "Record Turntable Video", onClick = { onImportVideo(ring.ringId) }, enabled = busyMessage == null)
+                ActionButton(
+                    text = "Import Photos (less reliable)",
+                    onClick = { onImportPhotos(ring.ringId) },
                     enabled = busyMessage == null,
                     secondary = true,
                 )
