@@ -9,7 +9,7 @@ internal fun RingCaptureScreen(
     project: ForgeScanProject,
     busyMessage: String?,
     statusMessage: String?,
-    onImportPhotos: (ringId: String) -> Unit,
+    onCaptureVideo: (ringId: String) -> Unit,
     onImportVideo: (ringId: String) -> Unit,
     onAddRing: (ringId: String, label: String) -> Unit,
     onRemoveRing: (ringId: String) -> Unit,
@@ -34,10 +34,10 @@ internal fun RingCaptureScreen(
                     color = AppMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                ActionButton(text = "Record Turntable Video", onClick = { onImportVideo(ring.ringId) }, enabled = busyMessage == null)
+                ActionButton(text = "Capture Video", onClick = { onCaptureVideo(ring.ringId) }, enabled = busyMessage == null)
                 ActionButton(
-                    text = "Import Photos (less reliable)",
-                    onClick = { onImportPhotos(ring.ringId) },
+                    text = "Import Video",
+                    onClick = { onImportVideo(ring.ringId) },
                     enabled = busyMessage == null,
                     secondary = true,
                 )

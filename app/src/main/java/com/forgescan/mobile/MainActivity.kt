@@ -2,7 +2,6 @@ package com.forgescan.mobile
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
@@ -29,7 +28,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val PhotoPickLimit = 120
 private enum class Screen { Capture, Preview }
 
 class MainActivity : ComponentActivity() {
@@ -55,7 +53,6 @@ private fun ForgeScanApp() {
     // for a request whose ring set matches this exactly; any other group has
     // no mesh in its own frame and must fall back to the sparse SfM cloud.
     var carvedRingIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    val photoPickLimit = remember { safePhotoPickLimit() }
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { loadMostRecentProject(context) }
@@ -71,29 +68,6 @@ private fun ForgeScanApp() {
     fun persist(next: ForgeScanProject) {
         project = next
         scope.launch { withContext(Dispatchers.IO) { saveProject(context, next) } }
-    }
-
-    fun importImagesToRing(ringId: String, uris: List<Uri>) {
-        val current = project ?: return
-        scope.launch {
-            val startedAt = System.currentTimeMillis()
-            busyMessage = previewProgressMessage("Importing photos", 0, uris.size, startedAt)
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    importImagesIntoRing(context, current, ringId, uris) { completed, total ->
-                        withContext(Dispatchers.Main) {
-                            busyMessage = previewProgressMessage("Importing photos", completed, total, startedAt)
-                        }
-                    }
-                }
-            }.onSuccess {
-                persist(it)
-                statusMessage = "Imported ${uris.size} photos into ring."
-            }.onFailure {
-                statusMessage = "Image import failed: ${it.message ?: "Unknown error"}"
-            }
-            busyMessage = null
-        }
     }
 
     fun importVideoToRing(ringId: String, uri: Uri) {
@@ -247,21 +221,25 @@ private fun ForgeScanApp() {
         }
     }
 
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(photoPickLimit)) { uris ->
-        val ringId = activeRingId
-        if (ringId == null || uris.isEmpty()) statusMessage = "No photos selected." else importImagesToRing(ringId, uris)
-    }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         val ringId = activeRingId
         if (ringId == null || uri == null) statusMessage = "No video selected." else importVideoToRing(ringId, uri)
     }
+    // No EXTRA_OUTPUT: camera apps don't reliably hand back a usable Uri
+    // through the activity result across devices/vendors, so recording
+    // and importing stay two explicit steps - the user records here, then
+    // taps Import Video to select what they just recorded, same reliable
+    // pattern this app already used for the (now-removed) still-photo path.
+    val cameraApp = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        statusMessage = "Camera closed. Use Import Video to select the recording."
+    }
 
-    val onImportPhotos: (String) -> Unit = { ringId ->
+    val onCaptureVideo: (String) -> Unit = { ringId ->
         activeRingId = ringId
         runCatching {
-            photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            cameraApp.launch(Intent(MediaStore.ACTION_VIDEO_CAPTURE))
         }.onFailure {
-            statusMessage = "Could not open photo picker: ${it.message ?: "Unknown error"}"
+            statusMessage = "No Camera app is available."
         }
     }
     val onImportVideo: (String) -> Unit = { ringId ->
@@ -300,21 +278,13 @@ private fun ForgeScanApp() {
                 project = currentProject,
                 busyMessage = busyMessage,
                 statusMessage = statusMessage,
-                onImportPhotos = onImportPhotos,
+                onCaptureVideo = onCaptureVideo,
                 onImportVideo = onImportVideo,
                 onAddRing = onAddRing,
                 onRemoveRing = onRemoveRing,
                 onProcess = ::runProcess,
             )
         }
-    }
-}
-
-private fun safePhotoPickLimit(): Int {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        minOf(PhotoPickLimit, MediaStore.getPickImagesMaxLimit()).coerceAtLeast(2)
-    } else {
-        PhotoPickLimit
     }
 }
 
