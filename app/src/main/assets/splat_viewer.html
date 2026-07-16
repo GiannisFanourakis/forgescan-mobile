@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ForgeScan Splat Viewer (GaussianSplats3D)</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #14151a; color: #e8e8ec;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif; overflow: hidden; }
+  #panel { position: absolute; top: 0; left: 0; z-index: 10; padding: 14px 16px; max-width: 360px;
+    background: rgba(20,21,26,0.82); border-bottom-right-radius: 10px; font-size: 13px; line-height: 1.5; }
+  #panel h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  #panel p { margin: 4px 0; color: #b7b8c2; }
+  #panel input[type=file] { font-size: 12px; margin: 6px 0; color: #e8e8ec; }
+  #status { color: #f0a742; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>ForgeScan splat viewer (GaussianSplats3D)</h1>
+  <p>Real 3D Gaussian splat rendering via GaussianSplats3D - full anisotropic ellipsoids, full spherical harmonics, no subsampling. Matches the fidelity of the actual gsplat renders.</p>
+  <input type="file" id="fileInput" accept=".ply">
+  <p id="status">Choose a .ply file to begin. Drag to orbit, scroll to zoom (standard OrbitControls).</p>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
+import * as THREE from "three";
+
+const statusEl = document.getElementById("status");
+let viewer = null;
+
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (file) loadSplatFile(file);
+});
+
+window.loadSplatFile = async function loadSplatFile(file, alphaThresholdOverride) {
+  if (viewer) {
+    await viewer.dispose();
+    viewer = null;
+  }
+
+  statusEl.textContent = "Loading " + file.name + " (" + (file.size / 1e6).toFixed(0) + " MB)...";
+
+  const url = URL.createObjectURL(file);
+  viewer = new GaussianSplats3D.Viewer({
+    cameraUp: [0, 0, 1],
+    initialCameraPosition: [-1.5, -1.5, 1.5],
+    initialCameraLookAt: [0, 0, 0],
+    sphericalHarmonicsDegree: 2,
+    sharedMemoryForWorkers: false,
+  });
+
+  try {
+    await viewer.addSplatScene(url, {
+      format: GaussianSplats3D.SceneFormat.Ply,
+      // Default (1) barely filters anything (range is 0-255). This scan has
+      // a low-opacity floater haze surrounding the actual subject; sitting
+      // the camera inside that cloud is what was producing a solid black
+      // frame, since many overlapping translucent splats stack up to
+      // near-opaque. A much higher threshold strips that haze while leaving
+      // the dense, high-opacity subject geometry intact.
+      splatAlphaRemovalThreshold: alphaThresholdOverride ?? 40,
+      showLoadingUI: true,
+      progressCallback: (percent) => {
+        statusEl.textContent = "Loading... " + Math.round(percent) + "%";
+      },
+    });
+    viewer.start();
+
+    // Median-based framing: a naive AABB min/max is skewed hard by a single
+    // outlier floater splat far from the actual subject, so use the median
+    // center and the 90th-percentile distance from it instead (robust to
+    // outliers the same way the earlier custom WebGL viewer's auto-framing
+    // needed to be).
+    const mesh = viewer.getSplatMesh();
+    const splatCount = mesh.getSplatCount();
+    const centers = new Float32Array(splatCount * 3);
+    mesh.fillSplatDataArrays(null, null, null, centers, null, null, false);
+
+    const median = (arr) => {
+      const sorted = Array.from(arr).sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    };
+    const xs = new Float32Array(splatCount);
+    const ys = new Float32Array(splatCount);
+    const zs = new Float32Array(splatCount);
+    for (let i = 0; i < splatCount; i++) {
+      xs[i] = centers[i * 3];
+      ys[i] = centers[i * 3 + 1];
+      zs[i] = centers[i * 3 + 2];
+    }
+    const center = new THREE.Vector3(median(xs), median(ys), median(zs));
+
+    const dists = new Float32Array(splatCount);
+    for (let i = 0; i < splatCount; i++) {
+      const dx = centers[i * 3] - center.x;
+      const dy = centers[i * 3 + 1] - center.y;
+      const dz = centers[i * 3 + 2] - center.z;
+      dists[i] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    const sortedDists = Array.from(dists).sort((a, b) => a - b);
+    const radius = sortedDists[Math.floor(sortedDists.length * 0.9)];
+
+    // The 90th-percentile radius is still pulled outward by a long tail of
+    // scattered floater splats, so the actual visually-dense subject needs a
+    // noticeably tighter framing distance than a "2x radius" rule of thumb.
+    const dir = new THREE.Vector3(1, -1, 0.6).normalize();
+    viewer.camera.position.copy(center).addScaledVector(dir, radius * 1.3);
+    viewer.controls.target.copy(center);
+    viewer.controls.update();
+
+    statusEl.textContent = "Loaded " + file.name + ". Drag to orbit, scroll to zoom.";
+  } catch (err) {
+    statusEl.textContent = "Error: " + err.message;
+    console.error(err);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+// Mobile-app hook: SplatViewerScreen.kt (Android) loads this page with
+// ?src=<url> pointing at a WebViewAssetLoader path handler that streams the
+// downloaded .ply's raw bytes (not a file:// path - modern WebView blocks
+// arbitrary file:// access by default, and a JS-bridge byte transfer would be
+// memory-prohibitive for a splat file this size). Falls back to the manual
+// file picker above when no ?src= is present (desktop testing, as before).
+const autoSrc = new URLSearchParams(location.search).get("src");
+if (autoSrc) {
+  statusEl.textContent = "Fetching splat...";
+  fetch(autoSrc)
+    .then((resp) => {
+      if (!resp.ok) throw new Error("Fetch failed: " + resp.status);
+      return resp.blob();
+    })
+    .then((blob) => {
+      const name = autoSrc.split("/").pop() || "scan.ply";
+      loadSplatFile(new File([blob], name, { type: "application/octet-stream" }));
+    })
+    .catch((err) => {
+      statusEl.textContent = "Error: " + err.message;
+      console.error(err);
+    });
+}
+</script>
+</body>
+</html>

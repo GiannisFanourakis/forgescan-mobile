@@ -1,4 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- CloudUploadWorker.kt runs as a real foreground service (setForeground,
+         not setExpedited - expedited work's execution window is too short
+         for a run that can take up to ~40 minutes) so the upload survives
+         app backgrounding. FOREGROUND_SERVICE_DATA_SYNC is required
+         specifically for the dataSync foreground service type on API 34+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Progress/completion notifications for the cloud upload (API 33+
+         requires this to be requested at runtime too - see MainActivity.kt). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

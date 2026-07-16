@@ -1,7 +1,9 @@
 package com.forgescan.mobile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
@@ -23,12 +25,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class Screen { Capture, Preview }
+private enum class Screen { Capture, SplatPreview }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,13 +52,15 @@ private fun ForgeScanApp() {
     var busyMessage by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var activeRingId by remember { mutableStateOf<String?>(null) }
-    var previewGlbFile by remember { mutableStateOf<File?>(null) }
-    var previewMesh by remember { mutableStateOf<ForgeScanMesh?>(null) }
-    // Which ring(s) previewMesh was actually carved from - GS export can only
-    // reuse it as a seed cloud (GaussianSplatExporter.kt's meshSeedPoints)
-    // for a request whose ring set matches this exactly; any other group has
-    // no mesh in its own frame and must fall back to the sparse SfM cloud.
-    var carvedRingIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Set once runCloudUpload()'s WorkInfo Flow observes SUCCEEDED - lets the
+    // Capture screen offer "View Splat" (SplatViewerScreen.kt) for the file
+    // that specific run just produced, without needing to re-scan Downloads.
+    var cloudSplatFile by remember { mutableStateOf<File?>(null) }
+    // CloudUploadWorker.kt's progress/completion notifications need this on
+    // API 33+ - requested when the cloud upload starts (runCloudUpload()),
+    // not blocking either way: if denied, the upload still runs to
+    // completion, it just won't show a notification.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) { loadMostRecentProject(context) }
@@ -93,131 +101,59 @@ private fun ForgeScanApp() {
         }
     }
 
-    fun runProcess() {
+    // Enqueues CloudUploadWorker.kt rather than calling BackendClient.kt
+    // directly from this Activity-scoped coroutine - a run this long (up to
+    // ~40 minutes) needs to survive app backgrounding, which a plain
+    // coroutine can't guarantee (confirmed a real risk on this device
+    // specifically: MIUI is known for aggressively killing backgrounded
+    // apps). WorkManager's own WorkInfo Flow keeps this screen's
+    // busyMessage/statusMessage updated while the app IS in the foreground;
+    // if it isn't, the worker's own notification (CloudUploadWorker.kt)
+    // carries the status instead. Stays on the Capture screen rather than
+    // navigating away immediately - SplatViewerScreen.kt is opened
+    // explicitly via the "View Splat" button once cloudSplatFile is set.
+    fun runCloudUpload() {
         val current = project ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         scope.launch {
-            var currentStage = "Starting..."
-            var stageStartedAt = System.currentTimeMillis()
-            busyMessage = currentStage
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    runReconstructionPipeline(
-                        context,
-                        current,
-                        onStatus = { message ->
-                            withContext(Dispatchers.Main) {
-                                currentStage = message
-                                stageStartedAt = System.currentTimeMillis()
-                                busyMessage = message
-                            }
-                        },
-                        onProgress = { completed, total ->
-                            withContext(Dispatchers.Main) {
-                                busyMessage = previewProgressMessage(currentStage, completed, total, stageStartedAt)
-                            }
-                        },
-                    )
+            busyMessage = "Preparing upload..."
+            val zip = try {
+                withContext(Dispatchers.IO) { buildScanZip(context, current) }
+            } catch (e: Exception) {
+                statusMessage = "Cloud upload failed: ${e.message ?: "Unknown error"}"
+                busyMessage = null
+                return@launch
+            }
+
+            val request = OneTimeWorkRequestBuilder<CloudUploadWorker>()
+                .setInputData(workDataOf(CloudUploadWorker.KeyZipPath to zip.absolutePath))
+                .build()
+            val workManager = WorkManager.getInstance(context)
+            workManager.enqueue(request)
+            workManager.getWorkInfoByIdFlow(request.id).collect { info ->
+                when (info?.state) {
+                    WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING -> {
+                        busyMessage = "Cloud training in progress - see notification for status."
+                    }
+                    WorkInfo.State.SUCCEEDED -> {
+                        statusMessage = "Cloud training complete. Check Downloads/ForgeScan."
+                        cloudSplatFile = info.outputData.getString(CloudUploadWorker.KeyResultPath)?.let(::File)
+                        busyMessage = null
+                    }
+                    WorkInfo.State.FAILED -> {
+                        statusMessage = "Cloud upload failed: " +
+                            (info.outputData.getString(CloudUploadWorker.KeyError) ?: "Unknown error")
+                        busyMessage = null
+                    }
+                    WorkInfo.State.CANCELLED -> {
+                        statusMessage = "Cloud upload cancelled."
+                        busyMessage = null
+                    }
+                    else -> Unit
                 }
-            }.onSuccess { result ->
-                project = result.updatedProject
-                previewMesh = result.mesh
-                carvedRingIds = result.carvedRingIds
-                val glb = withContext(Dispatchers.IO) { exportMeshToGlb(context, result.mesh) }
-                previewGlbFile = glb
-                statusMessage = "Reconstruction complete."
-                screen = Screen.Preview
-            }.onFailure {
-                statusMessage = "Processing failed: ${it.message ?: "Unknown error"}"
             }
-            busyMessage = null
-        }
-    }
-
-    fun saveGlb() {
-        val glb = previewGlbFile ?: return
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { saveFileToDownloads(context, glb, glb.name, "model/gltf-binary") }
-            }.onSuccess {
-                statusMessage = "Saved ${glb.name} to Downloads/ForgeScan."
-            }.onFailure {
-                statusMessage = "Save failed: ${it.message ?: "Unknown error"}"
-            }
-        }
-    }
-
-    fun shareGlb() {
-        val glb = previewGlbFile ?: return
-        runCatching {
-            context.startActivity(Intent.createChooser(shareFileIntent(context, glb, "model/gltf-binary"), "Share ForgeScan GLB"))
-        }.onFailure {
-            statusMessage = "Share failed: ${it.message ?: "Unknown error"}"
-        }
-    }
-
-    fun exportObj() {
-        val mesh = previewMesh ?: return
-        scope.launch {
-            busyMessage = "Writing OBJ..."
-            runCatching {
-                withContext(Dispatchers.IO) { exportMeshToObjZip(context, mesh) }
-            }.onSuccess { zip ->
-                withContext(Dispatchers.IO) { saveFileToDownloads(context, zip, zip.name, "application/zip") }
-                statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
-            }.onFailure {
-                statusMessage = "OBJ export failed: ${it.message ?: "Unknown error"}"
-            }
-            busyMessage = null
-        }
-    }
-
-    fun exportGsDataset(ringId: String) {
-        val current = project ?: return
-        val ring = current.rings.firstOrNull { it.ringId == ringId } ?: return
-        val meshForSeed = if (carvedRingIds == listOf(ringId)) previewMesh else null
-        scope.launch {
-            busyMessage = "Exporting Gaussian-splat dataset..."
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val datasetDir = File(exportsDir(context), "gs-dataset-$ringId")
-                    exportGaussianSplatDataset(context, current, ring, datasetDir, meshForSeed)
-                    val zip = File(exportsDir(context), "ForgeScan-gs-$ringId.zip")
-                    zipDirectory(datasetDir, zip)
-                    zip
-                }
-            }.onSuccess { zip ->
-                withContext(Dispatchers.IO) { saveFileToDownloads(context, zip, zip.name, "application/zip") }
-                statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
-            }.onFailure {
-                statusMessage = "GS dataset export failed: ${it.message ?: "Unknown error"}"
-            }
-            busyMessage = null
-        }
-    }
-
-    fun exportFusedGsDataset(ringIds: List<String>) {
-        val current = project ?: return
-        val rings = ringIds.mapNotNull { id -> current.rings.firstOrNull { it.ringId == id } }
-        if (rings.isEmpty()) return
-        val groupName = ringIds.joinToString("-")
-        val meshForSeed = if (carvedRingIds.toSet() == ringIds.toSet()) previewMesh else null
-        scope.launch {
-            busyMessage = "Exporting fused Gaussian-splat dataset..."
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val datasetDir = File(exportsDir(context), "gs-dataset-$groupName")
-                    exportFusedGaussianSplatDataset(context, current, rings, datasetDir, meshForSeed)
-                    val zip = File(exportsDir(context), "ForgeScan-gs-$groupName.zip")
-                    zipDirectory(datasetDir, zip)
-                    zip
-                }
-            }.onSuccess { zip ->
-                withContext(Dispatchers.IO) { saveFileToDownloads(context, zip, zip.name, "application/zip") }
-                statusMessage = "Saved ${zip.name} to Downloads/ForgeScan."
-            }.onFailure {
-                statusMessage = "Fused GS dataset export failed: ${it.message ?: "Unknown error"}"
-            }
-            busyMessage = null
         }
     }
 
@@ -261,28 +197,21 @@ private fun ForgeScanApp() {
         val currentProject = project
         when {
             currentProject == null -> Text("Loading...", color = MaterialTheme.colorScheme.onBackground)
-            screen == Screen.Preview && previewGlbFile != null -> MeshPreviewScreen(
-                glbFile = previewGlbFile!!,
-                rings = currentProject.rings,
-                detectedRingGroups = currentProject.detectedRingGroups,
-                busyMessage = busyMessage,
-                statusMessage = statusMessage,
-                onSaveGlb = ::saveGlb,
-                onShareGlb = ::shareGlb,
-                onExportObj = ::exportObj,
-                onExportGsDataset = ::exportGsDataset,
-                onExportFusedGsDataset = ::exportFusedGsDataset,
+            screen == Screen.SplatPreview && cloudSplatFile != null -> SplatViewerScreen(
+                plyFile = cloudSplatFile!!,
                 onBack = { screen = Screen.Capture },
             )
             else -> RingCaptureScreen(
                 project = currentProject,
                 busyMessage = busyMessage,
                 statusMessage = statusMessage,
+                cloudSplatFile = cloudSplatFile,
                 onCaptureVideo = onCaptureVideo,
                 onImportVideo = onImportVideo,
                 onAddRing = onAddRing,
                 onRemoveRing = onRemoveRing,
-                onProcess = ::runProcess,
+                onCloudUpload = ::runCloudUpload,
+                onViewSplat = { screen = Screen.SplatPreview },
             )
         }
     }

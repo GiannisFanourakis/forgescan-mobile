@@ -12,3 +12,6 @@ keystore.properties
 *.jks
 *.keystore
 *.hprof
+
+# Cloud backend API key - never commit
+backend.properties

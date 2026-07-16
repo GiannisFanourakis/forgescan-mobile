@@ -3,17 +3,20 @@ package com.forgescan.mobile
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import java.io.File
 
 @Composable
 internal fun RingCaptureScreen(
     project: ForgeScanProject,
     busyMessage: String?,
     statusMessage: String?,
+    cloudSplatFile: File?,
     onCaptureVideo: (ringId: String) -> Unit,
     onImportVideo: (ringId: String) -> Unit,
     onAddRing: (ringId: String, label: String) -> Unit,
     onRemoveRing: (ringId: String) -> Unit,
-    onProcess: () -> Unit,
+    onCloudUpload: () -> Unit,
+    onViewSplat: () -> Unit,
 ) {
     Page(title = project.title, subtitle = "Fill each ring with a steady turntable video pass.") {
         project.rings.forEach { ring ->
@@ -41,12 +44,6 @@ internal fun RingCaptureScreen(
                     enabled = busyMessage == null,
                     secondary = true,
                 )
-                // GS export lives on the Preview screen, not here - Process
-                // (which detects ring groups) always lands the user on
-                // Preview on success, so that's where the export options
-                // are actually relevant, not a screen they'd have to
-                // navigate back to find.
-                //
                 // Always available, even as the only ring - "Add Ring"
                 // below is unconditional too, so there's no risk of getting
                 // stuck without a way back to zero rings, and there's no
@@ -84,8 +81,21 @@ internal fun RingCaptureScreen(
             )
         }
 
-        val canProcess = project.rings.any { it.frames.isNotEmpty() }
-        ActionButton(text = "Process", onClick = onProcess, enabled = busyMessage == null && canProcess)
+        val canUpload = project.rings.any { it.frames.isNotEmpty() }
+        // Trains a real Gaussian splat via the backend (README's "Cloud
+        // training" section) - the app's own on-device visual-hull mesh
+        // pipeline was retired once this path was proven end-to-end.
+        ActionButton(
+            text = "Upload & Train (Cloud)",
+            onClick = onCloudUpload,
+            enabled = busyMessage == null && canUpload,
+        )
+        // Appears once runCloudUpload()'s WorkInfo Flow observes SUCCEEDED
+        // (MainActivity.kt) - opens SplatViewerScreen.kt for that run's
+        // specific result file, not a re-scan of Downloads.
+        if (cloudSplatFile != null) {
+            ActionButton(text = "View Splat", onClick = onViewSplat, enabled = busyMessage == null, secondary = true)
+        }
 
         busyMessage?.let { Text(it, color = AppSecondary) }
         statusMessage?.let { Text(it, color = AppMuted) }
