@@ -2,6 +2,7 @@ package com.forgescan.mobile
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -50,6 +51,13 @@ internal fun SplatViewerScreen(plyFile: File, onBack: () -> Unit) {
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun buildSplatWebView(context: Context, plyFile: File): WebView {
+    // Lets `chrome://inspect` on a desktop Chrome (connected via the same USB
+    // cable already used for adb) attach real DevTools to this exact WebView -
+    // needed to actually see console/WebGL errors instead of guessing, after
+    // a real device showed a loaded-but-blank, unresponsive canvas that this
+    // session's desktop browser testing never hit.
+    WebView.setWebContentsDebuggingEnabled(true)
+
     val assetLoader = WebViewAssetLoader.Builder()
         .setDomain("appassets.androidplatform.net")
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -59,6 +67,15 @@ private fun buildSplatWebView(context: Context, plyFile: File): WebView {
         .build()
 
     return WebView(context).apply {
+        // Confirmed via a real device + Chrome DevTools attached over
+        // adb forward: without this, the WebView's canvas measured out at
+        // 0 height (WebGL context created fine - "WebGL 2.0 (OpenGL ES
+        // 3.0 Chromium)" - but with zero rendered area, so the splat never
+        // painted and touches had nothing to hit). AndroidView's Compose
+        // measurement pass doesn't reliably propagate a concrete height to
+        // a plain WebView(context) without explicit MATCH_PARENT
+        // LayoutParams.
+        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         webViewClient = object : WebViewClient() {

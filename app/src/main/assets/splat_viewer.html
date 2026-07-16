@@ -6,21 +6,20 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #14151a; color: #e8e8ec;
     font-family: -apple-system, "Segoe UI", Arial, sans-serif; overflow: hidden; }
-  #panel { position: absolute; top: 0; left: 0; z-index: 10; padding: 14px 16px; max-width: 360px;
-    background: rgba(20,21,26,0.82); border-bottom-right-radius: 10px; font-size: 13px; line-height: 1.5; }
-  #panel h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
-  #panel p { margin: 4px 0; color: #b7b8c2; }
-  #panel input[type=file] { font-size: 12px; margin: 6px 0; color: #e8e8ec; }
-  #status { color: #f0a742; }
+  /* Loading/error status only - no title, description, or file picker: this
+     copy is embedded in SplatViewerScreen.kt's WebView, which always
+     auto-loads the scan via ?src= (see the bottom of this script), so
+     there's never a moment where a user needs to pick a file or read a
+     marketing blurb. Hidden entirely once loading succeeds, so a completed
+     view isn't left with a dead status bar over the render. */
+  #status { position: absolute; top: 0; left: 0; z-index: 10; padding: 10px 14px;
+    background: rgba(20,21,26,0.82); border-bottom-right-radius: 10px;
+    font-size: 13px; color: #f0a742; }
+  #status.hidden { display: none; }
 </style>
 </head>
 <body>
-<div id="panel">
-  <h1>ForgeScan splat viewer (GaussianSplats3D)</h1>
-  <p>Real 3D Gaussian splat rendering via GaussianSplats3D - full anisotropic ellipsoids, full spherical harmonics, no subsampling. Matches the fidelity of the actual gsplat renders.</p>
-  <input type="file" id="fileInput" accept=".ply">
-  <p id="status">Choose a .ply file to begin. Drag to orbit, scroll to zoom (standard OrbitControls).</p>
-</div>
+<p id="status">Loading...</p>
 <script type="importmap">
 {
   "imports": {
@@ -36,17 +35,13 @@ import * as THREE from "three";
 const statusEl = document.getElementById("status");
 let viewer = null;
 
-document.getElementById("fileInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (file) loadSplatFile(file);
-});
-
 window.loadSplatFile = async function loadSplatFile(file, alphaThresholdOverride) {
   if (viewer) {
     await viewer.dispose();
     viewer = null;
   }
 
+  statusEl.classList.remove("hidden");
   statusEl.textContent = "Loading " + file.name + " (" + (file.size / 1e6).toFixed(0) + " MB)...";
 
   const url = URL.createObjectURL(file);
@@ -117,7 +112,7 @@ window.loadSplatFile = async function loadSplatFile(file, alphaThresholdOverride
     viewer.controls.target.copy(center);
     viewer.controls.update();
 
-    statusEl.textContent = "Loaded " + file.name + ". Drag to orbit, scroll to zoom.";
+    statusEl.classList.add("hidden");
   } catch (err) {
     statusEl.textContent = "Error: " + err.message;
     console.error(err);
@@ -126,12 +121,11 @@ window.loadSplatFile = async function loadSplatFile(file, alphaThresholdOverride
   }
 };
 
-// Mobile-app hook: SplatViewerScreen.kt (Android) loads this page with
-// ?src=<url> pointing at a WebViewAssetLoader path handler that streams the
-// downloaded .ply's raw bytes (not a file:// path - modern WebView blocks
-// arbitrary file:// access by default, and a JS-bridge byte transfer would be
-// memory-prohibitive for a splat file this size). Falls back to the manual
-// file picker above when no ?src= is present (desktop testing, as before).
+// SplatViewerScreen.kt (Android) always loads this page with ?src=<url>
+// pointing at a WebViewAssetLoader path handler that streams the downloaded
+// .ply's raw bytes (not a file:// path - modern WebView blocks arbitrary
+// file:// access by default, and a JS-bridge byte transfer would be
+// memory-prohibitive for a splat file this size).
 const autoSrc = new URLSearchParams(location.search).get("src");
 if (autoSrc) {
   statusEl.textContent = "Fetching splat...";
