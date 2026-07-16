@@ -71,6 +71,9 @@ private fun ForgeScanApp() {
             withContext(Dispatchers.IO) { saveProject(context, fresh) }
             fresh
         }
+        // Restores "View Splat" across app restarts, not just within the
+        // session that ran the upload - see LastCloudSplat.kt.
+        cloudSplatFile = withContext(Dispatchers.IO) { restoreLastCloudSplat(context) }
     }
 
     fun persist(next: ForgeScanProject) {

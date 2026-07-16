@@ -45,6 +45,7 @@ class CloudUploadWorker(context: Context, params: WorkerParameters) : CoroutineW
                 setForegroundAsync(foregroundInfo(stage))
             }
             saveFileToDownloads(applicationContext, ply, ply.name, "application/octet-stream")
+            rememberLastCloudSplat(applicationContext, ply)
             notifyResult(success = true, message = "Your ForgeScan splat is ready - saved to Downloads/ForgeScan.")
             Result.success(workDataOf(KeyResultPath to ply.absolutePath))
         } catch (e: Exception) {

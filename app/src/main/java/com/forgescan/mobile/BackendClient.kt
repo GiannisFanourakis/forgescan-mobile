@@ -20,14 +20,23 @@ class BackendUploadException(message: String) : Exception(message)
 // app's own on-device storage nests frames one level deeper under
 // rings/<ringId>/frames/ - this flattens that one level, it doesn't mirror
 // the on-device layout as-is.
+//
+// Every ZipEntry gets a fixed timestamp and frames are written in a fixed
+// order (by ForgeScanFrame.order, not whatever order they happen to be
+// stored in) - otherwise two zips built from the identical photos produce
+// different bytes, which defeats pipeline.py's content-hash-keyed
+// checkpointing (_register(), keyed by sha256 of the zip) - confirmed on a
+// real re-upload of unchanged rings that still triggered a full re-run
+// instead of hitting the cache.
 internal fun buildScanZip(context: Context, project: ForgeScanProject): File {
     val zipFile = File(exportsDir(context), "cloud-scan-${project.projectId}.zip")
     ZipOutputStream(zipFile.outputStream()).use { zip ->
         project.rings.filter { it.frames.isNotEmpty() }.forEach { ring ->
-            ring.frames.forEach { frame ->
+            ring.frames.sortedBy { it.order }.forEach { frame ->
                 val sourceFile = File(Uri.parse(frame.uri).path ?: return@forEach)
                 if (!sourceFile.exists()) return@forEach
-                zip.putNextEntry(ZipEntry("${ring.ringId}/${sourceFile.name}"))
+                val entry = ZipEntry("${ring.ringId}/${sourceFile.name}").apply { time = 0L }
+                zip.putNextEntry(entry)
                 sourceFile.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
