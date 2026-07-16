@@ -102,13 +102,27 @@ window.loadSplatFile = async function loadSplatFile(file, alphaThresholdOverride
       dists[i] = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     const sortedDists = Array.from(dists).sort((a, b) => a - b);
-    const radius = sortedDists[Math.floor(sortedDists.length * 0.9)];
+    // p90 itself isn't safe to use as "the object's radius" - confirmed on a
+    // real capture where the distance distribution was tight through p75
+    // (1.31 at p50, 1.75 at p75) but exploded from p75 to p90 (5.70, a 3.3x
+    // jump) and kept climbing to a max of 50.6 (38x the median). That's a
+    // much heavier floater tail than the bird/thermos captures this
+    // heuristic was originally tuned against (there, even the raw max stayed
+    // under 2.4x p90). p75 stays representative of the actual dense subject
+    // across both the well- and badly-contaminated cases seen so far.
+    const radius = sortedDists[Math.floor(sortedDists.length * 0.75)];
 
-    // The 90th-percentile radius is still pulled outward by a long tail of
-    // scattered floater splats, so the actual visually-dense subject needs a
-    // noticeably tighter framing distance than a "2x radius" rule of thumb.
+    // 1.3x ties camera distance directly to this file's own remaining-
+    // point statistic, so every time the backend's outlier cull
+    // (ply_filter.py) gets more aggressive, the same radius shrinks and
+    // the camera creeps closer on every load - confirmed on the desktop
+    // copy of this viewer as the real cause of a render that looked like
+    // a solid dark mass filling the frame (camera landing too close to,
+    // or inside, an already-tightened point cloud). 2.2x decouples the
+    // two: enough headroom to stay clear of the object regardless of how
+    // tightly the data has been trimmed server-side.
     const dir = new THREE.Vector3(1, -1, 0.6).normalize();
-    viewer.camera.position.copy(center).addScaledVector(dir, radius * 1.3);
+    viewer.camera.position.copy(center).addScaledVector(dir, radius * 2.2);
     viewer.controls.target.copy(center);
     viewer.controls.update();
 
